@@ -2,11 +2,8 @@ package com.streamflixreborn.streamflix.fragments.search
 
 import android.content.Context
 import android.widget.ArrayAdapter
-import android.widget.EditText
 import android.widget.Spinner
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 internal object AdvancedSearchUi {
     private val years = (2026 downTo 1900).toList()
@@ -16,6 +13,8 @@ internal object AdvancedSearchUi {
         contentType: Spinner,
         italian: Spinner,
         year: Spinner,
+        yearFrom: Spinner,
+        yearTo: Spinner,
     ) {
         contentType.adapter = ArrayAdapter(
             context,
@@ -32,27 +31,34 @@ internal object AdvancedSearchUi {
             android.R.layout.simple_spinner_dropdown_item,
             listOf("Anno: tutti") + years.map { it.toString() },
         )
+        yearFrom.adapter = ArrayAdapter(
+            context,
+            android.R.layout.simple_spinner_dropdown_item,
+            listOf("Dal: tutti") + years.map { it.toString() },
+        )
+        yearTo.adapter = ArrayAdapter(
+            context,
+            android.R.layout.simple_spinner_dropdown_item,
+            listOf("Al: tutti") + years.map { it.toString() },
+        )
     }
 
     fun read(
         contentType: Spinner,
         italian: Spinner,
         year: Spinner,
-        dateFrom: EditText,
-        dateTo: EditText,
+        yearFrom: Spinner,
+        yearTo: Spinner,
     ): AdvancedSearchFilters {
-        val from = dateFrom.text?.toString()?.trim().orEmpty()
-        val to = dateTo.text?.toString()?.trim().orEmpty()
+        val selectedYear = selectedYear(year)
+        val selectedFrom = selectedYear(yearFrom)
+        val selectedTo = selectedYear(yearTo)
 
-        validateDate(from, "Data iniziale")
-        validateDate(to, "Data finale")
-        if (from.isNotEmpty() && to.isNotEmpty() && from > to) {
-            throw IllegalArgumentException("La data iniziale non può essere successiva alla data finale")
+        if (selectedFrom != null && selectedTo != null && selectedFrom > selectedTo) {
+            throw IllegalArgumentException("L'anno iniziale non può essere successivo all'anno finale")
         }
 
-        val selectedYear = year.selectedItemPosition
-            .takeIf { it > 0 }
-            ?.let { years[it - 1] }
+        val hasRange = selectedFrom != null || selectedTo != null
 
         return AdvancedSearchFilters(
             type = when (contentType.selectedItemPosition) {
@@ -66,9 +72,9 @@ internal object AdvancedSearchUi {
                 2 -> AdvancedSearchFilters.ItalianFilter.NO
                 else -> AdvancedSearchFilters.ItalianFilter.ALL
             },
-            year = if (from.isNotEmpty() || to.isNotEmpty()) null else selectedYear,
-            dateFrom = from.ifBlank { null },
-            dateTo = to.ifBlank { null },
+            year = if (hasRange) null else selectedYear,
+            dateFrom = selectedFrom,
+            dateTo = selectedTo,
         )
     }
 
@@ -76,23 +82,17 @@ internal object AdvancedSearchUi {
         contentType: Spinner,
         italian: Spinner,
         year: Spinner,
-        dateFrom: EditText,
-        dateTo: EditText,
+        yearFrom: Spinner,
+        yearTo: Spinner,
     ) {
         contentType.setSelection(0)
         italian.setSelection(0)
         year.setSelection(0)
-        dateFrom.setText("")
-        dateTo.setText("")
+        yearFrom.setSelection(0)
+        yearTo.setSelection(0)
     }
 
-    private fun validateDate(value: String, label: String) {
-        if (value.isBlank()) return
-        if (!Regex("\\d{4}-\\d{2}-\\d{2}").matches(value)) {
-            throw IllegalArgumentException("$label: usa il formato AAAA-MM-GG")
-        }
-        val parser = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }
-        runCatching { parser.parse(value) }
-            .getOrElse { throw IllegalArgumentException("$label non valida") }
-    }
+    private fun selectedYear(spinner: Spinner): Int? = spinner.selectedItemPosition
+        .takeIf { it > 0 }
+        ?.let { years[it - 1] }
 }
