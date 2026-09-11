@@ -169,28 +169,20 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
-            <EditText
+            <Spinner
                 android:id="@+id/et_date_from"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
                 android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:hint="Dal: AAAA-MM-GG"
-                android:inputType="date"
-                android:maxLines="1"
                 android:nextFocusDown="@id/btn_reset_filters" />
 
-            <EditText
+            <Spinner
                 android:id="@+id/et_date_to"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
                 android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:hint="Al: AAAA-MM-GG"
-                android:inputType="date"
-                android:maxLines="1"
                 android:nextFocusDown="@id/btn_apply_filters" />
         </LinearLayout>
 
