@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.streamflixreborn.streamflix.models.Video
+import com.streamflixreborn.streamflix.providers.IptvProvider
+import com.streamflixreborn.streamflix.providers.WebSourceFallback
 import com.streamflixreborn.streamflix.utils.CustomTabHelper
 import com.streamflixreborn.streamflix.utils.EpisodeManager
 import com.streamflixreborn.streamflix.utils.OpenSubtitles
@@ -99,34 +101,62 @@ class PlayerViewModel(
         lastVideoType = videoType
         lastId = id
         _state.emit(State.LoadingServers)
-        try {
-            val servers = UserPreferences.currentProvider!!.getServers(id, videoType)
-            if (servers.isEmpty()) throw Exception("No servers found")
-            
-            // LOG POTENZIATO: Mostra tutti i server disponibili per il player
-            Log.i("StreamFlixES", "[SERVERS LIST] -> Provider: ${UserPreferences.currentProvider!!.name}")
-            Log.i("StreamFlixES", "[SERVERS LIST] -> Found ${servers.size} servers: ${servers.joinToString { it.name }}")
 
-            Log.d("PlayerViewModel", "Ricerca server completata: ${servers.size} server trovati")
-            _state.emit(State.SuccessLoadingServers(servers))
-        } catch (e: Exception) {
-            Log.e("PlayerViewModel", "Errore ricerca server: ", e)
-            _state.emit(State.FailedLoadingServers(e))
+        val provider = UserPreferences.currentProvider
+        if (provider == null) {
+            _state.emit(State.FailedLoadingServers(Exception("Provider non disponibile")))
+            return@launch
         }
+
+        var primaryError: Throwable? = null
+        val primaryServers = runCatching {
+            provider.getServers(id, videoType)
+        }.onFailure {
+            primaryError = it
+            Log.e("PlayerViewModel", "Errore server nativi ${provider.name}: ${it.message}")
+        }.getOrDefault(emptyList())
+
+        val fallbackServers = if (provider is IptvProvider) {
+            emptyList()
+        } else {
+            runCatching { WebSourceFallback.fallbackPlaceholders(provider.name) }
+                .onFailure { Log.w("PlayerViewModel", "Impossibile preparare fallback web: ${it.message}") }
+                .getOrDefault(emptyList())
+        }
+
+        val servers = (primaryServers + fallbackServers).distinctBy { it.id }
+        if (servers.isEmpty()) {
+            _state.emit(
+                State.FailedLoadingServers(
+                    (primaryError as? Exception) ?: Exception("No servers found")
+                )
+            )
+            return@launch
+        }
+
+        Log.i(
+            "StreamFlixES",
+            "[SERVERS LIST] -> Provider: ${provider.name}; nativi=${primaryServers.size}, fallback=${fallbackServers.size}",
+        )
+        Log.i("StreamFlixES", "[SERVERS LIST] -> Found ${servers.size} servers: ${servers.joinToString { it.name }}")
+
+        _state.emit(State.SuccessLoadingServers(servers))
     }
 
     fun getVideo(server: Video.Server) = viewModelScope.launch(Dispatchers.IO) {
         Log.d("PlayerViewModel", "Inizio estrazione video dal server: ${server.name}")
         _state.emit(State.LoadingVideo(server))
         try {
-            val video = UserPreferences.currentProvider!!.getVideo(server)
+            val provider = UserPreferences.currentProvider ?: throw Exception("Provider non disponibile")
+            val video = if (WebSourceFallback.isFallbackPlaceholder(server)) {
+                val type = lastVideoType ?: throw Exception("Contenuto non disponibile per il fallback")
+                WebSourceFallback.resolveFallbackVideo(server, type)
+            } else {
+                provider.getVideo(server)
+            }
             if (video.source.isEmpty()) throw Exception("No source found")
 
-            // LOGICA SOTTOTITOLI GLOBALE: 
-            // Se il provider non ha già impostato un default (es. i "forced" in spagnolo),
-            // allora proviamo ad attivare l'ultimo sottotitolo usato dall'utente.
-            // MA: se siamo su un provider spagnolo e non ci sono forced, non dobbiamo attivare nulla.
-            val currentProviderLang = UserPreferences.currentProvider?.language ?: ""
+            val currentProviderLang = provider.language
             val hasDefaultAlready = video.subtitles.any { it.default }
 
             if (!hasDefaultAlready && currentProviderLang != "es") {
@@ -134,7 +164,7 @@ class PlayerViewModel(
                     video.subtitles
                         .firstOrNull { it.label.startsWith(UserPreferences.subtitleName ?: "") }
                         ?.default = true
-		}
+                }
             }
 
             Log.d("PlayerViewModel", "Estrazione video completata con successo")
@@ -164,7 +194,7 @@ class PlayerViewModel(
                         OpenSubtitles.search(query = videoType.title)
                     }
                 }.sortedWith(compareBy({ it.languageName }, { it.subDownloadsCnt }))
-                
+
                 Log.d("PlayerViewModel", "Ricerca OpenSubtitles completata: ${subtitles.size} risultati")
                 _subtitleState.emit(SubtitleState.SuccessOpenSubtitles(subtitles))
             } catch (e: Exception) {
@@ -192,7 +222,7 @@ class PlayerViewModel(
                         )
                     }
                 }
-                
+
                 Log.d("PlayerViewModel", "Ricerca SubDL completata: ${subtitles.size} risultati")
                 _subtitleState.emit(SubtitleState.SuccessSubDLSubtitles(subtitles))
             } catch (e: Exception) {
@@ -224,7 +254,7 @@ class PlayerViewModel(
             _subtitleState.emit(SubtitleState.SuccessDownloadingSubDLSubtitle(subtitle, uri))
         } catch (e: Exception) {
             Log.e("PlayerViewModel", "Errore download SubDL: ", e)
-            _subtitleState.emit(SubtitleState.FailedDownloadingSubDLSubtitle(e, subtitle))
+            _subtitleState.emit(SubtitleState.FailedSubDLSubtitle(e, subtitle))
         }
     }
 
@@ -249,7 +279,7 @@ class PlayerViewModel(
         data class FailedSubDLSubtitles(val error: Exception) : SubtitleState()
         data object DownloadingSubDLSubtitle : SubtitleState()
         data class SuccessDownloadingSubDLSubtitle(val subtitle: SubDL.Subtitle, val uri: Uri) : SubtitleState()
-        data class FailedDownloadingSubDLSubtitle(val error: Exception, val subtitle: SubDL.Subtitle) : SubtitleState()
+        data class FailedSubDLSubtitle(val error: Exception, val subtitle: SubDL.Subtitle) : SubtitleState()
     }
     private var lastVideoType: Video.Type? = null
     private var lastId: String? = null
