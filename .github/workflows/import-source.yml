@@ -26,7 +26,10 @@ jobs:
 
       - name: Replace private repository contents
         run: |
-          rsync -a --delete --exclude='.git' /tmp/visionflix-source/ ./
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.github/workflows/' \
+            /tmp/visionflix-source/ ./
 
       - name: Commit imported project
         run: |
