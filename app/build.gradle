@@ -26,9 +26,10 @@ android {
 
     def properties = new Properties()
     properties.load(project.rootProject.file('local.properties').newDataInputStream())
+    def appLayout = properties.getProperty("APP_LAYOUT")
 
     defaultConfig {
-        applicationId "com.streamflixreborn.streamflix"
+        applicationId appLayout == "tv" ? "com.br174.visionflix.tv" : "com.streamflixreborn.streamflix"
         minSdk 21
         targetSdk 35
         versionCode 160
@@ -59,7 +60,6 @@ android {
 
     sourceSets {
         main {
-            def appLayout = properties.getProperty("APP_LAYOUT")
             if (appLayout == "mobile") {
                 manifest.srcFile "${project.rootDir}/app/src/main/mobile/AndroidManifest.xml"
             } else if (appLayout == "tv") {
@@ -115,9 +115,9 @@ dependencies {
 
     implementation 'androidx.media3:media3-exoplayer:1.8.0'
     implementation 'androidx.media3:media3-exoplayer-dash:1.8.0'
-    implementation 'androidx.media3:media3-exoplayer-hls:1.8.0'
     implementation 'androidx.media3:media3-session:1.8.0'
     implementation 'androidx.media3:media3-ui:1.8.0'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.8.0'
 
     implementation 'com.squareup.retrofit2:retrofit:2.11.0'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
