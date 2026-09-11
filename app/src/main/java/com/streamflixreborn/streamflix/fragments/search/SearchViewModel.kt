@@ -11,6 +11,7 @@ import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
 import com.streamflixreborn.streamflix.providers.TmdbProvider
+import com.streamflixreborn.streamflix.providers.WebSourceFallback
 import com.streamflixreborn.streamflix.utils.ParentalControlUtils
 import com.streamflixreborn.streamflix.utils.TMDb3
 import com.streamflixreborn.streamflix.utils.TMDb3.original
@@ -105,6 +106,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     var advancedFilters = AdvancedSearchFilters()
         private set
     private var page = 1
+    private var usingWebFallback = false
 
     init {
         search(query)
@@ -129,16 +131,53 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         _state.emit(State.Searching)
         try {
             val provider = UserPreferences.currentProvider!!
-            val results = if (filters.isActive && provider is TmdbProvider) {
-                searchTmdbAdvanced(provider, query, filters, targetPage)
-            } else {
-                provider.search(query, targetPage)
+            usingWebFallback = false
+
+            val primaryResult = runCatching {
+                if (filters.isActive && provider is TmdbProvider) {
+                    searchTmdbAdvanced(provider, query, filters, targetPage)
+                } else {
+                    provider.search(query, targetPage)
+                }
+            }
+
+            var results = primaryResult.getOrElse { error ->
+                if (query.isNotBlank() && provider !is IptvProvider && !filters.isActive) {
+                    Log.w("SearchViewModel", "Primary search failed, trying web fallback: ${error.message}")
+                    val fallback = WebSourceFallback.searchFallback(query, provider.name)
+                    if (fallback.isNotEmpty()) {
+                        usingWebFallback = true
+                        fallback
+                    } else {
+                        throw error
+                    }
+                } else {
+                    throw error
+                }
+            }
+
+            if (
+                results.isEmpty() &&
+                query.isNotBlank() &&
+                provider !is IptvProvider &&
+                !filters.isActive
+            ) {
+                val fallback = WebSourceFallback.searchFallback(query, provider.name)
+                if (fallback.isNotEmpty()) {
+                    results = fallback
+                    usingWebFallback = true
+                }
             }
 
             this@SearchViewModel.query = query
             page = targetPage
             val filtered = ParentalControlUtils.filterItems(results)
-            _state.emit(State.SuccessSearching(filtered, filtered.isNotEmpty()))
+            _state.emit(
+                State.SuccessSearching(
+                    filtered,
+                    hasMore = !usingWebFallback && filtered.isNotEmpty(),
+                )
+            )
         } catch (e: Exception) {
             Log.e("SearchViewModel", "executeSearch: ", e)
             _state.emit(State.FailedSearching(e))
@@ -148,6 +187,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     fun loadMore() = viewModelScope.launch(Dispatchers.IO) {
         val currentState = _state.value
         if (currentState is State.SuccessSearching) {
+            if (usingWebFallback) {
+                _state.emit(State.SuccessSearching(currentState.results, hasMore = false))
+                return@launch
+            }
+
             _state.emit(State.SearchingMore)
             try {
                 val provider = UserPreferences.currentProvider!!
@@ -201,9 +245,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val excludeItalian = filters.italian == AdvancedSearchFilters.ItalianFilter.NO
         val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
 
-        // When the user types text, search the title first and then apply all
-        // structured filters. This avoids missing a valid title simply because
-        // it was not present in the first page of a generic Discover response.
         if (query.isNotBlank()) {
             val searchResults = TMDb3.Search.multi(
                 query = query,
