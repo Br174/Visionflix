@@ -3,8 +3,10 @@ package com.streamflixreborn.streamflix.fragments.search
 import android.content.Context
 import android.widget.ArrayAdapter
 import android.widget.Spinner
+import com.streamflixreborn.streamflix.BuildConfig
 import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
+import com.streamflixreborn.streamflix.utils.UserPreferences
 
 internal object AdvancedSearchUi {
     private val years = (2026 downTo 1900).toList()
@@ -50,7 +52,7 @@ internal object AdvancedSearchUi {
 
         val hasRange = selectedFrom != null || selectedTo != null
 
-        return AdvancedSearchFilters(
+        val filters = AdvancedSearchFilters(
             type = when (contentType.selectedItemPosition) {
                 1 -> AdvancedSearchFilters.ContentType.MOVIE
                 2 -> AdvancedSearchFilters.ContentType.TV
@@ -66,6 +68,14 @@ internal object AdvancedSearchUi {
             dateFrom = selectedFrom?.let { "%04d-01-01".format(it) },
             dateTo = selectedTo?.let { "%04d-12-31".format(it) },
         )
+
+        if (filters.isActive && !hasUsableTmdbKey()) {
+            throw IllegalArgumentException(
+                "Per usare i filtri inserisci una chiave TMDb valida in Impostazioni → Contenuti → Chiave API TMDb"
+            )
+        }
+
+        return filters
     }
 
     fun reset(
@@ -91,4 +101,10 @@ internal object AdvancedSearchUi {
     private fun selectedYear(spinner: Spinner): Int? = spinner.selectedItemPosition
         .takeIf { it > 0 }
         ?.let { years[it - 1] }
+
+    private fun hasUsableTmdbKey(): Boolean {
+        if (UserPreferences.tmdbApiKey.isNotBlank()) return true
+        val embedded = BuildConfig.TMDB_API_KEY.trim()
+        return embedded.isNotBlank() && !embedded.equals("dummy", ignoreCase = true)
+    }
 }
