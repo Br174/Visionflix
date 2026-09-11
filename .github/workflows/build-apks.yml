@@ -31,6 +31,22 @@ jobs:
           path: ~/.android/debug.keystore
           key: visionflix-debug-keystore-v1
 
+      - name: Ensure stable debug signing key exists
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10950
+          fi
+          test -f "$HOME/.android/debug.keystore"
+
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
