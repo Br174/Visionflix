@@ -6,8 +6,8 @@ data class AdvancedSearchFilters(
     val type: ContentType = ContentType.ALL,
     val italian: ItalianFilter = ItalianFilter.ALL,
     val year: Int? = null,
-    val dateFrom: Int? = null,
-    val dateTo: Int? = null,
+    val dateFrom: String? = null,
+    val dateTo: String? = null,
 ) {
     enum class ContentType { ALL, MOVIE, TV, CARTOON }
     enum class ItalianFilter { ALL, YES, NO }
@@ -16,8 +16,8 @@ data class AdvancedSearchFilters(
         get() = type != ContentType.ALL ||
             italian != ItalianFilter.ALL ||
             year != null ||
-            dateFrom != null ||
-            dateTo != null
+            !dateFrom.isNullOrBlank() ||
+            !dateTo.isNullOrBlank()
 }
 
 interface AdvancedSearchProvider {
