@@ -19,7 +19,6 @@ import com.streamflixreborn.streamflix.utils.UserPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -202,6 +201,59 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val excludeItalian = filters.italian == AdvancedSearchFilters.ItalianFilter.NO
         val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
 
+        // When the user types text, search the title first and then apply all
+        // structured filters. This avoids missing a valid title simply because
+        // it was not present in the first page of a generic Discover response.
+        if (query.isNotBlank()) {
+            val searchResults = TMDb3.Search.multi(
+                query = query,
+                page = page,
+                language = language,
+            ).results
+
+            return@coroutineScope searchResults.mapNotNull { multi ->
+                when (multi) {
+                    is TMDb3.Movie -> {
+                        if (!includeMovies) return@mapNotNull null
+                        if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
+                        if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
+                        if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
+                        if (!matchesYearFilter(multi.releaseDate, filters)) return@mapNotNull null
+
+                        Movie(
+                            id = multi.id.toString(),
+                            title = multi.title,
+                            overview = multi.overview,
+                            released = multi.releaseDate,
+                            rating = multi.voteAverage.toDouble(),
+                            poster = multi.posterPath?.w500,
+                            banner = multi.backdropPath?.original,
+                        ) as AppAdapter.Item
+                    }
+
+                    is TMDb3.Tv -> {
+                        if (!includeTv) return@mapNotNull null
+                        if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
+                        if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
+                        if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
+                        if (!matchesYearFilter(multi.firstAirDate, filters)) return@mapNotNull null
+
+                        TvShow(
+                            id = multi.id.toString(),
+                            title = multi.name,
+                            overview = multi.overview,
+                            released = multi.firstAirDate,
+                            rating = multi.voteAverage.toDouble(),
+                            poster = multi.posterPath?.w500,
+                            banner = multi.backdropPath?.original,
+                        ) as AppAdapter.Item
+                    }
+
+                    else -> null
+                }
+            }
+        }
+
         val movieDeferred = if (includeMovies) async {
             val params = mutableMapOf(
                 "language" to language,
@@ -235,7 +287,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
-            .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) || it.originalTitle.contains(query, ignoreCase = true) }
             .map { movie ->
                 Movie(
                     id = movie.id.toString(),
@@ -252,7 +303,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val tvItems = tvDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
-            .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) || it.originalName.contains(query, ignoreCase = true) }
             .map { tv ->
                 TvShow(
                     id = tv.id.toString(),
@@ -273,6 +323,23 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 else -> 0.0
             }
         }
+    }
+
+    private fun matchesYearFilter(
+        date: String?,
+        filters: AdvancedSearchFilters,
+    ): Boolean {
+        val selectedYear = filters.year
+        val fromYear = filters.dateFrom?.take(4)?.toIntOrNull()
+        val toYear = filters.dateTo?.take(4)?.toIntOrNull()
+        val hasYearFilter = selectedYear != null || fromYear != null || toYear != null
+
+        if (!hasYearFilter) return true
+        val itemYear = date?.take(4)?.toIntOrNull() ?: return false
+
+        return (selectedYear == null || itemYear == selectedYear) &&
+            (fromYear == null || itemYear >= fromYear) &&
+            (toYear == null || itemYear <= toYear)
     }
 
     fun searchGlobal(query: String, currentLanguage: String) = viewModelScope.launch(Dispatchers.IO) {
