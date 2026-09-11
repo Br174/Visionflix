@@ -5,9 +5,15 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.FragmentManager
+import androidx.preference.PreferenceFragmentCompat
 import java.security.Security
 import org.conscrypt.Conscrypt
 import com.streamflixreborn.streamflix.database.AppDatabase
+import com.streamflixreborn.streamflix.fragments.settings.SourceSettingsInjector
 import com.streamflixreborn.streamflix.providers.AniWorldProvider
 import com.streamflixreborn.streamflix.providers.SerienStreamProvider
 import com.streamflixreborn.streamflix.sync.CloudSyncManager
@@ -43,7 +49,28 @@ class StreamFlixApp : Application() {
         super.onCreate()
         instance = this
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                if (activity is FragmentActivity) {
+                    activity.supportFragmentManager.registerFragmentLifecycleCallbacks(
+                        object : FragmentManager.FragmentLifecycleCallbacks() {
+                            override fun onFragmentViewCreated(
+                                fm: FragmentManager,
+                                f: Fragment,
+                                v: View,
+                                savedInstanceState: Bundle?,
+                            ) {
+                                if (f is PreferenceFragmentCompat &&
+                                    (f.javaClass.simpleName == "SettingsMobileFragment" ||
+                                        f.javaClass.simpleName == "SettingsTvFragment")
+                                ) {
+                                    SourceSettingsInjector.install(f)
+                                }
+                            }
+                        },
+                        true,
+                    )
+                }
+            }
 
             override fun onActivityStarted(activity: Activity) = Unit
 
