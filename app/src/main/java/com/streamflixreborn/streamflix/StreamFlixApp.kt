@@ -9,6 +9,7 @@ import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
+import androidx.leanback.preference.LeanbackPreferenceFragmentCompat
 import androidx.preference.PreferenceFragmentCompat
 import java.security.Security
 import org.conscrypt.Conscrypt
@@ -59,11 +60,16 @@ class StreamFlixApp : Application() {
                                 v: View,
                                 savedInstanceState: Bundle?,
                             ) {
-                                if (f is PreferenceFragmentCompat &&
-                                    (f.javaClass.simpleName == "SettingsMobileFragment" ||
-                                        f.javaClass.simpleName == "SettingsTvFragment")
-                                ) {
-                                    SourceSettingsInjector.install(f)
+                                when {
+                                    f is PreferenceFragmentCompat &&
+                                        f.javaClass.simpleName == "SettingsMobileFragment" -> {
+                                        SourceSettingsInjector.install(f)
+                                    }
+
+                                    f is LeanbackPreferenceFragmentCompat &&
+                                        f.javaClass.simpleName == "SettingsTvFragment" -> {
+                                        SourceSettingsInjector.install(f)
+                                    }
                                 }
                             }
                         },
