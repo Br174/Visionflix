@@ -2,8 +2,10 @@ package com.streamflixreborn.streamflix.providers
 
 import android.util.Base64
 import android.util.Log
+import com.streamflixreborn.streamflix.StreamFlixApp
 import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.models.*
+import com.streamflixreborn.streamflix.utils.SourcePreferences
 import okhttp3.*
 import java.util.concurrent.TimeUnit
 
@@ -45,6 +47,7 @@ object IptvOrgProvider : IptvProvider {
         .build()
 
     private var cachedChannels: List<M3UChannel>? = null
+    private var cachedSourceSignature: String = ""
     private var lastFetchTime: Long = 0
     private const val CACHE_DURATION = 30 * 60 * 1000
 
@@ -82,20 +85,47 @@ object IptvOrgProvider : IptvProvider {
     }
 
     private fun getAllChannels(): List<M3UChannel> {
+        val sources = SourcePreferences.get(
+            StreamFlixApp.instance,
+            SourcePreferences.SourceType.IPTV,
+        )
+        val signature = sources.joinToString("\n")
         val now = System.currentTimeMillis()
-        if (cachedChannels != null && (now - lastFetchTime) < CACHE_DURATION) return cachedChannels!!
 
-        return try {
-            val request = Request.Builder().url("$baseUrl/index.m3u").build()
-            val body = client.newCall(request).execute().body?.string() ?: return emptyList()
-            val channels = parseM3U(body)
-            cachedChannels = channels
-            lastFetchTime = now
-            channels
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error M3U: ${e.message}")
-            cachedChannels ?: emptyList()
+        if (
+            cachedChannels != null &&
+            signature == cachedSourceSignature &&
+            (now - lastFetchTime) < CACHE_DURATION
+        ) {
+            return cachedChannels!!
         }
+
+        val channels = mutableListOf<M3UChannel>()
+        sources.forEach { source ->
+            try {
+                val request = Request.Builder().url(source).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "Playlist non disponibile: $source (${response.code})")
+                        return@use
+                    }
+                    val body = response.body?.string().orEmpty()
+                    if (body.isBlank()) return@use
+                    channels.addAll(parseM3U(body))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Errore playlist $source: ${e.message}")
+            }
+        }
+
+        val merged = channels.distinctBy { "${it.url}|${it.name}" }
+        if (merged.isNotEmpty() || sources.isEmpty()) {
+            cachedChannels = merged
+            cachedSourceSignature = signature
+            lastFetchTime = now
+        }
+
+        return if (merged.isNotEmpty()) merged else cachedChannels.orEmpty()
     }
 
     override suspend fun getHome(): List<Category> {
@@ -103,7 +133,6 @@ object IptvOrgProvider : IptvProvider {
         val homeGroups = listOf("Animation", "Comedy", "Series", "Entertainment", "News", "Movies", "Sports")
         val categories = mutableListOf<Category>()
 
-        // 1. Procesamos categorías de canales primero
         val channelCategories = channels
             .filter { it.group != null && homeGroups.any { target -> it.group!!.contains(target, ignoreCase = true) } }
             .groupBy { channel ->
@@ -125,7 +154,6 @@ object IptvOrgProvider : IptvProvider {
 
         categories.addAll(channelCategories)
 
-        // 2. AÑADIMOS SOPORTE ÚNICAMENTE AL FINAL (PARTE ULTIMA)
         categories.add(
             Category(
                 name = "Soporte y Ayuda",
@@ -185,7 +213,7 @@ object IptvOrgProvider : IptvProvider {
             title = name,
             poster = logo,
             banner = logo,
-            overview = "Canal: $name\nFuente: IPTV-Org",
+            overview = "Canal: $name\nFonte: sorgenti IPTV configurate",
             seasons = listOf(Season(id = id, number = 1, title = "En Vivo"))
         )
     }
@@ -204,7 +232,8 @@ object IptvOrgProvider : IptvProvider {
         val (url, _, _) = decodeId(server.id)
         val customUA = getUAFromId(server.id)
         Log.d(TAG, "🎬 Play: $url | UA: $customUA")
-        return Video(source = url, subtitles = emptyList())
+        val headers = customUA?.let { mapOf("User-Agent" to it) }
+        return Video(source = url, subtitles = emptyList(), headers = headers)
     }
 
     private fun getInfoItem(id: String): TvShow {
