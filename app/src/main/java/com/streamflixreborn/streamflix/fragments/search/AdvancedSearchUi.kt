@@ -63,8 +63,8 @@ internal object AdvancedSearchUi {
                 else -> AdvancedSearchFilters.ItalianFilter.ALL
             },
             year = if (hasRange) null else selectedYear,
-            dateFrom = selectedFrom,
-            dateTo = selectedTo,
+            dateFrom = selectedFrom?.let { "%04d-01-01".format(it) },
+            dateTo = selectedTo?.let { "%04d-12-31".format(it) },
         )
     }
 
