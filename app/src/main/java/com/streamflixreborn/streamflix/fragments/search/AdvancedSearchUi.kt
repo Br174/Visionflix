@@ -3,6 +3,7 @@ package com.streamflixreborn.streamflix.fragments.search
 import android.content.Context
 import android.widget.ArrayAdapter
 import android.widget.Spinner
+import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 
 internal object AdvancedSearchUi {
@@ -13,8 +14,6 @@ internal object AdvancedSearchUi {
         contentType: Spinner,
         italian: Spinner,
         year: Spinner,
-        yearFrom: Spinner,
-        yearTo: Spinner,
     ) {
         contentType.adapter = ArrayAdapter(
             context,
@@ -26,21 +25,12 @@ internal object AdvancedSearchUi {
             android.R.layout.simple_spinner_dropdown_item,
             listOf("Italiani: tutti", "Italiani: sì", "Italiani: no"),
         )
-        year.adapter = ArrayAdapter(
-            context,
-            android.R.layout.simple_spinner_dropdown_item,
-            listOf("Anno: tutti") + years.map { it.toString() },
-        )
-        yearFrom.adapter = ArrayAdapter(
-            context,
-            android.R.layout.simple_spinner_dropdown_item,
-            listOf("Dal: tutti") + years.map { it.toString() },
-        )
-        yearTo.adapter = ArrayAdapter(
-            context,
-            android.R.layout.simple_spinner_dropdown_item,
-            listOf("Al: tutti") + years.map { it.toString() },
-        )
+        year.adapter = yearAdapter(context, "Anno: tutti")
+
+        year.rootView.findViewById<Spinner>(R.id.et_date_from)?.adapter =
+            yearAdapter(context, "Dal: tutti")
+        year.rootView.findViewById<Spinner>(R.id.et_date_to)?.adapter =
+            yearAdapter(context, "Al: tutti")
     }
 
     fun read(
@@ -91,6 +81,12 @@ internal object AdvancedSearchUi {
         yearFrom.setSelection(0)
         yearTo.setSelection(0)
     }
+
+    private fun yearAdapter(context: Context, firstItem: String): ArrayAdapter<String> = ArrayAdapter(
+        context,
+        android.R.layout.simple_spinner_dropdown_item,
+        listOf(firstItem) + years.map { it.toString() },
+    )
 
     private fun selectedYear(spinner: Spinner): Int? = spinner.selectedItemPosition
         .takeIf { it > 0 }
