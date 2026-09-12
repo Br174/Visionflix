@@ -32,26 +32,20 @@ jobs:
           echo "APP_VERSION_NAME=1.7.$((202 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - name: Restore stable debug signing key
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.android/debug.keystore
           key: visionflix-debug-keystore-v1
+          fail-on-cache-miss: true
 
-      - name: Ensure stable debug signing key exists
+      - name: Pin the existing signing key and check its public certificate
+        shell: bash
         run: |
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10950
-          fi
+          set -euo pipefail
           test -f "$HOME/.android/debug.keystore"
+          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
+          echo "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der" | sha256sum --check -
+          echo "VISIONFLIX_SIGNING_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
@@ -84,11 +78,13 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk | tee /tmp/signature-info.txt
+          grep -F "Signer #1 certificate SHA-256 digest: 55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e" /tmp/signature-info.txt
           "$BUILD_TOOLS/aapt" dump badging /tmp/Visionflix_BV_TV.apk > /tmp/apk-info.txt
           grep -F "package: name='com.br174.visionflix.tv.debug'" /tmp/apk-info.txt
           grep -F "com.streamflixreborn.streamflix.activities.main.MainTvActivity" /tmp/apk-info.txt
           grep -F "versionCode='$APP_VERSION_CODE'" /tmp/apk-info.txt
+          grep -F "application-label:'Verlezza Vision'" /tmp/apk-info.txt
           sha256sum /tmp/Visionflix_BV_TV.apk | sed 's#/tmp/##' > /tmp/SHA256SUMS.txt
 
       - name: Upload APKs artifact
@@ -131,6 +127,8 @@ jobs:
 
           Questo asset alimenta il collegamento stabile registrato nel codice Downloader 3875230.
           Il nome pubblico dell'asset resta Visionflix_BV_TV.apk per mantenere invariato il codice Downloader.
+
+          Firma stabilizzata dal build 167. Le precedenti build usavano chiavi temporanee diverse: questo APK non può aggiornare direttamente quelle installazioni. La rimozione della vecchia app può cancellarne i dati; salvare prima le impostazioni.
           EOF
 
           gh release create "$TAG" \
