@@ -21,6 +21,7 @@ import com.streamflixreborn.streamflix.utils.UserPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +54,8 @@ data class ProviderResult(
 class SearchViewModel(database: AppDatabase) : ViewModel() {
 
     private val _state = MutableStateFlow<State>(State.Searching)
+    private val _actorSuggestions = MutableStateFlow<List<People>>(emptyList())
+    val actorSuggestions: Flow<List<People>> = _actorSuggestions
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val state: Flow<State> = combine(
@@ -123,102 +126,74 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         advancedFilters = AdvancedSearchFilters()
         selectedActorId = null
         selectedActorName = ""
+        _actorSuggestions.value = emptyList()
         executeSearch(query, advancedFilters, 1)
     }
 
     fun searchAdvanced(query: String, filters: AdvancedSearchFilters) =
         viewModelScope.launch(Dispatchers.IO) {
             advancedFilters = normalizeFilters(filters)
-            selectedActorId = null
-            selectedActorName = ""
+            selectedActorId = advancedFilters.actorId
+            selectedActorName = advancedFilters.actorName
+            _actorSuggestions.value = emptyList()
             executeSearch(query, advancedFilters, 1)
         }
 
-    /**
-     * Live actor suggestions. TMDb multi-search already returns Person items, so this
-     * keeps the implementation lightweight and uses the same API key/service as the
-     * rest of the TMDb integration.
-     */
+    fun selectActorFilter(actorId: String, actorName: String) {
+        selectedActorId = actorId
+        selectedActorName = actorName
+        _actorSuggestions.value = emptyList()
+    }
+
+    fun clearActorSelection() {
+        selectedActorId = null
+        selectedActorName = ""
+        _actorSuggestions.value = emptyList()
+    }
+
+    fun clearActorSuggestions() {
+        _actorSuggestions.value = emptyList()
+    }
+
     fun searchActors(actorQuery: String) = viewModelScope.launch(Dispatchers.IO) {
         val cleanQuery = actorQuery.trim()
         if (cleanQuery.length < 2) {
-            selectedActorId = null
-            selectedActorName = cleanQuery
-            _state.emit(State.SuccessSearching(emptyList(), hasMore = false))
+            _actorSuggestions.value = emptyList()
             return@launch
         }
 
-        _state.emit(State.Searching)
         try {
-            advancedFilters = AdvancedSearchFilters()
-            usingWebFallback = false
-            selectedActorId = null
-            selectedActorName = cleanQuery
-            query = ""
-            page = 1
-
             val language = UserPreferences.currentProvider?.language
                 ?.takeIf { it.isNotBlank() }
                 ?: "it"
 
-            val people = TMDb3.Search.multi(
+            _actorSuggestions.value = TMDb3.Search.multi(
                 query = cleanQuery,
                 page = 1,
                 language = language,
             ).results
                 .filterIsInstance<TMDb3.Person>()
                 .sortedByDescending { it.popularity }
+                .distinctBy { it.id }
+                .take(12)
                 .map { person ->
                     People(
                         id = person.id.toString(),
                         name = person.name,
                         image = person.profilePath?.w500,
-                    ) as AppAdapter.Item
+                    )
                 }
-
-            _state.emit(State.SuccessSearching(people, hasMore = false))
         } catch (e: Exception) {
             Log.e("SearchViewModel", "searchActors: ", e)
-            _state.emit(State.FailedSearching(e))
+            _actorSuggestions.value = emptyList()
         }
     }
 
-    /**
-     * After the user picks an actor, replace the suggestion portraits with that
-     * person's movie/TV filmography. This reuses TmdbProvider.getPeople(), which
-     * already requests combined credits and maps them to normal app cards.
-     */
     fun searchByActor(actorId: String, actorName: String) =
-        viewModelScope.launch(Dispatchers.IO) {
-            _state.emit(State.Searching)
-            try {
-                advancedFilters = AdvancedSearchFilters()
-                usingWebFallback = false
-                selectedActorId = actorId
-                selectedActorName = actorName
-                query = ""
-                page = 1
-
-                val language = UserPreferences.currentProvider?.language
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "it"
-                val provider = TmdbProvider(language)
-                UserPreferences.currentProvider = provider
-
-                val people = provider.getPeople(actorId, page = 1)
-                val filmography = people.filmography.onEach { item ->
-                    when (item) {
-                        is Movie -> item.providerName = provider.name
-                        is TvShow -> item.providerName = provider.name
-                    }
-                }
-                val filtered = ParentalControlUtils.filterItems(filmography)
-                _state.emit(State.SuccessSearching(filtered, hasMore = false))
-            } catch (e: Exception) {
-                Log.e("SearchViewModel", "searchByActor: ", e)
-                _state.emit(State.FailedSearching(e))
-            }
-        }
+        searchAdvanced(
+            query,
+            advancedFilters.copy(actorId = actorId, actorName = actorName),
+        )
 
     private suspend fun executeSearch(
         query: String,
@@ -231,7 +206,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             usingWebFallback = false
 
             val primaryResult = runCatching {
-                if (filters.isActive && provider is TmdbProvider) {
+                if (provider is TmdbProvider && (filters.isActive || query.isNotBlank())) {
                     searchTmdbAdvanced(provider, query, filters, targetPage)
                 } else {
                     provider.search(query, targetPage)
@@ -284,7 +259,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     fun loadMore() = viewModelScope.launch(Dispatchers.IO) {
         val currentState = _state.value
         if (currentState is State.SuccessSearching) {
-            if (selectedActorId != null || usingWebFallback) {
+            if (usingWebFallback) {
                 _state.emit(State.SuccessSearching(currentState.results, hasMore = false))
                 return@launch
             }
@@ -293,7 +268,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             try {
                 val provider = UserPreferences.currentProvider!!
                 val nextPage = page + 1
-                val results = if (advancedFilters.isActive && provider is TmdbProvider) {
+                val results = if (provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank())) {
                     searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
                 } else {
                     provider.search(query, nextPage)
@@ -341,13 +316,30 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val italianOnly = filters.italian == AdvancedSearchFilters.ItalianFilter.YES
         val excludeItalian = filters.italian == AdvancedSearchFilters.ItalianFilter.NO
         val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
+        val selectedGenre = filters.genre
+        val actorId = filters.actorId?.takeIf { it.isNotBlank() }
 
         if (query.isNotBlank()) {
-            val searchResults = TMDb3.Search.multi(
-                query = query,
-                page = page,
-                language = language,
-            ).results
+            val firstTmdbPage = ((page - 1) * 3) + 1
+            val searchDeferred = (firstTmdbPage..firstTmdbPage + 2).map { tmdbPage ->
+                async {
+                    TMDb3.Search.multi(
+                        query = query,
+                        page = tmdbPage,
+                        language = language,
+                    ).results
+                }
+            }
+
+            val actorCreditsDeferred = actorId?.let { id ->
+                async { provider.getPeople(id, page = 1).filmography }
+            }
+
+            val searchResults = searchDeferred.awaitAll().flatten()
+            val actorCredits = actorCreditsDeferred?.await().orEmpty()
+            val actorMovieIds = actorCredits.filterIsInstance<Movie>().mapTo(hashSetOf()) { it.id }
+            val actorTvIds = actorCredits.filterIsInstance<TvShow>().mapTo(hashSetOf()) { it.id }
+            val restrictToActor = actorId != null
 
             return@coroutineScope searchResults.mapNotNull { multi ->
                 when (multi) {
@@ -356,6 +348,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
                         if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
                         if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
+                        if (selectedGenre != AdvancedSearchFilters.GenreFilter.ALL) {
+                            val genreId = selectedGenre.movieId ?: return@mapNotNull null
+                            if (genreId !in multi.genresIds) return@mapNotNull null
+                        }
+                        if (restrictToActor && multi.id.toString() !in actorMovieIds) return@mapNotNull null
                         if (!matchesYearFilter(multi.releaseDate, filters)) return@mapNotNull null
 
                         Movie(
@@ -374,6 +371,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
                         if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
                         if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
+                        if (selectedGenre != AdvancedSearchFilters.GenreFilter.ALL) {
+                            val genreId = selectedGenre.tvId ?: return@mapNotNull null
+                            if (genreId !in multi.genresIds) return@mapNotNull null
+                        }
+                        if (restrictToActor && multi.id.toString() !in actorTvIds) return@mapNotNull null
                         if (!matchesYearFilter(multi.firstAirDate, filters)) return@mapNotNull null
 
                         TvShow(
@@ -389,7 +391,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
                     else -> null
                 }
-            }
+            }.distinctBy { it.searchIdentityKey() }
         }
 
         val movieDeferred = if (includeMovies) async {
@@ -400,7 +402,14 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 "include_adult" to "false",
             )
             if (italianOnly) params["with_original_language"] = "it"
-            if (cartoonOnly) params["with_genres"] = "16"
+            actorId?.let { params["with_cast"] = it }
+
+            val genreIds = buildList {
+                if (cartoonOnly) add(16)
+                selectedGenre.movieId?.let { add(it) }
+            }.distinct()
+            if (genreIds.isNotEmpty()) params["with_genres"] = genreIds.joinToString(",")
+
             filters.year?.let { params["primary_release_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.lte"] = it }
@@ -415,7 +424,14 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 "include_adult" to "false",
             )
             if (italianOnly) params["with_original_language"] = "it"
-            if (cartoonOnly) params["with_genres"] = "16"
+            actorId?.let { params["with_cast"] = it }
+
+            val genreIds = buildList {
+                if (cartoonOnly) add(16)
+                selectedGenre.tvId?.let { add(it) }
+            }.distinct()
+            if (genreIds.isNotEmpty()) params["with_genres"] = genreIds.joinToString(",")
+
             filters.year?.let { params["first_air_date_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["first_air_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["first_air_date.lte"] = it }
@@ -454,13 +470,15 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             }
             .toList()
 
-        (movieItems + tvItems).sortedByDescending {
-            when (it) {
-                is Movie -> it.rating
-                is TvShow -> it.rating
-                else -> 0.0
+        (movieItems + tvItems)
+            .distinctBy { it.searchIdentityKey() }
+            .sortedByDescending {
+                when (it) {
+                    is Movie -> it.rating
+                    is TvShow -> it.rating
+                    else -> 0.0
+                }
             }
-        }
     }
 
     private fun matchesYearFilter(
@@ -483,6 +501,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     fun searchGlobal(query: String, currentLanguage: String) = viewModelScope.launch(Dispatchers.IO) {
         selectedActorId = null
         selectedActorName = ""
+        _actorSuggestions.value = emptyList()
         _state.emit(State.GlobalSearching)
 
         val isCurrentProviderIptv = UserPreferences.currentProvider is IptvProvider
