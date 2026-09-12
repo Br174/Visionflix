@@ -3,7 +3,6 @@ package com.streamflixreborn.streamflix.activities.main
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -79,7 +78,8 @@ class MainTvActivity : FragmentActivity() {
             .findFragmentById(binding.navMainFragment.id) as NavHostFragment
         val navController = navHostFragment.navController
 
-        // Nessun overscan/padding artificiale: il contenuto usa l'intero pannello TV.
+        // Manteniamo il pannello TV esterno a pieno schermo, senza reintrodurre overscan.
+        // La navigazione interna torna invece al comportamento originale a scorrimento.
         adjustLayoutDelta(0, 0)
 
         if (
@@ -122,15 +122,14 @@ class MainTvActivity : FragmentActivity() {
                 header.tvNavigationHeaderTitle.setTextColor(palette.tvHeaderPrimary)
                 header.tvNavigationHeaderSubtitle.setTextColor(palette.tvHeaderSecondary)
 
-                // Quando il menu è chiuso non deve esistere una fascia laterale opaca.
-                setBackgroundColor(Color.TRANSPARENT)
+                // Comportamento originale: pannello opaco; aprendosi allarga la colonna
+                // di navigazione e sposta/riduce il contenuto principale verso destra.
+                setBackgroundColor(palette.tvNavBackground)
                 setOnOpenListener {
-                    setBackgroundColor(palette.tvNavBackground)
                     header.tvNavigationHeaderTitle.visibility = View.VISIBLE
                     header.tvNavigationHeaderSubtitle.visibility = View.VISIBLE
                 }
                 setOnCloseListener {
-                    setBackgroundColor(Color.TRANSPARENT)
                     header.tvNavigationHeaderTitle.visibility = View.GONE
                     header.tvNavigationHeaderSubtitle.visibility = View.GONE
                 }
@@ -237,10 +236,10 @@ class MainTvActivity : FragmentActivity() {
         window.statusBarColor = palette.systemBar
         window.navigationBarColor = palette.systemBar
 
-        // Il menu TV resta sovrapposto al contenuto, senza creare una colonna laterale.
-        binding.navMain.setBackgroundColor(Color.TRANSPARENT)
+        // Ripristina l'aspetto originale del pannello laterale TV.
+        binding.navMain.setBackgroundColor(palette.tvNavBackground)
         binding.navMain.headerView?.let { headerView ->
-            headerView.setBackgroundColor(Color.TRANSPARENT)
+            headerView.setBackgroundColor(palette.tvNavBackground)
             val header = ContentHeaderMenuMainTvBinding.bind(headerView)
             header.tvNavigationHeaderTitle.setTextColor(palette.tvHeaderPrimary)
             header.tvNavigationHeaderSubtitle.setTextColor(palette.tvHeaderSecondary)
@@ -262,7 +261,7 @@ class MainTvActivity : FragmentActivity() {
 
     fun adjustLayoutDelta(deltaX: Int?, deltaY: Int?) {
         // I parametri restano per compatibilità con le impostazioni già salvate,
-        // ma non devono più ridurre il canvas TV.
+        // ma non devono ridurre il canvas esterno della TV.
         binding.root.setPadding(0, 0, 0, 0)
         binding.navMainFragment.setPadding(0, 0, 0, 0)
     }
