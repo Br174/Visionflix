@@ -6,11 +6,6 @@
     android:layout_height="match_parent"
     tools:context=".fragments.search.SearchTvFragment">
 
-    <!--
-        The grid now occupies the whole screen. Its top padding is adjusted at runtime
-        to the real height of search_header, so posters start below the controls and
-        then scroll upward together with the header instead of being clipped by it.
-    -->
     <androidx.leanback.widget.VerticalGridView
         android:id="@+id/vgv_search"
         android:layout_width="0dp"
@@ -153,139 +148,200 @@
             android:id="@+id/ll_advanced_filters"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_filter_panel_tv"
             android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:paddingTop="4dp"
-            android:paddingEnd="8dp"
-            android:paddingBottom="4dp">
+            android:paddingStart="18dp"
+            android:paddingTop="16dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="14dp">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Filtri avanzati"
                 android:textColor="@android:color/white"
-                android:textSize="16sp"
+                android:textSize="18sp"
                 android:textStyle="bold" />
 
-            <!-- Compact widths keep every spinner arrow visually next to its value. -->
-            <LinearLayout
+            <TextView
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:gravity="start|center_vertical"
-                android:orientation="horizontal">
-
-                <Spinner
-                    android:id="@+id/sp_content_type"
-                    android:layout_width="150dp"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="10dp"
-                    android:focusable="true"
-                    android:nextFocusDown="@id/et_date_from"
-                    android:spinnerMode="dropdown" />
-
-                <Spinner
-                    android:id="@+id/sp_italian"
-                    android:layout_width="190dp"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="10dp"
-                    android:focusable="true"
-                    android:nextFocusDown="@id/et_date_to"
-                    android:spinnerMode="dropdown" />
-
-                <Spinner
-                    android:id="@+id/sp_year"
-                    android:layout_width="140dp"
-                    android:layout_height="48dp"
-                    android:focusable="true"
-                    android:nextFocusDown="@id/et_actor_search"
-                    android:spinnerMode="dropdown" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:gravity="start|center_vertical"
-                android:orientation="horizontal">
-
-                <Spinner
-                    android:id="@+id/et_date_from"
-                    android:layout_width="160dp"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="10dp"
-                    android:focusable="true"
-                    android:nextFocusDown="@id/btn_actor_mode"
-                    android:spinnerMode="dropdown" />
-
-                <Spinner
-                    android:id="@+id/et_date_to"
-                    android:layout_width="160dp"
-                    android:layout_height="48dp"
-                    android:focusable="true"
-                    android:nextFocusDown="@id/et_actor_search"
-                    android:spinnerMode="dropdown" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:gravity="center_vertical"
+                android:text="Combina liberamente i criteri: vengono applicati tutti insieme."
+                android:textColor="#A9B2C2"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="start|center_vertical"
                 android:orientation="horizontal">
 
-                <Button
-                    android:id="@+id/btn_actor_mode"
-                    android:layout_width="120dp"
-                    android:layout_height="48dp"
-                    android:focusable="true"
-                    android:nextFocusRight="@id/et_actor_search"
-                    android:nextFocusDown="@id/btn_reset_filters"
-                    android:text="Attore" />
+                <LinearLayout
+                    android:layout_width="138dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="12dp"
+                    android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="4dp" android:text="Tipo" android:textColor="#A9B2C2" android:textSize="12sp" />
+                    <FrameLayout android:layout_width="match_parent" android:layout_height="44dp" android:addStatesFromChildren="true" android:background="@drawable/bg_filter_control_tv">
+                        <Spinner android:id="@+id/sp_content_type" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@android:color/transparent" android:focusable="true" android:nextFocusRight="@id/sp_italian" android:nextFocusDown="@id/et_date_from" android:paddingEnd="34dp" android:spinnerMode="dropdown" />
+                        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="end|center_vertical" android:layout_marginEnd="10dp" android:duplicateParentState="true" android:src="@drawable/ic_filter_chevron_down" tools:ignore="ContentDescription" />
+                    </FrameLayout>
+                </LinearLayout>
 
-                <androidx.leanback.widget.SearchEditText
-                    android:id="@+id/et_actor_search"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="10dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_search_edittext"
-                    android:focusable="true"
-                    android:focusableInTouchMode="true"
-                    android:hint="Scrivi il nome dell'attore..."
-                    android:imeOptions="actionSearch"
-                    android:inputType="textPersonName"
-                    android:maxLines="1"
-                    android:nextFocusLeft="@id/btn_actor_mode"
-                    android:nextFocusDown="@id/btn_apply_filters"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:textColor="@android:color/white"
-                    android:textColorHint="#B3FFFFFF"
-                    android:textSize="16sp" />
+                <LinearLayout
+                    android:layout_width="120dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="12dp"
+                    android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="4dp" android:text="Italiano" android:textColor="#A9B2C2" android:textSize="12sp" />
+                    <FrameLayout android:layout_width="match_parent" android:layout_height="44dp" android:addStatesFromChildren="true" android:background="@drawable/bg_filter_control_tv">
+                        <Spinner android:id="@+id/sp_italian" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@android:color/transparent" android:focusable="true" android:nextFocusLeft="@id/sp_content_type" android:nextFocusRight="@id/sp_year" android:nextFocusDown="@id/et_date_to" android:paddingEnd="34dp" android:spinnerMode="dropdown" />
+                        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="end|center_vertical" android:layout_marginEnd="10dp" android:duplicateParentState="true" android:src="@drawable/ic_filter_chevron_down" tools:ignore="ContentDescription" />
+                    </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="116dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="12dp"
+                    android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="4dp" android:text="Anno" android:textColor="#A9B2C2" android:textSize="12sp" />
+                    <FrameLayout android:layout_width="match_parent" android:layout_height="44dp" android:addStatesFromChildren="true" android:background="@drawable/bg_filter_control_tv">
+                        <Spinner android:id="@+id/sp_year" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@android:color/transparent" android:focusable="true" android:nextFocusLeft="@id/sp_italian" android:nextFocusRight="@id/sp_genre" android:nextFocusDown="@id/et_actor_search" android:paddingEnd="34dp" android:spinnerMode="dropdown" />
+                        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="end|center_vertical" android:layout_marginEnd="10dp" android:duplicateParentState="true" android:src="@drawable/ic_filter_chevron_down" tools:ignore="ContentDescription" />
+                    </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="190dp"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="4dp" android:text="Genere" android:textColor="#A9B2C2" android:textSize="12sp" />
+                    <FrameLayout android:layout_width="match_parent" android:layout_height="44dp" android:addStatesFromChildren="true" android:background="@drawable/bg_filter_control_tv">
+                        <Spinner android:id="@+id/sp_genre" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@android:color/transparent" android:focusable="true" android:nextFocusLeft="@id/sp_year" android:nextFocusDown="@id/et_actor_search" android:paddingEnd="34dp" android:spinnerMode="dropdown" />
+                        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="end|center_vertical" android:layout_marginEnd="10dp" android:duplicateParentState="true" android:src="@drawable/ic_filter_chevron_down" tools:ignore="ContentDescription" />
+                    </FrameLayout>
+                </LinearLayout>
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="start|bottom"
+                android:orientation="horizontal">
+
+                <LinearLayout android:layout_width="116dp" android:layout_height="wrap_content" android:layout_marginEnd="12dp" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="4dp" android:text="Dal" android:textColor="#A9B2C2" android:textSize="12sp" />
+                    <FrameLayout android:layout_width="match_parent" android:layout_height="44dp" android:addStatesFromChildren="true" android:background="@drawable/bg_filter_control_tv">
+                        <Spinner android:id="@+id/et_date_from" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@android:color/transparent" android:focusable="true" android:nextFocusUp="@id/sp_content_type" android:nextFocusRight="@id/et_date_to" android:nextFocusDown="@id/btn_reset_filters" android:paddingEnd="34dp" android:spinnerMode="dropdown" />
+                        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="end|center_vertical" android:layout_marginEnd="10dp" android:duplicateParentState="true" android:src="@drawable/ic_filter_chevron_down" tools:ignore="ContentDescription" />
+                    </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="116dp" android:layout_height="wrap_content" android:layout_marginEnd="12dp" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="4dp" android:text="Al" android:textColor="#A9B2C2" android:textSize="12sp" />
+                    <FrameLayout android:layout_width="match_parent" android:layout_height="44dp" android:addStatesFromChildren="true" android:background="@drawable/bg_filter_control_tv">
+                        <Spinner android:id="@+id/et_date_to" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@android:color/transparent" android:focusable="true" android:nextFocusUp="@id/sp_italian" android:nextFocusLeft="@id/et_date_from" android:nextFocusRight="@id/et_actor_search" android:nextFocusDown="@id/btn_reset_filters" android:paddingEnd="34dp" android:spinnerMode="dropdown" />
+                        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="end|center_vertical" android:layout_marginEnd="10dp" android:duplicateParentState="true" android:src="@drawable/ic_filter_chevron_down" tools:ignore="ContentDescription" />
+                    </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="4dp" android:text="Attore" android:textColor="#A9B2C2" android:textSize="12sp" />
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="44dp" android:orientation="horizontal">
+                        <androidx.leanback.widget.SearchEditText
+                            android:id="@+id/et_actor_search"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_filter_control_tv"
+                            android:focusable="true"
+                            android:focusableInTouchMode="true"
+                            android:hint="Scrivi il nome dell'attore..."
+                            android:imeOptions="actionSearch"
+                            android:inputType="textPersonName"
+                            android:maxLines="1"
+                            android:nextFocusLeft="@id/et_date_to"
+                            android:nextFocusRight="@id/btn_actor_mode"
+                            android:nextFocusDown="@id/hgv_actor_suggestions"
+                            android:paddingStart="14dp"
+                            android:paddingEnd="14dp"
+                            android:textColor="@android:color/white"
+                            android:textColorHint="#7FFFFFFF"
+                            android:textSize="15sp" />
+                        <Button
+                            android:id="@+id/btn_actor_mode"
+                            android:layout_width="92dp"
+                            android:layout_height="44dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/bg_filter_action_secondary_tv"
+                            android:focusable="true"
+                            android:nextFocusLeft="@id/et_actor_search"
+                            android:nextFocusDown="@id/btn_apply_filters"
+                            android:text="Cerca"
+                            android:textAllCaps="false"
+                            android:textColor="@android:color/white"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <androidx.leanback.widget.HorizontalGridView
+                android:id="@+id/hgv_actor_suggestions"
+                android:layout_width="match_parent"
+                android:layout_height="136dp"
+                android:layout_marginTop="8dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:nextFocusUp="@id/et_actor_search"
+                android:nextFocusDown="@id/btn_apply_filters"
+                android:paddingStart="4dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="4dp"
+                android:paddingBottom="4dp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="48dp"
+                android:layout_marginTop="10dp"
                 android:gravity="end|center_vertical"
                 android:orientation="horizontal">
-
                 <Button
                     android:id="@+id/btn_reset_filters"
                     android:layout_width="wrap_content"
-                    android:layout_height="48dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/bg_filter_action_secondary_tv"
                     android:focusable="true"
+                    android:nextFocusRight="@id/btn_apply_filters"
                     android:nextFocusDown="@id/vgv_search"
-                    android:text="Azzera filtri" />
-
+                    android:paddingStart="18dp"
+                    android:paddingEnd="18dp"
+                    android:text="Azzera"
+                    android:textAllCaps="false"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
                 <Button
                     android:id="@+id/btn_apply_filters"
                     android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="12dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/bg_filter_action_primary_tv"
                     android:focusable="true"
+                    android:nextFocusLeft="@id/btn_reset_filters"
                     android:nextFocusDown="@id/vgv_search"
-                    android:text="Applica filtri" />
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:text="Applica filtri"
+                    android:textAllCaps="false"
+                    android:textColor="#07111D"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
