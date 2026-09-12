@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -94,7 +95,7 @@ class SearchTvFragment : Fragment() {
         }
     }
 
-    private lateinit var voiceHelper: VoiceRecognitionHelper
+    private var voiceHelper: VoiceRecognitionHelper? = null
 
     private fun switchProviderIfNeeded(providerName: String?) {
         val targetName = providerName?.takeIf { it.isNotBlank() } ?: return
@@ -118,10 +119,14 @@ class SearchTvFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        initializeSearch()
-        initializeAdvancedFilters()
-        initializeActorSearch()
-        initializeScrollableHeader()
+        // Isola i sottosistemi opzionali: un problema locale non deve chiudere la TV.
+        safeInit("base") { initializeSearch() }
+        safeInit("filtri") { initializeAdvancedFilters() }
+        view.post {
+            if (_binding == null) return@post
+            safeInit("attori") { initializeActorSearch() }
+            safeInit("scorrimento") { initializeScrollableHeader() }
+        }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.state.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED).collect { state ->
@@ -205,7 +210,8 @@ class SearchTvFragment : Fragment() {
 
     override fun onDestroyView() {
         actorSearchJob?.cancel()
-        if (::voiceHelper.isInitialized) voiceHelper.stopRecognition()
+        voiceHelper?.stopRecognition()
+        voiceHelper = null
         super.onDestroyView()
         _binding = null
     }
@@ -324,8 +330,6 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun initializeScrollableHeader() {
-        binding.searchHeader.post { updateGridTopPadding() }
-
         binding.vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 if (_binding == null) return
@@ -537,36 +541,10 @@ class SearchTvFragment : Fragment() {
             })
         }
 
-        val blink = AlphaAnimation(1f, 0.3f).apply {
-            duration = 500
-            repeatCount = Animation.INFINITE
-            repeatMode = Animation.REVERSE
-        }
-
-        voiceHelper = VoiceRecognitionHelper(
-            fragment = this,
-            onResult = { query ->
-                binding.btnSearchVoice.clearAnimation()
-                binding.etSearch.setText(query)
-                submitSearch()
-            },
-            onError = { msg ->
-                Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
-                binding.btnSearchVoice.clearAnimation()
-                binding.etSearch.hint = getString(R.string.search_input_hint)
-            },
-            onListeningStateChanged = {
-                binding.btnSearchVoice.startAnimation(blink)
-                binding.etSearch.hint = getString(R.string.voice_prompt)
-            }
-        )
-
+        // Il riconoscimento vocale viene creato solo al click, mai entrando in Cerca.
         binding.btnSearchVoice.apply {
-            requestFocus()
-            visibility = if (voiceHelper.isAvailable()) View.VISIBLE else View.GONE
-            setOnClickListener {
-                if (!voiceHelper.isListening) voiceHelper.startWithPermissionCheck()
-            }
+            visibility = View.VISIBLE
+            setOnClickListener { startVoiceSearch() }
         }
 
         listOf(binding.btnSearchClear, binding.btnSearchVoice, binding.llGlobalSearch).forEach { view ->
@@ -609,6 +587,60 @@ class SearchTvFragment : Fragment() {
         binding.root.requestFocus()
     }
 
+    private inline fun safeInit(stage: String, block: () -> Unit) {
+    try {
+        block()
+    } catch (error: Throwable) {
+        Log.e("SearchTvFragment", "TV search init failed at $stage", error)
+        if (isAdded) {
+            Toast.makeText(
+                requireContext(),
+                "Cerca: inizializzazione $stage non riuscita",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+}
+
+private fun startVoiceSearch() {
+    val helper = voiceHelper ?: run {
+        val blink = AlphaAnimation(1f, 0.3f).apply {
+            duration = 500
+            repeatCount = Animation.INFINITE
+            repeatMode = Animation.REVERSE
+        }
+        VoiceRecognitionHelper(
+            fragment = this,
+            onResult = { query ->
+                if (_binding != null) {
+                    binding.btnSearchVoice.clearAnimation()
+                    binding.etSearch.setText(query)
+                    submitSearch()
+                }
+            },
+            onError = { msg ->
+                if (_binding != null) {
+                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+                    binding.btnSearchVoice.clearAnimation()
+                    binding.etSearch.hint = getString(R.string.search_input_hint)
+                }
+            },
+            onListeningStateChanged = {
+                if (_binding != null) {
+                    binding.btnSearchVoice.startAnimation(blink)
+                    binding.etSearch.hint = getString(R.string.voice_prompt)
+                }
+            },
+        ).also { voiceHelper = it }
+    }
+
+    if (!helper.isAvailable()) {
+        binding.btnSearchVoice.visibility = View.GONE
+        return
+    }
+    if (!helper.isListening) helper.startWithPermissionCheck()
+}
+
     private fun focusSearchContent(): Boolean {
         val hasResults = appAdapter.itemCount > 0 && binding.vgvSearch.visibility == View.VISIBLE
         return when {
@@ -636,6 +668,10 @@ class SearchTvFragment : Fragment() {
             if (viewModel.query.isEmpty() && !viewModel.advancedFilters.isActive) 5 else 6
         binding.vgvSearch.setNumColumns(currentGridColumns)
         binding.vgvSearch.nextFocusUpId = binding.btnApplyFilters.id
+
+        binding.searchHeader.post {
+            if (_binding != null) updateGridTopPadding()
+        }
 
         appAdapter.submitList(list.onEach {
             when (it) {
