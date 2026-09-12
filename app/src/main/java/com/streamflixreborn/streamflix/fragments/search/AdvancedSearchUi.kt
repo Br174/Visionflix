@@ -16,18 +16,30 @@ internal object AdvancedSearchUi {
         contentType: Spinner,
         italian: Spinner,
         year: Spinner,
-        genre: Spinner,
+        genre: Spinner? = null,
     ) {
-        contentType.adapter = compactAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
-        italian.adapter = compactAdapter(context, listOf("Tutti", "Sì", "No"))
-        year.adapter = yearAdapter(context)
-        genre.adapter = compactAdapter(
-            context,
-            AdvancedSearchFilters.GenreFilter.values().map { it.label },
-        )
-
-        year.rootView.findViewById<Spinner>(R.id.et_date_from)?.adapter = yearAdapter(context)
-        year.rootView.findViewById<Spinner>(R.id.et_date_to)?.adapter = yearAdapter(context)
+        if (genre == null) {
+            contentType.adapter = mobileAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
+            italian.adapter = mobileAdapter(
+                context,
+                listOf("Italiani: tutti", "Italiani: sì", "Italiani: no"),
+            )
+            year.adapter = mobileYearAdapter(context, "Anno: tutti")
+            year.rootView.findViewById<Spinner>(R.id.et_date_from)?.adapter =
+                mobileYearAdapter(context, "Dal: tutti")
+            year.rootView.findViewById<Spinner>(R.id.et_date_to)?.adapter =
+                mobileYearAdapter(context, "Al: tutti")
+        } else {
+            contentType.adapter = compactAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
+            italian.adapter = compactAdapter(context, listOf("Tutti", "Sì", "No"))
+            year.adapter = yearAdapter(context)
+            genre.adapter = compactAdapter(
+                context,
+                AdvancedSearchFilters.GenreFilter.values().map { it.label },
+            )
+            year.rootView.findViewById<Spinner>(R.id.et_date_from)?.adapter = yearAdapter(context)
+            year.rootView.findViewById<Spinner>(R.id.et_date_to)?.adapter = yearAdapter(context)
+        }
     }
 
     fun read(
@@ -36,7 +48,7 @@ internal object AdvancedSearchUi {
         year: Spinner,
         yearFrom: Spinner,
         yearTo: Spinner,
-        genre: Spinner,
+        genre: Spinner? = null,
     ): AdvancedSearchFilters {
         val selectedYear = selectedYear(year)
         val selectedFrom = selectedYear(yearFrom)
@@ -60,8 +72,10 @@ internal object AdvancedSearchUi {
                 2 -> AdvancedSearchFilters.ItalianFilter.NO
                 else -> AdvancedSearchFilters.ItalianFilter.ALL
             },
-            genre = AdvancedSearchFilters.GenreFilter.values()
-                .getOrElse(genre.selectedItemPosition) { AdvancedSearchFilters.GenreFilter.ALL },
+            genre = genre?.let {
+                AdvancedSearchFilters.GenreFilter.values()
+                    .getOrElse(it.selectedItemPosition) { AdvancedSearchFilters.GenreFilter.ALL }
+            } ?: AdvancedSearchFilters.GenreFilter.ALL,
             year = if (hasRange) null else selectedYear,
             dateFrom = selectedFrom?.let { "%04d-01-01".format(it) },
             dateTo = selectedTo?.let { "%04d-12-31".format(it) },
@@ -82,14 +96,14 @@ internal object AdvancedSearchUi {
         year: Spinner,
         yearFrom: Spinner,
         yearTo: Spinner,
-        genre: Spinner,
+        genre: Spinner? = null,
     ) {
         contentType.setSelection(0)
         italian.setSelection(0)
         year.setSelection(0)
         yearFrom.setSelection(0)
         yearTo.setSelection(0)
-        genre.setSelection(0)
+        genre?.setSelection(0)
     }
 
     private fun compactAdapter(
@@ -103,8 +117,20 @@ internal object AdvancedSearchUi {
         setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
     }
 
+    private fun mobileAdapter(
+        context: Context,
+        values: List<String>,
+    ): ArrayAdapter<String> = ArrayAdapter(
+        context,
+        android.R.layout.simple_spinner_dropdown_item,
+        values,
+    )
+
     private fun yearAdapter(context: Context): ArrayAdapter<String> =
         compactAdapter(context, listOf("Tutti") + years.map { it.toString() })
+
+    private fun mobileYearAdapter(context: Context, firstItem: String): ArrayAdapter<String> =
+        mobileAdapter(context, listOf(firstItem) + years.map { it.toString() })
 
     private fun selectedYear(spinner: Spinner): Int? = spinner.selectedItemPosition
         .takeIf { it > 0 }
