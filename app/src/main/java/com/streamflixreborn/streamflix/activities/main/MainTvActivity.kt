@@ -3,6 +3,7 @@ package com.streamflixreborn.streamflix.activities.main
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -20,22 +21,21 @@ import com.bumptech.glide.Glide
 import com.tanasi.navigation.widget.setupWithNavController
 import com.streamflixreborn.streamflix.BuildConfig
 import com.streamflixreborn.streamflix.R
-import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.databinding.ActivityMainTvBinding
 import com.streamflixreborn.streamflix.databinding.ContentHeaderMenuMainTvBinding
 import com.streamflixreborn.streamflix.fragments.player.PlayerTvFragment
-import com.streamflixreborn.streamflix.ui.UpdateAppTvDialog
-import com.streamflixreborn.streamflix.providers.IptvProvider
-import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.AnimeOnlineNinjaProvider
 import com.streamflixreborn.streamflix.providers.Cine24hProvider
 import com.streamflixreborn.streamflix.providers.FilmyOnlineCcProvider
-import com.streamflixreborn.streamflix.providers.ZaluknijProvider
 import com.streamflixreborn.streamflix.providers.GuardaSerieProvider
+import com.streamflixreborn.streamflix.providers.IptvProvider
+import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.ZaluknijProvider
+import com.streamflixreborn.streamflix.ui.UpdateAppTvDialog
 import com.streamflixreborn.streamflix.utils.AppLanguageManager
 import com.streamflixreborn.streamflix.utils.ThemeManager
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.getCurrentFragment
-import com.streamflixreborn.streamflix.providers.AnimeOnlineNinjaProvider
 import kotlinx.coroutines.launch
 
 class MainTvActivity : FragmentActivity() {
@@ -44,7 +44,6 @@ class MainTvActivity : FragmentActivity() {
     private val binding get() = _binding!!
 
     private val viewModel by viewModels<MainViewModel>()
-
     private lateinit var updateAppDialog: UpdateAppTvDialog
 
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -53,13 +52,10 @@ class MainTvActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-
-        // Il setup delle preferenze è già avvenuto in StreamFlixApp
         setTheme(ThemeManager.tvThemeRes(UserPreferences.selectedTheme))
 
         super.onCreate(savedInstanceState)
 
-        // Inizializza il provider con il context dell'attività per gestire eventuali bypass visibili
         AnimeOnlineNinjaProvider.init(this)
         Cine24hProvider.init(this)
         FilmyOnlineCcProvider.init(this)
@@ -79,15 +75,17 @@ class MainTvActivity : FragmentActivity() {
                 binding.ivSplashOverlay.visibility = View.GONE
             }
 
-        val navHostFragment = this.supportFragmentManager
+        val navHostFragment = supportFragmentManager
             .findFragmentById(binding.navMainFragment.id) as NavHostFragment
         val navController = navHostFragment.navController
 
-        // La UI TV deve sempre occupare l'intero pannello. I vecchi valori di
-        // overscan/padding potevano lasciare bande laterali persistenti.
+        // Nessun overscan/padding artificiale: il contenuto usa l'intero pannello TV.
         adjustLayoutDelta(0, 0)
 
-        if (BuildConfig.APP_LAYOUT == "mobile" || (BuildConfig.APP_LAYOUT != "tv" && !packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))) {
+        if (
+            BuildConfig.APP_LAYOUT == "mobile" ||
+            (BuildConfig.APP_LAYOUT != "tv" && !packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))
+        ) {
             finish()
             startActivity(Intent(this, MainMobileActivity::class.java))
             return
@@ -111,27 +109,33 @@ class MainTvActivity : FragmentActivity() {
                 val header = ContentHeaderMenuMainTvBinding.bind(this)
 
                 Glide.with(context)
-                    .load(UserPreferences.currentProvider?.logo?.takeIf { it.isNotEmpty() } ?: R.drawable.ic_provider_default_logo)
+                    .load(
+                        UserPreferences.currentProvider?.logo?.takeIf { it.isNotEmpty() }
+                            ?: R.drawable.ic_provider_default_logo
+                    )
                     .error(R.drawable.ic_provider_default_logo)
                     .into(header.ivNavigationHeaderIcon)
                 header.tvNavigationHeaderTitle.text = UserPreferences.currentProvider?.name
                 header.tvNavigationHeaderSubtitle.text = getString(R.string.main_menu_change_provider)
+
                 val palette = ThemeManager.palette(UserPreferences.selectedTheme)
                 header.tvNavigationHeaderTitle.setTextColor(palette.tvHeaderPrimary)
                 header.tvNavigationHeaderSubtitle.setTextColor(palette.tvHeaderSecondary)
-                setBackgroundColor(palette.tvNavBackground)
 
+                // Quando il menu è chiuso non deve esistere una fascia laterale opaca.
+                setBackgroundColor(Color.TRANSPARENT)
                 setOnOpenListener {
+                    setBackgroundColor(palette.tvNavBackground)
                     header.tvNavigationHeaderTitle.visibility = View.VISIBLE
                     header.tvNavigationHeaderSubtitle.visibility = View.VISIBLE
                 }
                 setOnCloseListener {
+                    setBackgroundColor(Color.TRANSPARENT)
                     header.tvNavigationHeaderTitle.visibility = View.GONE
                     header.tvNavigationHeaderSubtitle.visibility = View.GONE
                 }
 
                 setOnClickListener {
-                    // Navigazione manuale per evitare dipendenza da Safe Args Directions non generate
                     navController.navigate(R.id.providers)
                 }
             }
@@ -151,21 +155,31 @@ class MainTvActivity : FragmentActivity() {
                     is MainViewModel.State.SuccessCheckingUpdate -> {
                         updateAppDialog = UpdateAppTvDialog(this@MainTvActivity, state.newReleases).also {
                             it.setOnUpdateClickListener { _ ->
-                                if (!it.isLoading) viewModel.downloadUpdate(this@MainTvActivity, state.asset)
+                                if (!it.isLoading) {
+                                    viewModel.downloadUpdate(this@MainTvActivity, state.asset)
+                                }
                             }
                             it.show()
                         }
                     }
-                    MainViewModel.State.DownloadingUpdate -> if (::updateAppDialog.isInitialized) updateAppDialog.isLoading = true
+                    MainViewModel.State.DownloadingUpdate -> {
+                        if (::updateAppDialog.isInitialized) updateAppDialog.isLoading = true
+                    }
                     is MainViewModel.State.SuccessDownloadingUpdate -> {
                         viewModel.installUpdate(this@MainTvActivity, state.apk)
                         if (::updateAppDialog.isInitialized) updateAppDialog.hide()
                     }
-                    MainViewModel.State.InstallingUpdate -> if (::updateAppDialog.isInitialized) updateAppDialog.isLoading = true
-                    is MainViewModel.State.FailedUpdate -> {
-                        Toast.makeText(this@MainTvActivity, state.error.message ?: "Update failed", Toast.LENGTH_SHORT).show()
+                    MainViewModel.State.InstallingUpdate -> {
+                        if (::updateAppDialog.isInitialized) updateAppDialog.isLoading = true
                     }
-                    else -> {}
+                    is MainViewModel.State.FailedUpdate -> {
+                        Toast.makeText(
+                            this@MainTvActivity,
+                            state.error.message ?: "Update failed",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                    else -> Unit
                 }
             }
         }
@@ -173,13 +187,16 @@ class MainTvActivity : FragmentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when (navController.currentDestination?.id) {
-                    R.id.home -> if (binding.navMain.hasFocus()) finish() else binding.navMain.requestFocus()
+                    R.id.home -> {
+                        if (binding.navMain.hasFocus()) finish() else binding.navMain.requestFocus()
+                    }
                     R.id.settings, R.id.search, R.id.movies, R.id.tv_shows, R.id.favorites -> {
                         navigateToProviderHome(navController)
                         binding.navMain.requestFocus()
                     }
                     else -> {
-                        val handled = (getCurrentFragment() as? PlayerTvFragment)?.onBackPressed() ?: false
+                        val handled =
+                            (getCurrentFragment() as? PlayerTvFragment)?.onBackPressed() ?: false
                         if (!handled && !navController.navigateUp()) finish()
                     }
                 }
@@ -200,6 +217,7 @@ class MainTvActivity : FragmentActivity() {
 
     @Suppress("DEPRECATION")
     private fun enforceTvFullscreen() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.setLayout(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -211,15 +229,18 @@ class MainTvActivity : FragmentActivity() {
                 View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                 View.SYSTEM_UI_FLAG_FULLSCREEN or
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        window.decorView.setPadding(0, 0, 0, 0)
     }
 
     private fun applyThemeNavigationChrome() {
         val palette = ThemeManager.palette(UserPreferences.selectedTheme)
         window.statusBarColor = palette.systemBar
         window.navigationBarColor = palette.systemBar
-        binding.navMain.setBackgroundColor(palette.tvNavBackground)
+
+        // Il menu TV resta sovrapposto al contenuto, senza creare una colonna laterale.
+        binding.navMain.setBackgroundColor(Color.TRANSPARENT)
         binding.navMain.headerView?.let { headerView ->
-            headerView.setBackgroundColor(palette.tvNavBackground)
+            headerView.setBackgroundColor(Color.TRANSPARENT)
             val header = ContentHeaderMenuMainTvBinding.bind(headerView)
             header.tvNavigationHeaderTitle.setTextColor(palette.tvHeaderPrimary)
             header.tvNavigationHeaderSubtitle.setTextColor(palette.tvHeaderSecondary)
@@ -231,15 +252,19 @@ class MainTvActivity : FragmentActivity() {
             binding.navMain.menu.findItem(R.id.movies)?.isVisible = Provider.supportsMovies(provider)
             val tvShowsItem = binding.navMain.menu.findItem(R.id.tv_shows)
             tvShowsItem?.isVisible = Provider.supportsTvShows(provider)
-            tvShowsItem?.title = if (provider is IptvProvider)
-                getString(R.string.main_menu_all_channels) else getString(R.string.main_menu_tv_shows)
+            tvShowsItem?.title = if (provider is IptvProvider) {
+                getString(R.string.main_menu_all_channels)
+            } else {
+                getString(R.string.main_menu_tv_shows)
+            }
         }
     }
 
     fun adjustLayoutDelta(deltaX: Int?, deltaY: Int?) {
-        // Su Android TV Verlezza Vision usa sempre il canvas pieno 16:9.
-        // I parametri restano nella firma per compatibilità con le impostazioni esistenti.
+        // I parametri restano per compatibilità con le impostazioni già salvate,
+        // ma non devono più ridurre il canvas TV.
         binding.root.setPadding(0, 0, 0, 0)
+        binding.navMainFragment.setPadding(0, 0, 0, 0)
     }
 
     private fun navigateToProviderHome(navController: androidx.navigation.NavController) {
