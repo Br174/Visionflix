@@ -57,3 +57,24 @@ jobs:
           name: Verlezza-Vision-TV-preserved-signature
           path: /tmp/Visionflix_BV_TV.apk
           if-no-files-found: error
+      - uses: actions/checkout@v4
+        if: always()
+        with:
+          persist-credentials: false
+      - uses: gradle/actions/setup-gradle@v4
+        if: always()
+        with:
+          cache-read-only: true
+      - name: Report the signing path used by Gradle
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          chmod +x gradlew
+          ./gradlew :app:signingReport --no-configuration-cache
