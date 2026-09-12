@@ -27,13 +27,15 @@ android {
     def properties = new Properties()
     properties.load(project.rootProject.file('local.properties').newDataInputStream())
     def appLayout = properties.getProperty("APP_LAYOUT")
+    def ciVersionCode = System.getenv("APP_VERSION_CODE")?.toInteger()
+    def ciVersionName = System.getenv("APP_VERSION_NAME")
 
     defaultConfig {
         applicationId appLayout == "tv" ? "com.br174.visionflix.tv" : "com.streamflixreborn.streamflix"
         minSdk 21
         targetSdk 35
-        versionCode 161
-        versionName "1.7.232"
+        versionCode ciVersionCode ?: 161
+        versionName ciVersionName ?: "1.7.232"
 
         buildConfigField "String", "APP_LAYOUT", "\"${properties.getProperty("APP_LAYOUT")}\""
         buildConfigField "String", "TMDB_API_KEY", "\"${properties.getProperty("TMDB_API_KEY")}\""
