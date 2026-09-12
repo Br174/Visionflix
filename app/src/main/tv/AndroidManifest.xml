@@ -25,7 +25,7 @@
     <application
         android:name=".StreamFlixApp"
         android:allowBackup="true"
-        android:banner="@mipmap/ic_banner_foreground"
+        android:banner="@drawable/verlezza_vision_banner"
         android:icon="@drawable/verlezza_vision_logo"
         android:label="Verlezza Vision"
         android:logo="@drawable/verlezza_vision_logo"
