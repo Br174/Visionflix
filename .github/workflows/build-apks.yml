@@ -79,7 +79,8 @@ jobs:
           set -euo pipefail
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk | tee /tmp/signature-info.txt
-          grep -F "Signer #1 certificate SHA-256 digest: 55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e" /tmp/signature-info.txt
+          VV_CERTIFICATES="$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/signature-info.txt | sort -u)"
+          test "$VV_CERTIFICATES" = "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e"
           "$BUILD_TOOLS/aapt" dump badging /tmp/Visionflix_BV_TV.apk > /tmp/apk-info.txt
           grep -F "package: name='com.br174.visionflix.tv.debug'" /tmp/apk-info.txt
           grep -F "com.streamflixreborn.streamflix.activities.main.MainTvActivity" /tmp/apk-info.txt
@@ -128,7 +129,7 @@ jobs:
           Questo asset alimenta il collegamento stabile registrato nel codice Downloader 3875230.
           Il nome pubblico dell'asset resta Visionflix_BV_TV.apk per mantenere invariato il codice Downloader.
 
-          Firma stabilizzata dal build 167. Le precedenti build usavano chiavi temporanee diverse: questo APK non può aggiornare direttamente quelle installazioni. La rimozione della vecchia app può cancellarne i dati; salvare prima le impostazioni.
+          Firma stabilizzata dalla versione 1.7.239 (build 168). Le precedenti build usavano chiavi temporanee diverse: questo APK non può aggiornare direttamente quelle installazioni. La rimozione della vecchia app può cancellarne i dati; salvare prima le impostazioni.
           EOF
 
           gh release create "$TAG" \
