@@ -53,7 +53,7 @@ data class ProviderResult(
 
 class SearchViewModel(database: AppDatabase) : ViewModel() {
 
-    private val _state = MutableStateFlow<State>(State.Searching)
+    private val _state = MutableStateFlow<State>(State.SuccessSearching(emptyList(), hasMore = false))
     private val _actorSuggestions = MutableStateFlow<List<People>>(emptyList())
     val actorSuggestions: Flow<List<People>> = _actorSuggestions
 
@@ -117,10 +117,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
     private var page = 1
     private var usingWebFallback = false
-
-    init {
-        search(query)
-    }
 
     fun search(query: String) = viewModelScope.launch(Dispatchers.IO) {
         advancedFilters = AdvancedSearchFilters()

@@ -40,6 +40,7 @@ import com.streamflixreborn.streamflix.utils.VoiceRecognitionHelper
 import com.streamflixreborn.streamflix.utils.hideKeyboard
 import com.streamflixreborn.streamflix.utils.viewModelsFactory
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -56,6 +57,19 @@ class SearchTvFragment : Fragment() {
     private var actorSearchJob: Job? = null
     private var suppressActorTextChange: Boolean = false
     private var searchHeaderOffset: Int = 0
+
+    private val searchUiExceptionHandler = CoroutineExceptionHandler { _, error ->
+        Log.e("SearchTvFragment", "TV search coroutine failed", error)
+        activity?.runOnUiThread {
+            if (isAdded) {
+                Toast.makeText(
+                    requireContext(),
+                    "Cerca: errore isolato, la schermata resta aperta",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
 
     private val appAdapter by lazy {
         AppAdapter().apply {
@@ -128,7 +142,7 @@ class SearchTvFragment : Fragment() {
             safeInit("scorrimento") { initializeScrollableHeader() }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch(searchUiExceptionHandler) {
             viewModel.state.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED).collect { state ->
                 when (state) {
                     is State.Searching, is State.GlobalSearching -> {
@@ -201,7 +215,7 @@ class SearchTvFragment : Fragment() {
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch(searchUiExceptionHandler) {
             viewModel.actorSuggestions
                 .flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
                 .collect { displayActorSuggestions(it) }
@@ -666,11 +680,11 @@ private fun startVoiceSearch() {
     private fun displaySearch(list: List<AppAdapter.Item>, hasMore: Boolean) {
         currentGridColumns =
             if (viewModel.query.isEmpty() && !viewModel.advancedFilters.isActive) 5 else 6
-        binding.vgvSearch.setNumColumns(currentGridColumns)
-        binding.vgvSearch.nextFocusUpId = binding.btnApplyFilters.id
-
-        binding.searchHeader.post {
-            if (_binding != null) updateGridTopPadding()
+        binding.vgvSearch.post {
+            if (_binding == null) return@post
+            binding.vgvSearch.setNumColumns(currentGridColumns)
+            binding.vgvSearch.nextFocusUpId = binding.btnApplyFilters.id
+            updateGridTopPadding()
         }
 
         appAdapter.submitList(list.onEach {
@@ -717,7 +731,9 @@ private fun startVoiceSearch() {
         }
 
         currentGridColumns = 1
-        binding.vgvSearch.setNumColumns(currentGridColumns)
+        binding.vgvSearch.post {
+            if (_binding != null) binding.vgvSearch.setNumColumns(currentGridColumns)
+        }
         appAdapter.submitList(categories)
         appAdapter.setOnLoadMoreListener(null)
     }
