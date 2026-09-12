@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -70,13 +70,26 @@ jobs:
           RABBITSTREAM_SOURCE_API=
           EOF
           ./gradlew clean assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Visionflix-TV-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-TV-latest.apk
 
-      - name: Upload APKs
+      - name: Upload APKs artifact
         uses: actions/upload-artifact@v4
         with:
           name: Visionflix-debug-APKs
           path: |
             /tmp/Visionflix-Mobile-debug.apk
-            /tmp/Visionflix-TV-debug.apk
+            /tmp/Verlezza-Vision-TV-latest.apk
           if-no-files-found: error
+
+      - name: Publish/update fixed latest TV release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tv-latest
+          name: Verlezza Vision TV - Latest
+          prerelease: false
+          make_latest: true
+          files: /tmp/Verlezza-Vision-TV-latest.apk
+          overwrite_files: true
+          body: |
+            Download fisso della versione Android TV più recente di Verlezza Vision.
+            Ogni build di main sostituisce automaticamente l'APK allegato a questa release.
