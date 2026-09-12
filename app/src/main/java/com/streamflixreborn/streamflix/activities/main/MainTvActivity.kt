@@ -1,10 +1,12 @@
 package com.streamflixreborn.streamflix.activities.main
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
@@ -50,11 +52,13 @@ class MainTvActivity : FragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+
         // Il setup delle preferenze è già avvenuto in StreamFlixApp
         setTheme(ThemeManager.tvThemeRes(UserPreferences.selectedTheme))
-        
+
         super.onCreate(savedInstanceState)
-        
+
         // Inizializza il provider con il context dell'attività per gestire eventuali bypass visibili
         AnimeOnlineNinjaProvider.init(this)
         Cine24hProvider.init(this)
@@ -64,6 +68,7 @@ class MainTvActivity : FragmentActivity() {
 
         _binding = ActivityMainTvBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        enforceTvFullscreen()
         applyThemeNavigationChrome()
 
         binding.ivSplashOverlay.animate()
@@ -78,7 +83,9 @@ class MainTvActivity : FragmentActivity() {
             .findFragmentById(binding.navMainFragment.id) as NavHostFragment
         val navController = navHostFragment.navController
 
-        adjustLayoutDelta(null, null)
+        // La UI TV deve sempre occupare l'intero pannello. I vecchi valori di
+        // overscan/padding potevano lasciare bande laterali persistenti.
+        adjustLayoutDelta(0, 0)
 
         if (BuildConfig.APP_LAYOUT == "mobile" || (BuildConfig.APP_LAYOUT != "tv" && !packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))) {
             finish()
@@ -182,7 +189,28 @@ class MainTvActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        enforceTvFullscreen()
         viewModel.checkUpdate()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enforceTvFullscreen()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun enforceTvFullscreen() {
+        window.setLayout(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+        )
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
     }
 
     private fun applyThemeNavigationChrome() {
@@ -197,7 +225,7 @@ class MainTvActivity : FragmentActivity() {
             header.tvNavigationHeaderSubtitle.setTextColor(palette.tvHeaderSecondary)
         }
     }
-    
+
     private fun updateNavigationVisibility() {
         UserPreferences.currentProvider?.let { provider ->
             binding.navMain.menu.findItem(R.id.movies)?.isVisible = Provider.supportsMovies(provider)
@@ -209,9 +237,9 @@ class MainTvActivity : FragmentActivity() {
     }
 
     fun adjustLayoutDelta(deltaX: Int?, deltaY: Int?) {
-        val uDeltaX = deltaX ?: UserPreferences.paddingX
-        val uDeltaY = deltaY ?: UserPreferences.paddingY
-        binding.root.setPadding(uDeltaX, uDeltaY, uDeltaX, uDeltaY)
+        // Su Android TV Verlezza Vision usa sempre il canvas pieno 16:9.
+        // I parametri restano nella firma per compatibilità con le impostazioni esistenti.
+        binding.root.setPadding(0, 0, 0, 0)
     }
 
     private fun navigateToProviderHome(navController: androidx.navigation.NavController) {
