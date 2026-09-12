@@ -6,224 +6,25 @@
     android:layout_height="match_parent"
     tools:context=".fragments.search.SearchTvFragment">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:id="@+id/cl_search"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="100dp"
-        android:layout_marginTop="24dp"
-        android:layout_marginEnd="100dp"
-        android:background="@drawable/bg_search_edittext"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
-
-        <androidx.leanback.widget.SearchEditText
-            android:id="@+id/et_search"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="12dp"
-            android:drawableStart="@drawable/ic_search"
-            android:drawablePadding="10dp"
-            android:drawableTint="#FFFFFF"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:gravity="center_vertical"
-            android:hint="@string/search_input_hint"
-            android:imeOptions="actionSearch"
-            android:inputType="text"
-            android:maxLines="1"
-            android:nextFocusRight="@+id/btn_search_clear"
-            android:nextFocusDown="@id/ll_global_search"
-            android:padding="14dp"
-            android:textSize="16sp"
-            app:layout_constraintEnd_toStartOf="@+id/btn_search_clear"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
-
-        <ImageView
-            android:id="@+id/btn_search_clear"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginEnd="8dp"
-            android:layout_marginBottom="4dp"
-            android:background="@drawable/bg_btn_exoplayer_tv"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:nextFocusRight="@+id/btn_search_voice"
-            android:padding="10dp"
-            android:src="@drawable/ic_search_clear"
-            android:tint="#FFFFFF"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintDimensionRatio="1:1"
-            app:layout_constraintEnd_toStartOf="@+id/btn_search_voice"
-            app:layout_constraintTop_toTopOf="parent"
-            tools:ignore="ContentDescription,PrivateResource,UseAppTint" />
-
-        <ImageView
-            android:id="@+id/btn_search_voice"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginEnd="8dp"
-            android:layout_marginBottom="4dp"
-            android:background="@drawable/bg_btn_exoplayer_tv"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:padding="10dp"
-            android:src="@drawable/ic_mic"
-            android:tint="#FFFFFF"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintDimensionRatio="1:1"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            tools:ignore="PrivateResource,UseAppTint" />
-
-    </androidx.constraintlayout.widget.ConstraintLayout>
-
-    <LinearLayout
-        android:id="@+id/ll_global_search"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:background="@drawable/bg_btn_exoplayer_tv"
-        android:clickable="true"
-        android:focusable="true"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="8dp"
-        android:nextFocusDown="@id/sp_content_type"
-        app:layout_constraintEnd_toEndOf="@id/cl_search"
-        app:layout_constraintStart_toStartOf="@id/cl_search"
-        app:layout_constraintTop_toBottomOf="@id/cl_search">
-
-        <TextView
-            android:id="@+id/tv_global_search"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/global_search"
-            android:textColor="@android:color/white"
-            android:textSize="18sp" />
-
-        <ImageView
-            android:id="@+id/iv_global_search_switch"
-            android:layout_width="48dp"
-            android:layout_height="24dp"
-            android:src="@drawable/ic_switch_off"
-            tools:ignore="ContentDescription" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/ll_advanced_filters"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="vertical"
-        android:padding="8dp"
-        app:layout_constraintEnd_toEndOf="@id/cl_search"
-        app:layout_constraintStart_toStartOf="@id/cl_search"
-        app:layout_constraintTop_toBottomOf="@id/ll_global_search">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Filtri avanzati"
-            android:textColor="@android:color/white"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Spinner
-                android:id="@+id/sp_content_type"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:focusable="true"
-                android:nextFocusDown="@id/et_date_from" />
-
-            <Spinner
-                android:id="@+id/sp_italian"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:focusable="true"
-                android:nextFocusDown="@id/et_date_to" />
-
-            <Spinner
-                android:id="@+id/sp_year"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:focusable="true"
-                android:nextFocusDown="@id/btn_apply_filters" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Spinner
-                android:id="@+id/et_date_from"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:focusable="true"
-                android:nextFocusDown="@id/btn_reset_filters" />
-
-            <Spinner
-                android:id="@+id/et_date_to"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:focusable="true"
-                android:nextFocusDown="@id/btn_apply_filters" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="end"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btn_reset_filters"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:focusable="true"
-                android:nextFocusDown="@id/vgv_search"
-                android:text="Azzera filtri" />
-
-            <Button
-                android:id="@+id/btn_apply_filters"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="12dp"
-                android:focusable="true"
-                android:nextFocusDown="@id/vgv_search"
-                android:text="Applica filtri" />
-        </LinearLayout>
-    </LinearLayout>
-
+    <!--
+        The grid now occupies the whole screen. Its top padding is adjusted at runtime
+        to the real height of search_header, so posters start below the controls and
+        then scroll upward together with the header instead of being clipped by it.
+    -->
     <androidx.leanback.widget.VerticalGridView
         android:id="@+id/vgv_search"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
         android:clipChildren="false"
         android:clipToPadding="false"
         android:descendantFocusability="afterDescendants"
-        android:padding="16dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="16dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/ll_advanced_filters"
+        app:layout_constraintTop_toTopOf="parent"
         tools:listitem="@layout/item_movie_tv" />
 
     <include
@@ -235,5 +36,258 @@
         app:layout_constraintEnd_toEndOf="@id/vgv_search"
         app:layout_constraintStart_toStartOf="@id/vgv_search"
         app:layout_constraintTop_toTopOf="@id/vgv_search" />
+
+    <LinearLayout
+        android:id="@+id/search_header"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="100dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="100dp"
+        android:orientation="vertical"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/cl_search"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_search_edittext">
+
+            <androidx.leanback.widget.SearchEditText
+                android:id="@+id/et_search"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:drawableStart="@drawable/ic_search"
+                android:drawablePadding="10dp"
+                android:drawableTint="#FFFFFF"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:gravity="center_vertical"
+                android:hint="@string/search_input_hint"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1"
+                android:nextFocusRight="@+id/btn_search_clear"
+                android:nextFocusDown="@id/ll_global_search"
+                android:padding="14dp"
+                android:textSize="16sp"
+                app:layout_constraintEnd_toStartOf="@+id/btn_search_clear"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <ImageView
+                android:id="@+id/btn_search_clear"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="8dp"
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/bg_btn_exoplayer_tv"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:nextFocusRight="@+id/btn_search_voice"
+                android:padding="10dp"
+                android:src="@drawable/ic_search_clear"
+                android:tint="#FFFFFF"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintDimensionRatio="1:1"
+                app:layout_constraintEnd_toStartOf="@+id/btn_search_voice"
+                app:layout_constraintTop_toTopOf="parent"
+                tools:ignore="ContentDescription,PrivateResource,UseAppTint" />
+
+            <ImageView
+                android:id="@+id/btn_search_voice"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="8dp"
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/bg_btn_exoplayer_tv"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:padding="10dp"
+                android:src="@drawable/ic_mic"
+                android:tint="#FFFFFF"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintDimensionRatio="1:1"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                tools:ignore="PrivateResource,UseAppTint" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <LinearLayout
+            android:id="@+id/ll_global_search"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_btn_exoplayer_tv"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:nextFocusDown="@id/sp_content_type"
+            android:orientation="horizontal"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/tv_global_search"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/global_search"
+                android:textColor="@android:color/white"
+                android:textSize="18sp" />
+
+            <ImageView
+                android:id="@+id/iv_global_search_switch"
+                android:layout_width="48dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_switch_off"
+                tools:ignore="ContentDescription" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/ll_advanced_filters"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Filtri avanzati"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <!-- Compact widths keep every spinner arrow visually next to its value. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="start|center_vertical"
+                android:orientation="horizontal">
+
+                <Spinner
+                    android:id="@+id/sp_content_type"
+                    android:layout_width="150dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="10dp"
+                    android:focusable="true"
+                    android:nextFocusDown="@id/et_date_from"
+                    android:spinnerMode="dropdown" />
+
+                <Spinner
+                    android:id="@+id/sp_italian"
+                    android:layout_width="190dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="10dp"
+                    android:focusable="true"
+                    android:nextFocusDown="@id/et_date_to"
+                    android:spinnerMode="dropdown" />
+
+                <Spinner
+                    android:id="@+id/sp_year"
+                    android:layout_width="140dp"
+                    android:layout_height="48dp"
+                    android:focusable="true"
+                    android:nextFocusDown="@id/et_actor_search"
+                    android:spinnerMode="dropdown" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="start|center_vertical"
+                android:orientation="horizontal">
+
+                <Spinner
+                    android:id="@+id/et_date_from"
+                    android:layout_width="160dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="10dp"
+                    android:focusable="true"
+                    android:nextFocusDown="@id/btn_actor_mode"
+                    android:spinnerMode="dropdown" />
+
+                <Spinner
+                    android:id="@+id/et_date_to"
+                    android:layout_width="160dp"
+                    android:layout_height="48dp"
+                    android:focusable="true"
+                    android:nextFocusDown="@id/et_actor_search"
+                    android:spinnerMode="dropdown" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="2dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_actor_mode"
+                    android:layout_width="120dp"
+                    android:layout_height="48dp"
+                    android:focusable="true"
+                    android:nextFocusRight="@id/et_actor_search"
+                    android:nextFocusDown="@id/btn_reset_filters"
+                    android:text="Attore" />
+
+                <androidx.leanback.widget.SearchEditText
+                    android:id="@+id/et_actor_search"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_search_edittext"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:hint="Scrivi il nome dell'attore..."
+                    android:imeOptions="actionSearch"
+                    android:inputType="textPersonName"
+                    android:maxLines="1"
+                    android:nextFocusLeft="@id/btn_actor_mode"
+                    android:nextFocusDown="@id/btn_apply_filters"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:textColor="@android:color/white"
+                    android:textColorHint="#B3FFFFFF"
+                    android:textSize="16sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="end|center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_reset_filters"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:focusable="true"
+                    android:nextFocusDown="@id/vgv_search"
+                    android:text="Azzera filtri" />
+
+                <Button
+                    android:id="@+id/btn_apply_filters"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="12dp"
+                    android:focusable="true"
+                    android:nextFocusDown="@id/vgv_search"
+                    android:text="Applica filtri" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

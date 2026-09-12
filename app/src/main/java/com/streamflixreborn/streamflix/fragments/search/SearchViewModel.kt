@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.models.Movie
+import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 import com.streamflixreborn.streamflix.providers.IptvProvider
@@ -105,6 +106,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     var query = ""
     var advancedFilters = AdvancedSearchFilters()
         private set
+
+    var selectedActorId: String? = null
+        private set
+    var selectedActorName: String = ""
+        private set
+
     private var page = 1
     private var usingWebFallback = false
 
@@ -114,13 +121,103 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
     fun search(query: String) = viewModelScope.launch(Dispatchers.IO) {
         advancedFilters = AdvancedSearchFilters()
+        selectedActorId = null
+        selectedActorName = ""
         executeSearch(query, advancedFilters, 1)
     }
 
     fun searchAdvanced(query: String, filters: AdvancedSearchFilters) =
         viewModelScope.launch(Dispatchers.IO) {
             advancedFilters = normalizeFilters(filters)
+            selectedActorId = null
+            selectedActorName = ""
             executeSearch(query, advancedFilters, 1)
+        }
+
+    /**
+     * Live actor suggestions. TMDb multi-search already returns Person items, so this
+     * keeps the implementation lightweight and uses the same API key/service as the
+     * rest of the TMDb integration.
+     */
+    fun searchActors(actorQuery: String) = viewModelScope.launch(Dispatchers.IO) {
+        val cleanQuery = actorQuery.trim()
+        if (cleanQuery.length < 2) {
+            selectedActorId = null
+            selectedActorName = cleanQuery
+            _state.emit(State.SuccessSearching(emptyList(), hasMore = false))
+            return@launch
+        }
+
+        _state.emit(State.Searching)
+        try {
+            advancedFilters = AdvancedSearchFilters()
+            usingWebFallback = false
+            selectedActorId = null
+            selectedActorName = cleanQuery
+            query = ""
+            page = 1
+
+            val language = UserPreferences.currentProvider?.language
+                ?.takeIf { it.isNotBlank() }
+                ?: "it"
+
+            val people = TMDb3.Search.multi(
+                query = cleanQuery,
+                page = 1,
+                language = language,
+            ).results
+                .filterIsInstance<TMDb3.Person>()
+                .sortedByDescending { it.popularity }
+                .map { person ->
+                    People(
+                        id = person.id.toString(),
+                        name = person.name,
+                        image = person.profilePath?.w500,
+                    ) as AppAdapter.Item
+                }
+
+            _state.emit(State.SuccessSearching(people, hasMore = false))
+        } catch (e: Exception) {
+            Log.e("SearchViewModel", "searchActors: ", e)
+            _state.emit(State.FailedSearching(e))
+        }
+    }
+
+    /**
+     * After the user picks an actor, replace the suggestion portraits with that
+     * person's movie/TV filmography. This reuses TmdbProvider.getPeople(), which
+     * already requests combined credits and maps them to normal app cards.
+     */
+    fun searchByActor(actorId: String, actorName: String) =
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.emit(State.Searching)
+            try {
+                advancedFilters = AdvancedSearchFilters()
+                usingWebFallback = false
+                selectedActorId = actorId
+                selectedActorName = actorName
+                query = ""
+                page = 1
+
+                val language = UserPreferences.currentProvider?.language
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "it"
+                val provider = TmdbProvider(language)
+                UserPreferences.currentProvider = provider
+
+                val people = provider.getPeople(actorId, page = 1)
+                val filmography = people.filmography.onEach { item ->
+                    when (item) {
+                        is Movie -> item.providerName = provider.name
+                        is TvShow -> item.providerName = provider.name
+                    }
+                }
+                val filtered = ParentalControlUtils.filterItems(filmography)
+                _state.emit(State.SuccessSearching(filtered, hasMore = false))
+            } catch (e: Exception) {
+                Log.e("SearchViewModel", "searchByActor: ", e)
+                _state.emit(State.FailedSearching(e))
+            }
         }
 
     private suspend fun executeSearch(
@@ -187,7 +284,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     fun loadMore() = viewModelScope.launch(Dispatchers.IO) {
         val currentState = _state.value
         if (currentState is State.SuccessSearching) {
-            if (usingWebFallback) {
+            if (selectedActorId != null || usingWebFallback) {
                 _state.emit(State.SuccessSearching(currentState.results, hasMore = false))
                 return@launch
             }
@@ -384,6 +481,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     }
 
     fun searchGlobal(query: String, currentLanguage: String) = viewModelScope.launch(Dispatchers.IO) {
+        selectedActorId = null
+        selectedActorName = ""
         _state.emit(State.GlobalSearching)
 
         val isCurrentProviderIptv = UserPreferences.currentProvider is IptvProvider
@@ -434,5 +533,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 private fun AppAdapter.Item.searchIdentityKey(): String = when (this) {
     is Movie -> "movie:$id"
     is TvShow -> "tvshow:$id"
+    is People -> "people:$id"
     else -> "${this::class.java.name}:${hashCode()}"
 }

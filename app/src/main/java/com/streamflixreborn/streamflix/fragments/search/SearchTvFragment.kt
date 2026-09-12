@@ -1,5 +1,6 @@
 package com.streamflixreborn.streamflix.fragments.search
 
+import android.content.Context
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -10,6 +11,7 @@ import android.view.ViewGroup
 import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -25,6 +27,7 @@ import com.streamflixreborn.streamflix.databinding.FragmentSearchTvBinding
 import com.streamflixreborn.streamflix.models.Category
 import com.streamflixreborn.streamflix.models.Genre
 import com.streamflixreborn.streamflix.models.Movie
+import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
@@ -35,6 +38,8 @@ import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.VoiceRecognitionHelper
 import com.streamflixreborn.streamflix.utils.hideKeyboard
 import com.streamflixreborn.streamflix.utils.viewModelsFactory
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class SearchTvFragment : Fragment() {
@@ -47,6 +52,10 @@ class SearchTvFragment : Fragment() {
     private val viewModel by viewModelsFactory { SearchViewModel(database) }
     private var isGlobalSearchChecked: Boolean = false
     private var currentGridColumns: Int = 1
+    private var showingActorSuggestions: Boolean = false
+    private var actorSearchJob: Job? = null
+    private var suppressActorTextChange: Boolean = false
+    private var searchHeaderOffset: Int = 0
 
     private val appAdapter by lazy {
         AppAdapter().apply {
@@ -65,6 +74,17 @@ class SearchTvFragment : Fragment() {
                         banner = tvShow.banner,
                     )
                 )
+            }
+            onPeopleClickListener = { people ->
+                suppressActorTextChange = true
+                binding.etActorSearch.setText(people.name)
+                binding.etActorSearch.setSelection(binding.etActorSearch.text?.length ?: 0)
+                suppressActorTextChange = false
+
+                isGlobalSearchChecked = false
+                binding.ivGlobalSearchSwitch.setImageResource(R.drawable.ic_switch_off)
+                hideKeyboard()
+                viewModel.searchByActor(people.id, people.name)
             }
         }
     }
@@ -95,6 +115,8 @@ class SearchTvFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         initializeSearch()
         initializeAdvancedFilters()
+        initializeActorSearch()
+        initializeScrollableHeader()
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.state.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED).collect { state ->
@@ -159,8 +181,9 @@ class SearchTvFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        actorSearchJob?.cancel()
+        if (::voiceHelper.isInitialized) voiceHelper.stopRecognition()
         super.onDestroyView()
-        voiceHelper.stopRecognition()
         _binding = null
     }
 
@@ -181,6 +204,7 @@ class SearchTvFragment : Fragment() {
                 binding.etDateFrom,
                 binding.etDateTo,
             )
+            clearActorField()
             viewModel.search(binding.etSearch.text?.toString().orEmpty())
         }
 
@@ -190,6 +214,8 @@ class SearchTvFragment : Fragment() {
             binding.spYear,
             binding.etDateFrom,
             binding.etDateTo,
+            binding.btnActorMode,
+            binding.etActorSearch,
             binding.btnResetFilters,
             binding.btnApplyFilters,
         ).forEach { view ->
@@ -201,6 +227,103 @@ class SearchTvFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun initializeActorSearch() {
+        binding.btnActorMode.setOnClickListener { focusActorField() }
+
+        binding.etActorSearch.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) revealSearchHeader()
+        }
+
+        binding.etActorSearch.setOnEditorActionListener { _, actionId, event ->
+            val isSubmitAction = actionId == EditorInfo.IME_ACTION_SEARCH ||
+                actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_NULL
+            val isSubmitKey = event?.action == KeyEvent.ACTION_DOWN &&
+                (event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)
+            if (isSubmitAction || isSubmitKey) {
+                val actorQuery = binding.etActorSearch.text?.toString().orEmpty().trim()
+                if (actorQuery.length >= 2) viewModel.searchActors(actorQuery)
+                hideKeyboard()
+                true
+            } else {
+                false
+            }
+        }
+
+        binding.etActorSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (suppressActorTextChange) return
+                actorSearchJob?.cancel()
+                val actorQuery = s?.toString().orEmpty().trim()
+
+                if (actorQuery.isBlank()) {
+                    showingActorSuggestions = false
+                    viewModel.search(binding.etSearch.text?.toString().orEmpty())
+                    return
+                }
+                if (actorQuery.length < 2) return
+
+                actorSearchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    delay(320)
+                    viewModel.searchActors(actorQuery)
+                }
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+    }
+
+    /**
+     * The results grid now lives behind the search controls. We give it top padding
+     * equal to the measured header height and collapse the header by exactly the same
+     * amount the list scrolls. That makes controls and posters move as one surface.
+     */
+    private fun initializeScrollableHeader() {
+        binding.searchHeader.post {
+            if (_binding == null) return@post
+            val extra = (8 * resources.displayMetrics.density).toInt()
+            binding.vgvSearch.setPadding(
+                binding.vgvSearch.paddingLeft,
+                binding.searchHeader.height + extra,
+                binding.vgvSearch.paddingRight,
+                binding.vgvSearch.paddingBottom,
+            )
+        }
+
+        binding.vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (_binding == null) return
+                val maxOffset = binding.searchHeader.height
+                if (maxOffset <= 0) return
+                searchHeaderOffset = (searchHeaderOffset + dy).coerceIn(0, maxOffset)
+                binding.searchHeader.translationY = -searchHeaderOffset.toFloat()
+            }
+        })
+    }
+
+    private fun revealSearchHeader() {
+        searchHeaderOffset = 0
+        binding.searchHeader.translationY = 0f
+    }
+
+    private fun focusActorField() {
+        revealSearchHeader()
+        binding.etActorSearch.requestFocus()
+        binding.etActorSearch.post {
+            if (_binding == null) return@post
+            val input = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            input?.showSoftInput(binding.etActorSearch, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun clearActorField() {
+        actorSearchJob?.cancel()
+        suppressActorTextChange = true
+        binding.etActorSearch.setText("")
+        suppressActorTextChange = false
+        showingActorSuggestions = false
     }
 
     private fun submitSearch(): Boolean {
@@ -221,6 +344,7 @@ class SearchTvFragment : Fragment() {
         }
 
         if (filters.isActive) {
+            clearActorField()
             isGlobalSearchChecked = false
             binding.ivGlobalSearchSwitch.setImageResource(R.drawable.ic_switch_off)
             if (UserPreferences.currentProvider !is TmdbProvider) {
@@ -232,6 +356,7 @@ class SearchTvFragment : Fragment() {
         }
 
         if (isGlobalSearchChecked) {
+            clearActorField()
             if (query.isBlank()) {
                 Toast.makeText(requireContext(), getString(R.string.search_empty_query), Toast.LENGTH_SHORT).show()
                 return true
@@ -239,16 +364,21 @@ class SearchTvFragment : Fragment() {
             val currentLanguage = UserPreferences.currentProvider?.language ?: "it"
             viewModel.searchGlobal(query, currentLanguage)
         } else {
+            clearActorField()
             viewModel.search(query)
         }
         return true
     }
 
     private fun retryCurrentSearch() {
-        if (viewModel.advancedFilters.isActive) {
-            viewModel.searchAdvanced(viewModel.query, viewModel.advancedFilters)
-        } else {
-            viewModel.search(viewModel.query)
+        when {
+            viewModel.selectedActorId != null ->
+                viewModel.searchByActor(viewModel.selectedActorId!!, viewModel.selectedActorName)
+            binding.etActorSearch.text?.isNotBlank() == true ->
+                viewModel.searchActors(binding.etActorSearch.text?.toString().orEmpty())
+            viewModel.advancedFilters.isActive ->
+                viewModel.searchAdvanced(viewModel.query, viewModel.advancedFilters)
+            else -> viewModel.search(viewModel.query)
         }
     }
 
@@ -354,8 +484,9 @@ class SearchTvFragment : Fragment() {
                     position: Int,
                     subposition: Int,
                 ) {
+                    val topTarget = if (showingActorSuggestions) binding.etActorSearch.id else binding.btnApplyFilters.id
                     child?.itemView?.nextFocusUpId =
-                        if (position in 0 until currentGridColumns) binding.btnApplyFilters.id else View.NO_ID
+                        if (position in 0 until currentGridColumns) topTarget else View.NO_ID
                 }
             })
         }
@@ -367,6 +498,7 @@ class SearchTvFragment : Fragment() {
         val hasResults = appAdapter.itemCount > 0 && binding.vgvSearch.visibility == View.VISIBLE
         return when {
             hasResults -> binding.vgvSearch.requestFocus()
+            binding.etActorSearch.visibility == View.VISIBLE -> binding.etActorSearch.requestFocus()
             binding.btnApplyFilters.visibility == View.VISIBLE -> binding.btnApplyFilters.requestFocus()
             binding.llGlobalSearch.visibility == View.VISIBLE -> binding.llGlobalSearch.requestFocus()
             else -> false
@@ -374,14 +506,22 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun displaySearch(list: List<AppAdapter.Item>, hasMore: Boolean) {
-        currentGridColumns = if (viewModel.query.isEmpty() && !viewModel.advancedFilters.isActive) 5 else 6
+        showingActorSuggestions = list.any { it is People }
+        currentGridColumns = when {
+            showingActorSuggestions -> 8
+            viewModel.query.isEmpty() && !viewModel.advancedFilters.isActive -> 5
+            else -> 6
+        }
         binding.vgvSearch.setNumColumns(currentGridColumns)
+        binding.vgvSearch.nextFocusUpId =
+            if (showingActorSuggestions) binding.etActorSearch.id else binding.btnApplyFilters.id
 
         appAdapter.submitList(list.onEach {
             when (it) {
                 is Genre -> it.itemType = AppAdapter.Type.GENRE_GRID_TV_ITEM
                 is Movie -> it.itemType = AppAdapter.Type.MOVIE_GRID_TV_ITEM
                 is TvShow -> it.itemType = AppAdapter.Type.TV_SHOW_GRID_TV_ITEM
+                is People -> it.itemType = AppAdapter.Type.PEOPLE_TV_ITEM
             }
         })
 
@@ -393,6 +533,7 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun displayGlobalSearch(providerResults: List<ProviderResult>) {
+        showingActorSuggestions = false
         val categories = providerResults.map { providerResult ->
             val headerTitle = when (val state = providerResult.state) {
                 is ProviderResult.State.Loading -> "${providerResult.provider.name} - ${getString(R.string.searching)}"
