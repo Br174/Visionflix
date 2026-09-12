@@ -24,112 +24,53 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchTvFragment.kt')
           text = p.read_text(encoding='utf-8')
 
-          def one(old, new, label):
+          def exact(old, new, label):
               global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, got {text.count(old)}')
               text = text.replace(old, new, 1)
 
-          one(
-              'import android.text.TextWatcher\n',
-              'import android.text.TextWatcher\nimport android.util.Log\n',
-              'import Log',
-          )
-          one(
-              '    private lateinit var voiceHelper: VoiceRecognitionHelper\n',
-              '    private var voiceHelper: VoiceRecognitionHelper? = null\n',
-              'voice helper field',
-          )
-          one(
-              '''        initializeSearch()
-          initializeAdvancedFilters()
-          initializeActorSearch()
-          initializeScrollableHeader()
-          ''',
-              '''        // L'ingresso in Cerca non deve mai chiudere l'intera Activity per un
-          // sottosistema opzionale. La base e i filtri vengono isolati; attori e
-          // scorrimento vengono agganciati dopo il primo frame della schermata.
-          safeInit("base") { initializeSearch() }
-          safeInit("filtri") { initializeAdvancedFilters() }
-          view.post {
-              if (_binding == null) return@post
-              safeInit("attori") { initializeActorSearch() }
-              safeInit("scorrimento") { initializeScrollableHeader() }
-          }
-          ''',
-              'safe initialization',
-          )
-          one(
-              '''        actorSearchJob?.cancel()
-          if (::voiceHelper.isInitialized) voiceHelper.stopRecognition()
-          super.onDestroyView()
-          ''',
-              '''        actorSearchJob?.cancel()
-          voiceHelper?.stopRecognition()
-          voiceHelper = null
-          super.onDestroyView()
-          ''',
-              'destroy voice',
-          )
-          one(
-              '''    private fun initializeScrollableHeader() {
-          binding.searchHeader.post { updateGridTopPadding() }
+          def regex(pattern, replacement, label):
+              global text
+              text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{label}: regex match count {count}')
 
-          binding.vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-          ''',
-              '''    private fun initializeScrollableHeader() {
-          binding.vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-          ''',
-              'defer header padding',
+          exact('import android.text.TextWatcher\n', 'import android.text.TextWatcher\nimport android.util.Log\n', 'Log import')
+          exact('    private lateinit var voiceHelper: VoiceRecognitionHelper\n', '    private var voiceHelper: VoiceRecognitionHelper? = null\n', 'voice field')
+
+          exact(
+              '        initializeSearch()\n        initializeAdvancedFilters()\n        initializeActorSearch()\n        initializeScrollableHeader()\n',
+              '        // Isola i sottosistemi opzionali: un problema locale non deve chiudere la TV.\n        safeInit("base") { initializeSearch() }\n        safeInit("filtri") { initializeAdvancedFilters() }\n        view.post {\n            if (_binding == null) return@post\n            safeInit("attori") { initializeActorSearch() }\n            safeInit("scorrimento") { initializeScrollableHeader() }\n        }\n',
+              'initialization block',
           )
 
-          old_voice = '''        val blink = AlphaAnimation(1f, 0.3f).apply {
-              duration = 500
-              repeatCount = Animation.INFINITE
-              repeatMode = Animation.REVERSE
-          }
-
-          voiceHelper = VoiceRecognitionHelper(
-              fragment = this,
-              onResult = { query ->
-                  binding.btnSearchVoice.clearAnimation()
-                  binding.etSearch.setText(query)
-                  submitSearch()
-              },
-              onError = { msg ->
-                  Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
-                  binding.btnSearchVoice.clearAnimation()
-                  binding.etSearch.hint = getString(R.string.search_input_hint)
-              },
-              onListeningStateChanged = {
-                  binding.btnSearchVoice.startAnimation(blink)
-                  binding.etSearch.hint = getString(R.string.voice_prompt)
-              }
+          exact(
+              '        actorSearchJob?.cancel()\n        if (::voiceHelper.isInitialized) voiceHelper.stopRecognition()\n        super.onDestroyView()\n',
+              '        actorSearchJob?.cancel()\n        voiceHelper?.stopRecognition()\n        voiceHelper = null\n        super.onDestroyView()\n',
+              'destroy block',
           )
 
-          binding.btnSearchVoice.apply {
-              requestFocus()
-              visibility = if (voiceHelper.isAvailable()) View.VISIBLE else View.GONE
-              setOnClickListener {
-                  if (!voiceHelper.isListening) voiceHelper.startWithPermissionCheck()
-              }
-          }
-          '''
-          new_voice = '''        // SpeechRecognizer non viene più toccato entrando in Cerca.
-          // Viene inizializzato soltanto quando l'utente preme davvero il microfono.
-          binding.btnSearchVoice.apply {
-              visibility = View.VISIBLE
-              setOnClickListener { startVoiceSearch() }
-          }
-          '''
-          one(old_voice, new_voice, 'lazy voice search')
+          exact(
+              '    private fun initializeScrollableHeader() {\n        binding.searchHeader.post { updateGridTopPadding() }\n\n        binding.vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {\n',
+              '    private fun initializeScrollableHeader() {\n        binding.vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {\n',
+              'scroll startup',
+          )
+
+          regex(
+              r'        val blink = AlphaAnimation\(1f, 0\.3f\)\.apply \{.*?\n\n        listOf\(binding\.btnSearchClear, binding\.btnSearchVoice, binding\.llGlobalSearch\)',
+              '        // Il riconoscimento vocale viene creato solo al click, mai entrando in Cerca.\n        binding.btnSearchVoice.apply {\n            visibility = View.VISIBLE\n            setOnClickListener { startVoiceSearch() }\n        }\n\n        listOf(binding.btnSearchClear, binding.btnSearchVoice, binding.llGlobalSearch)',
+              'lazy voice block',
+          )
 
           marker = '    private fun focusSearchContent(): Boolean {\n'
+          if text.count(marker) != 1:
+              raise SystemExit('focusSearchContent marker mismatch')
           helper = '''    private inline fun safeInit(stage: String, block: () -> Unit) {
               try {
                   block()
@@ -185,20 +126,12 @@ jobs:
           }
 
           '''
-          if text.count(marker) != 1:
-              raise SystemExit('helper insertion marker mismatch')
           text = text.replace(marker, helper + marker, 1)
 
-          one(
-              '''        appAdapter.submitList(list.onEach {
-          ''',
-              '''        binding.searchHeader.post {
-              if (_binding != null) updateGridTopPadding()
-          }
-
-          appAdapter.submitList(list.onEach {
-          ''',
-              'padding after results',
+          exact(
+              '        appAdapter.submitList(list.onEach {\n',
+              '        binding.searchHeader.post {\n            if (_binding != null) updateGridTopPadding()\n        }\n\n        appAdapter.submitList(list.onEach {\n',
+              'result padding',
           )
 
           p.write_text(text, encoding='utf-8')
