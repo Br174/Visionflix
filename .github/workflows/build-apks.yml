@@ -110,36 +110,83 @@ jobs:
             Verlezza Vision TV ${{ env.APP_VERSION_NAME }} (build ${{ env.APP_VERSION_CODE }}).
             Questa release privata viene aggiornata automaticamente a ogni build di main.
 
-      - name: Publish public latest TV APK for Downloader code 3875230
+      - name: Force public Downloader release to the new TV APK
         env:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           PUBLIC_REPO: Br174/streamflix-BV
         shell: bash
         run: |
           set -euo pipefail
+
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::warning::PUBLISH_TOKEN non configurato: APK compilato correttamente, ma la release pubblica per Downloader non è stata aggiornata."
-            exit 0
+            echo "::error::PUBLISH_TOKEN non configurato: la build non puo essere considerata pronta finche Downloader non viene aggiornato."
+            exit 1
           fi
 
           TAG="verlezza-tv-${APP_VERSION_CODE}"
+          TITLE="Verlezza Vision TV — ${APP_VERSION_NAME} (build ${APP_VERSION_CODE})"
+
           cat > /tmp/release-notes.md <<EOF
           Verlezza Vision TV ${APP_VERSION_NAME} (build ${APP_VERSION_CODE}).
 
+          Codice Downloader: **3875230**.
           Questo asset alimenta il collegamento stabile registrato nel codice Downloader 3875230.
           Il nome pubblico dell'asset resta Visionflix_BV_TV.apk per mantenere invariato il codice Downloader.
 
-          Firma stabilizzata dalla versione 1.7.239 (build 168). Le precedenti build usavano chiavi temporanee diverse: questo APK non può aggiornare direttamente quelle installazioni. La rimozione della vecchia app può cancellarne i dati; salvare prima le impostazioni.
+          Firma stabilizzata dalla versione 1.7.239 (build 168). Le precedenti build usavano chiavi temporanee diverse: questo APK non puo aggiornare direttamente quelle installazioni. La rimozione della vecchia app puo cancellarne i dati; salvare prima le impostazioni.
           EOF
 
-          gh release create "$TAG" \
-            /tmp/Visionflix_BV_TV.apk \
-            /tmp/SHA256SUMS.txt \
-            /tmp/apk-info.txt \
-            --repo "$PUBLIC_REPO" \
-            --target main \
-            --title "Verlezza Vision TV — ${APP_VERSION_NAME} (build ${APP_VERSION_CODE})" \
-            --notes-file /tmp/release-notes.md \
-            --latest
+          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              /tmp/Visionflix_BV_TV.apk \
+              /tmp/SHA256SUMS.txt \
+              /tmp/apk-info.txt \
+              --repo "$PUBLIC_REPO" \
+              --clobber
+            gh release edit "$TAG" \
+              --repo "$PUBLIC_REPO" \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md \
+              --latest
+          else
+            gh release create "$TAG" \
+              /tmp/Visionflix_BV_TV.apk \
+              /tmp/SHA256SUMS.txt \
+              /tmp/apk-info.txt \
+              --repo "$PUBLIC_REPO" \
+              --target main \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md \
+              --latest
+          fi
 
-          gh release view "$TAG" --repo "$PUBLIC_REPO" --json tagName,url
+          gh release view "$TAG" --repo "$PUBLIC_REPO" --json tagName,url,isLatest
+
+      - name: Verify Downloader 3875230 is serving this exact build
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_SHA="$(awk '{print $1}' /tmp/SHA256SUMS.txt)"
+          VERIFIED=0
+
+          for attempt in 1 2 3 4 5 6; do
+            rm -f /tmp/public-download.apk
+            if curl --fail --location --retry 2 --max-time 120 \
+              'https://github.com/Br174/streamflix-BV/releases/latest/download/Visionflix_BV_TV.apk' \
+              --output /tmp/public-download.apk; then
+              ACTUAL_SHA="$(sha256sum /tmp/public-download.apk | awk '{print $1}')"
+              if [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ]; then
+                VERIFIED=1
+                break
+              fi
+            fi
+            echo "Il link latest non serve ancora la build nuova; nuovo controllo tra 5 secondi..."
+            sleep 5
+          done
+
+          if [ "$VERIFIED" != "1" ]; then
+            echo "::error::Downloader 3875230 non sta ancora servendo l'APK appena compilato."
+            exit 1
+          fi
+
+          echo "Downloader 3875230 verificato: ${APP_VERSION_NAME} build ${APP_VERSION_CODE}." >> "$GITHUB_STEP_SUMMARY"
