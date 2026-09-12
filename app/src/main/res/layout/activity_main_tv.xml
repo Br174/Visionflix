@@ -9,8 +9,21 @@
     tools:deviceIds="tv"
     tools:ignore="MergeRootFrame">
 
-    <!-- Il contenuto TV occupa SEMPRE tutto il pannello. La barra di navigazione
-         viene disegnata sopra, invece di sottrarre larghezza al contenuto. -->
+    <com.tanasi.navigation.widget.NavigationSlideView
+        android:id="@+id/nav_main"
+        android:layout_width="wrap_content"
+        android:layout_height="0dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:background="?attr/app_background_color"
+        app:headerLayout="@layout/content_header_menu_main_tv"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:menu="@menu/menu_main_activity_tv"
+        app:menuGravity="center"
+        app:menuSpacing="8dp" />
+
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/nav_main_fragment"
         android:name="androidx.navigation.fragment.NavHostFragment"
@@ -20,25 +33,9 @@
         app:defaultNavHost="true"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintStart_toEndOf="@id/nav_main"
         app:layout_constraintTop_toTopOf="parent"
         app:navGraph="@navigation/nav_main_graph_tv" />
-
-    <com.tanasi.navigation.widget.NavigationSlideView
-        android:id="@+id/nav_main"
-        android:layout_width="wrap_content"
-        android:layout_height="0dp"
-        android:background="@android:color/transparent"
-        android:elevation="8dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        app:headerLayout="@layout/content_header_menu_main_tv"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:menu="@menu/menu_main_activity_tv"
-        app:menuGravity="center"
-        app:menuSpacing="8dp" />
 
     <ImageView
         android:id="@+id/iv_splash_overlay"
