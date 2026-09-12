@@ -30,9 +30,19 @@ class VoiceRecognitionHelper(
     var isListening: Boolean = false
         private set
 
+    // SearchTvFragment creates this helper from onViewCreated(). Calling
+    // Fragment.registerForActivityResult() from here is too late in the Fragment
+    // lifecycle on some Android TV devices and can close the app as soon as Search
+    // is opened. Register directly with the ActivityResultRegistry instead: this
+    // overload is not tied to the Fragment CREATED/STARTED registration deadline.
     private val permissionLauncher =
-        fragment.registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-            if (isGranted) startRecognition() else {
+        fragment.requireActivity().activityResultRegistry.register(
+            "voice_record_audio_${fragment.hashCode()}",
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                if (fragment.isAdded) startRecognition()
+            } else if (fragment.isAdded) {
                 onError(context.getString(R.string.voice_error_permission_denied))
             }
         }
@@ -62,7 +72,7 @@ class VoiceRecognitionHelper(
     }
 
     fun isAvailable(): Boolean {
-        return SpeechRecognizer.isRecognitionAvailable(context)
+        return runCatching { SpeechRecognizer.isRecognitionAvailable(context) }.getOrDefault(false)
     }
 
     private fun startRecognition() {
@@ -70,65 +80,67 @@ class VoiceRecognitionHelper(
             stopRecognition()
         }
 
-
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    val activeLang = params?.getString("language")
-                    Log.d("VoiceRecognitionHelper", "Reconocimiento activo en: $activeLang")
-                    onListeningStateChanged(true)
-                    isListening = true
-                }
-
-                override fun onBeginningOfSpeech() {}
-
-                override fun onRmsChanged(rmsdB: Float) {}
-
-                override fun onBufferReceived(buffer: ByteArray?) {}
-
-                override fun onEndOfSpeech() {
-                    onListeningStateChanged(false)
-                    isListening = false
-                }
-
-                override fun onError(error: Int) {
-                    onListeningStateChanged(false)
-                    isListening = false
-
-                    val msg = when (error) {
-                        SpeechRecognizer.ERROR_NO_MATCH -> fragment.getString(R.string.voice_error_no_match)
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> fragment.getString(R.string.voice_error_timeout)
-                        SpeechRecognizer.ERROR_AUDIO -> fragment.getString(R.string.voice_error_audio)
-                        else -> fragment.getString(R.string.voice_error_generic)
+        speechRecognizer = runCatching { SpeechRecognizer.createSpeechRecognizer(context) }
+            .getOrElse {
+                onError(context.getString(R.string.voice_error_generic))
+                return
+            }
+            .apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        val activeLang = params?.getString("language")
+                        Log.d("VoiceRecognitionHelper", "Reconocimiento activo en: $activeLang")
+                        onListeningStateChanged(true)
+                        isListening = true
                     }
-                    onError(msg)
 
+                    override fun onBeginningOfSpeech() {}
 
-                }
+                    override fun onRmsChanged(rmsdB: Float) {}
 
-                override fun onResults(results: Bundle?) {
-                    onListeningStateChanged(false)
-                    isListening = false
+                    override fun onBufferReceived(buffer: ByteArray?) {}
 
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val query = matches?.firstOrNull()?.trim()
-                    if (!query.isNullOrEmpty()) {
-                        onResult(query)
-                    } else {
-                        onError(context.getString(R.string.voice_error_no_result))
+                    override fun onEndOfSpeech() {
+                        onListeningStateChanged(false)
+                        isListening = false
                     }
-                }
 
-                override fun onPartialResults(partialResults: Bundle?) {}
+                    override fun onError(error: Int) {
+                        onListeningStateChanged(false)
+                        isListening = false
 
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-        }
+                        val msg = when (error) {
+                            SpeechRecognizer.ERROR_NO_MATCH -> fragment.getString(R.string.voice_error_no_match)
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> fragment.getString(R.string.voice_error_timeout)
+                            SpeechRecognizer.ERROR_AUDIO -> fragment.getString(R.string.voice_error_audio)
+                            else -> fragment.getString(R.string.voice_error_generic)
+                        }
+                        onError(msg)
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        onListeningStateChanged(false)
+                        isListening = false
+
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val query = matches?.firstOrNull()?.trim()
+                        if (!query.isNullOrEmpty()) {
+                            onResult(query)
+                        } else {
+                            onError(context.getString(R.string.voice_error_no_result))
+                        }
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {}
+
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
 
         val providerLanguage: String = UserPreferences.currentProvider
-            ?.language?:""
+            ?.language ?: ""
 
-        val languageTag = resolveFullLanguageTag(providerLanguage);
+        val languageTag = resolveFullLanguageTag(providerLanguage)
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
@@ -138,8 +150,14 @@ class VoiceRecognitionHelper(
             }
         }
 
-
-        speechRecognizer?.startListening(intent)
+        runCatching { speechRecognizer?.startListening(intent) }
+            .onFailure {
+                speechRecognizer?.destroy()
+                speechRecognizer = null
+                isListening = false
+                onListeningStateChanged(false)
+                onError(context.getString(R.string.voice_error_generic))
+            }
     }
 
     fun stopRecognition() {
@@ -151,7 +169,6 @@ class VoiceRecognitionHelper(
         speechRecognizer = null
         isListening = false
         onListeningStateChanged(false)
-
     }
 
     fun resolveFullLanguageTag(partialTag: String): String {
@@ -169,6 +186,4 @@ class VoiceRecognitionHelper(
         return supportedTags[normalized]
             ?: Locale.getDefault().toLanguageTag()
     }
-
-
 }
