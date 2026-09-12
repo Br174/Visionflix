@@ -1,4 +1,4 @@
-name: Build Visionflix Mobile and TV APKs
+name: Build Verlezza Vision Mobile and TV APKs
 
 on:
   push:
@@ -24,6 +24,12 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Set automatic app version
+        shell: bash
+        run: |
+          echo "APP_VERSION_CODE=$((131 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "APP_VERSION_NAME=1.7.$((202 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - name: Restore stable debug signing key
         uses: actions/cache@v4
@@ -59,7 +65,7 @@ jobs:
           RABBITSTREAM_SOURCE_API=
           EOF
           ./gradlew clean assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Visionflix-Mobile-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-Mobile.apk
 
       - name: Build Android TV debug APK
         run: |
@@ -70,26 +76,71 @@ jobs:
           RABBITSTREAM_SOURCE_API=
           EOF
           ./gradlew clean assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-TV-latest.apk
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-TV.apk
+          cp /tmp/Verlezza-Vision-TV.apk /tmp/Visionflix_BV_TV.apk
+
+      - name: Verify Android TV APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk
+          "$BUILD_TOOLS/aapt" dump badging /tmp/Visionflix_BV_TV.apk > /tmp/apk-info.txt
+          grep -F "package: name='com.br174.visionflix.tv.debug'" /tmp/apk-info.txt
+          grep -F "com.streamflixreborn.streamflix.activities.main.MainTvActivity" /tmp/apk-info.txt
+          grep -F "versionCode='$APP_VERSION_CODE'" /tmp/apk-info.txt
+          sha256sum /tmp/Visionflix_BV_TV.apk | sed 's#/tmp/##' > /tmp/SHA256SUMS.txt
 
       - name: Upload APKs artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Visionflix-debug-APKs
+          name: Verlezza-Vision-debug-APKs
           path: |
-            /tmp/Visionflix-Mobile-debug.apk
-            /tmp/Verlezza-Vision-TV-latest.apk
+            /tmp/Verlezza-Vision-Mobile.apk
+            /tmp/Verlezza-Vision-TV.apk
           if-no-files-found: error
 
-      - name: Publish/update fixed latest TV release
+      - name: Publish fixed latest TV release in source repository
         uses: softprops/action-gh-release@v2
         with:
           tag_name: tv-latest
           name: Verlezza Vision TV - Latest
           prerelease: false
           make_latest: true
-          files: /tmp/Verlezza-Vision-TV-latest.apk
+          files: /tmp/Visionflix_BV_TV.apk
           overwrite_files: true
           body: |
-            Download fisso della versione Android TV più recente di Verlezza Vision.
-            Ogni build di main sostituisce automaticamente l'APK allegato a questa release.
+            Verlezza Vision TV ${{ env.APP_VERSION_NAME }} (build ${{ env.APP_VERSION_CODE }}).
+            Questa release privata viene aggiornata automaticamente a ogni build di main.
+
+      - name: Publish public latest TV APK for Downloader code 3875230
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          PUBLIC_REPO: Br174/streamflix-BV
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::PUBLISH_TOKEN non configurato: APK compilato correttamente, ma la release pubblica per Downloader non è stata aggiornata."
+            exit 0
+          fi
+
+          TAG="verlezza-tv-${APP_VERSION_CODE}"
+          cat > /tmp/release-notes.md <<EOF
+          Verlezza Vision TV ${APP_VERSION_NAME} (build ${APP_VERSION_CODE}).
+
+          Questo asset alimenta il collegamento stabile registrato nel codice Downloader 3875230.
+          Il nome pubblico dell'asset resta Visionflix_BV_TV.apk per mantenere invariato il codice Downloader.
+          EOF
+
+          gh release create "$TAG" \
+            /tmp/Visionflix_BV_TV.apk \
+            /tmp/SHA256SUMS.txt \
+            /tmp/apk-info.txt \
+            --repo "$PUBLIC_REPO" \
+            --target main \
+            --title "Verlezza Vision TV — ${APP_VERSION_NAME} (build ${APP_VERSION_CODE})" \
+            --notes-file /tmp/release-notes.md \
+            --latest
+
+          gh release view "$TAG" --repo "$PUBLIC_REPO" --json tagName,url
