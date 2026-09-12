@@ -14,6 +14,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.adapters.AppAdapter
@@ -22,6 +23,7 @@ import com.streamflixreborn.streamflix.databinding.FragmentSearchMobileBinding
 import com.streamflixreborn.streamflix.models.Category
 import com.streamflixreborn.streamflix.models.Genre
 import com.streamflixreborn.streamflix.models.Movie
+import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.TmdbProvider
@@ -33,6 +35,8 @@ import com.streamflixreborn.streamflix.utils.VoiceRecognitionHelper
 import com.streamflixreborn.streamflix.utils.dp
 import com.streamflixreborn.streamflix.utils.hideKeyboard
 import com.streamflixreborn.streamflix.utils.viewModelsFactory
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class SearchMobileFragment : Fragment() {
@@ -45,6 +49,25 @@ class SearchMobileFragment : Fragment() {
     private val viewModel by viewModelsFactory { SearchViewModel(database) }
     private var appAdapter = AppAdapter()
     private lateinit var voiceHelper: VoiceRecognitionHelper
+    private var actorSearchJob: Job? = null
+    private var suppressActorTextChange: Boolean = false
+    private var searchHeaderOffset: Int = 0
+
+    private val actorSuggestionsAdapter by lazy {
+        AppAdapter().apply {
+            onPeopleClickListener = { people ->
+                suppressActorTextChange = true
+                binding.etActorSearch.setText(people.name)
+                binding.etActorSearch.setSelection(binding.etActorSearch.text?.length ?: 0)
+                suppressActorTextChange = false
+
+                viewModel.selectActorFilter(people.id, people.name)
+                hideKeyboard()
+                binding.rvActorSuggestions.visibility = View.GONE
+                binding.searchHeaderMobile.post { updateGridTopPadding() }
+            }
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -59,6 +82,8 @@ class SearchMobileFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         initializeSearch()
         initializeAdvancedFilters()
+        initializeActorSearch()
+        initializeScrollableHeader()
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.state.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED).collect { state ->
@@ -87,11 +112,19 @@ class SearchMobileFragment : Fragment() {
                         if (code == 409 && !hasAutoCleared409) {
                             hasAutoCleared409 = true
                             CacheUtils.clearAppCache(requireContext())
-                            Toast.makeText(requireContext(), getString(R.string.clear_cache_done_409), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                requireContext(),
+                                getString(R.string.clear_cache_done_409),
+                                Toast.LENGTH_SHORT,
+                            ).show()
                             retryCurrentSearch()
                             return@collect
                         }
-                        Toast.makeText(requireContext(), state.error.message ?: "", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            requireContext(),
+                            state.error.message ?: "",
+                            Toast.LENGTH_SHORT,
+                        ).show()
                         if (appAdapter.isLoading) {
                             appAdapter.isLoading = false
                         } else {
@@ -101,7 +134,11 @@ class SearchMobileFragment : Fragment() {
                                 btnIsLoadingRetry.setOnClickListener { retryCurrentSearch() }
                                 btnIsLoadingClearCache.setOnClickListener {
                                     CacheUtils.clearAppCache(requireContext())
-                                    Toast.makeText(requireContext(), getString(R.string.clear_cache_done), Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        requireContext(),
+                                        getString(R.string.clear_cache_done),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
                                     retryCurrentSearch()
                                 }
                                 btnIsLoadingErrorDetails.setOnClickListener {
@@ -113,11 +150,18 @@ class SearchMobileFragment : Fragment() {
                 }
             }
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.actorSuggestions
+                .flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+                .collect { displayActorSuggestions(it) }
+        }
     }
 
     override fun onDestroyView() {
+        actorSearchJob?.cancel()
+        if (::voiceHelper.isInitialized) voiceHelper.stopRecognition()
         super.onDestroyView()
-        voiceHelper.stopRecognition()
         _binding = null
     }
 
@@ -127,6 +171,7 @@ class SearchMobileFragment : Fragment() {
             binding.spContentType,
             binding.spItalian,
             binding.spYear,
+            binding.spGenre,
         )
 
         binding.btnApplyFilters.setOnClickListener { submitSearch() }
@@ -137,32 +182,150 @@ class SearchMobileFragment : Fragment() {
                 binding.spYear,
                 binding.etDateFrom,
                 binding.etDateTo,
+                binding.spGenre,
             )
+            clearActorField()
             viewModel.search(binding.etSearch.text?.toString().orEmpty())
         }
     }
 
+    private fun initializeActorSearch() {
+        binding.rvActorSuggestions.apply {
+            layoutManager = LinearLayoutManager(
+                requireContext(),
+                LinearLayoutManager.HORIZONTAL,
+                false,
+            )
+            adapter = actorSuggestionsAdapter
+            addItemDecoration(SpacingItemDecoration(8.dp(requireContext())))
+        }
+
+        binding.etActorSearch.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                val actorQuery = binding.etActorSearch.text?.toString().orEmpty().trim()
+                if (actorQuery.length >= 2 && viewModel.selectedActorId == null) {
+                    viewModel.searchActors(actorQuery)
+                }
+                hideKeyboard()
+                true
+            } else {
+                false
+            }
+        }
+
+        binding.etActorSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (suppressActorTextChange) return
+                actorSearchJob?.cancel()
+                viewModel.clearActorSelection()
+
+                val actorQuery = s?.toString().orEmpty().trim()
+                if (actorQuery.length < 2) {
+                    viewModel.clearActorSuggestions()
+                    return
+                }
+
+                actorSearchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    delay(280)
+                    viewModel.searchActors(actorQuery)
+                }
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+        })
+    }
+
+    private fun initializeScrollableHeader() {
+        binding.searchHeaderMobile.post { updateGridTopPadding() }
+
+        binding.rvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (_binding == null) return
+                syncHeaderToGrid(recyclerView)
+            }
+        })
+    }
+
+    private fun updateGridTopPadding() {
+        if (_binding == null) return
+        val extra = 8.dp(requireContext())
+        val topPadding = binding.searchHeaderMobile.height + extra
+        if (binding.rvSearch.paddingTop != topPadding) {
+            binding.rvSearch.setPadding(
+                binding.rvSearch.paddingLeft,
+                topPadding,
+                binding.rvSearch.paddingRight,
+                binding.rvSearch.paddingBottom,
+            )
+        }
+        syncHeaderToGrid(binding.rvSearch)
+    }
+
+    private fun syncHeaderToGrid(recyclerView: RecyclerView) {
+        if (_binding == null) return
+        val maxOffset = binding.searchHeaderMobile.height
+        if (maxOffset <= 0) return
+
+        val offset = recyclerView.computeVerticalScrollOffset().coerceIn(0, maxOffset)
+        searchHeaderOffset = offset
+        binding.searchHeaderMobile.translationY = -offset.toFloat()
+    }
+
+    private fun clearActorField() {
+        actorSearchJob?.cancel()
+        suppressActorTextChange = true
+        binding.etActorSearch.setText("")
+        suppressActorTextChange = false
+        viewModel.clearActorSelection()
+        binding.rvActorSuggestions.visibility = View.GONE
+        binding.searchHeaderMobile.post { updateGridTopPadding() }
+    }
+
     private fun submitSearch(): Boolean {
-        val query = binding.etSearch.text?.toString().orEmpty()
+        val query = binding.etSearch.text?.toString().orEmpty().trim()
         hideKeyboard()
 
-        val filters = try {
+        val baseFilters = try {
             AdvancedSearchUi.read(
                 binding.spContentType,
                 binding.spItalian,
                 binding.spYear,
                 binding.etDateFrom,
                 binding.etDateTo,
+                binding.spGenre,
             )
         } catch (e: IllegalArgumentException) {
-            Toast.makeText(requireContext(), e.message ?: "Filtro non valido", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                requireContext(),
+                e.message ?: "Filtro non valido",
+                Toast.LENGTH_SHORT,
+            ).show()
             return true
         }
+
+        val actorText = binding.etActorSearch.text?.toString().orEmpty().trim()
+        if (actorText.isNotBlank() && viewModel.selectedActorId == null) {
+            if (actorText.length >= 2) viewModel.searchActors(actorText)
+            Toast.makeText(
+                requireContext(),
+                "Seleziona l'attore dai suggerimenti",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return true
+        }
+
+        val filters = baseFilters.copy(
+            actorId = viewModel.selectedActorId,
+            actorName = viewModel.selectedActorName,
+        )
 
         if (filters.isActive) {
             binding.swGlobalSearch.isChecked = false
             if (UserPreferences.currentProvider !is TmdbProvider) {
-                val language = UserPreferences.currentProvider?.language?.takeIf { it.isNotBlank() } ?: "it"
+                val language = UserPreferences.currentProvider?.language
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "it"
                 UserPreferences.currentProvider = TmdbProvider(language)
             }
             viewModel.searchAdvanced(query, filters)
@@ -171,7 +334,11 @@ class SearchMobileFragment : Fragment() {
 
         if (binding.swGlobalSearch.isChecked) {
             if (query.isBlank()) {
-                Toast.makeText(requireContext(), getString(R.string.search_empty_query), Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.search_empty_query),
+                    Toast.LENGTH_SHORT,
+                ).show()
                 return true
             }
             val currentLanguage = UserPreferences.currentProvider?.language ?: "it"
@@ -205,12 +372,17 @@ class SearchMobileFragment : Fragment() {
                 override fun afterTextChanged(s: Editable?) {
                     if (s.isNullOrBlank()) {
                         val currentIsIptv = UserPreferences.currentProvider is IptvProvider
-                        val res = if (currentIsIptv) R.string.search_input_hint_iptv else R.string.search_input_hint
+                        val res = if (currentIsIptv) {
+                            R.string.search_input_hint_iptv
+                        } else {
+                            R.string.search_input_hint
+                        }
                         binding.etSearch.hint = getString(res)
                     }
                 }
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             })
         }
 
@@ -235,11 +407,10 @@ class SearchMobileFragment : Fragment() {
             onListeningStateChanged = {
                 binding.btnSearchVoice.startAnimation(blink)
                 binding.etSearch.hint = getString(R.string.voice_prompt)
-            }
+            },
         )
 
         binding.btnSearchVoice.apply {
-            requestFocus()
             visibility = if (voiceHelper.isAvailable()) View.VISIBLE else View.GONE
             setOnClickListener {
                 if (!voiceHelper.isListening) voiceHelper.startWithPermissionCheck()
@@ -260,12 +431,21 @@ class SearchMobileFragment : Fragment() {
         }
     }
 
+    private fun displayActorSuggestions(list: List<People>) {
+        if (_binding == null) return
+        val items = list.onEach { it.itemType = AppAdapter.Type.PEOPLE_MOBILE_ITEM }
+        actorSuggestionsAdapter.submitList(items)
+        binding.rvActorSuggestions.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        binding.searchHeaderMobile.post { updateGridTopPadding() }
+    }
+
     private fun displaySearch(list: List<AppAdapter.Item>, hasMore: Boolean) {
         appAdapter.submitList(list.onEach {
             when (it) {
                 is Genre -> it.itemType = AppAdapter.Type.GENRE_GRID_MOBILE_ITEM
                 is Movie -> it.itemType = AppAdapter.Type.MOVIE_GRID_MOBILE_ITEM
                 is TvShow -> it.itemType = AppAdapter.Type.TV_SHOW_GRID_MOBILE_ITEM
+                is People -> it.itemType = AppAdapter.Type.PEOPLE_MOBILE_ITEM
             }
         })
 
@@ -281,11 +461,17 @@ class SearchMobileFragment : Fragment() {
 
         providerResults.forEach { providerResult ->
             val headerTitle = when (val state = providerResult.state) {
-                is ProviderResult.State.Loading -> "${providerResult.provider.name} - ${getString(R.string.searching)}"
-                is ProviderResult.State.Error -> "${providerResult.provider.name} - ${getString(R.string.search_error)}"
+                is ProviderResult.State.Loading ->
+                    "${providerResult.provider.name} - ${getString(R.string.searching)}"
+                is ProviderResult.State.Error ->
+                    "${providerResult.provider.name} - ${getString(R.string.search_error)}"
                 is ProviderResult.State.Success -> {
                     val count = state.results.size
-                    val resultText = if (count == 1) getString(R.string.result) else getString(R.string.results)
+                    val resultText = if (count == 1) {
+                        getString(R.string.result)
+                    } else {
+                        getString(R.string.results)
+                    }
                     "${providerResult.provider.name} - $count $resultText"
                 }
             }
