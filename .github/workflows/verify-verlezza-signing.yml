@@ -1,0 +1,59 @@
+name: Verify and preserve Verlezza Vision signing
+on:
+  push:
+    branches: [codex/verify-verlezza-signing]
+    paths: [.github/workflows/verify-verlezza-signing.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore existing signing key without generating or changing it
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: visionflix-debug-keystore-v1
+          fail-on-cache-miss: true
+      - name: Check public certificate against the installed public APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
+          CERT_SHA="$(sha256sum /tmp/signing-cert.der | cut -d ' ' -f 1)"
+          echo "Cached signing certificate SHA256: $CERT_SHA"
+          if [ "$CERT_SHA" != "1cd369d6b3d6f3bb97be87a27b4a29748c533d36106a2d4ff60a67f477bbe110" ]; then
+            echo "::error::The cached key does not match the public build 28 certificate. No APK has been changed or published."
+            exit 1
+          fi
+      - name: Download already-built TV APK from verified source run
+        uses: actions/download-artifact@v4
+        with:
+          name: Verlezza-Vision-debug-APKs
+          run-id: 34669051048
+          github-token: ${{ github.token }}
+          path: /tmp/verlezza-source
+      - name: Preserve the installed signing identity on the new TV APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/verlezza-source
+          echo "e74af2e76ceb74e039dfb82005d57b1bcb6e8da60a6ed19eb07f2ad2451db0df  Verlezza-Vision-TV.apk" | sha256sum -c -
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BUILD_TOOLS/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out /tmp/Visionflix_BV_TV.apk Verlezza-Vision-TV.apk
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk | tee /tmp/signature-info.txt
+          grep -F 'Signer #1 certificate SHA-256 digest: 1cd369d6b3d6f3bb97be87a27b4a29748c533d36106a2d4ff60a67f477bbe110' /tmp/signature-info.txt
+          "$BUILD_TOOLS/aapt" dump badging /tmp/Visionflix_BV_TV.apk > /tmp/apk-info.txt
+          grep -F "package: name='com.br174.visionflix.tv.debug' versionCode='166' versionName='1.7.237'" /tmp/apk-info.txt
+          grep -F "application-label:'Verlezza Vision'" /tmp/apk-info.txt
+          sha256sum /tmp/Visionflix_BV_TV.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Verlezza-Vision-TV-preserved-signature
+          path: /tmp/Visionflix_BV_TV.apk
+          if-no-files-found: error
