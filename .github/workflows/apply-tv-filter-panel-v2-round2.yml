@@ -1,0 +1,36 @@
+name: Apply TV filter panel v2 round2 fixes
+
+on:
+  push:
+    branches:
+      - fix/tv-filter-panel-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: fix/tv-filter-panel-v2
+
+      - name: Apply round2 fixes
+        run: python3 scripts/fix_tv_filter_panel_v2_round2.py
+
+      - name: Commit source fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchTvFragment.kt \
+            app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchViewModel.kt \
+            app/src/main/java/com/streamflixreborn/streamflix/providers/AdvancedSearch.kt
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: compile TV filters and enforce director credits'
+          git push origin HEAD:fix/tv-filter-panel-v2
