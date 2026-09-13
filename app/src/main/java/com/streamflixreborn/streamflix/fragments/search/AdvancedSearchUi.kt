@@ -17,6 +17,8 @@ internal object AdvancedSearchUi {
         italian: Spinner,
         year: Spinner,
         genre: Spinner? = null,
+        sort: Spinner? = null,
+        platform: Spinner? = null,
     ) {
         if (genre == null) {
             contentType.adapter = mobileAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
@@ -40,6 +42,8 @@ internal object AdvancedSearchUi {
             year.rootView.findViewById<Spinner>(R.id.et_date_from)?.adapter = yearAdapter(context)
             year.rootView.findViewById<Spinner>(R.id.et_date_to)?.adapter = yearAdapter(context)
         }
+        sort?.adapter = compactAdapter(context, AdvancedSearchFilters.SortFilter.values().map { it.label })
+        platform?.adapter = compactAdapter(context, AdvancedSearchFilters.PlatformFilter.values().map { it.label })
     }
 
     fun read(
@@ -49,6 +53,8 @@ internal object AdvancedSearchUi {
         yearFrom: Spinner,
         yearTo: Spinner,
         genre: Spinner? = null,
+        sort: Spinner? = null,
+        platform: Spinner? = null,
     ): AdvancedSearchFilters {
         val selectedYear = selectedYear(year)
         val selectedFrom = selectedYear(yearFrom)
@@ -79,6 +85,8 @@ internal object AdvancedSearchUi {
             year = if (hasRange) null else selectedYear,
             dateFrom = selectedFrom?.let { "%04d-01-01".format(it) },
             dateTo = selectedTo?.let { "%04d-12-31".format(it) },
+            sort = sort?.let { AdvancedSearchFilters.SortFilter.values().getOrElse(it.selectedItemPosition) { AdvancedSearchFilters.SortFilter.POPULARITY } } ?: AdvancedSearchFilters.SortFilter.POPULARITY,
+            platform = platform?.let { AdvancedSearchFilters.PlatformFilter.values().getOrElse(it.selectedItemPosition) { AdvancedSearchFilters.PlatformFilter.ALL } } ?: AdvancedSearchFilters.PlatformFilter.ALL,
         )
 
         if (filters.isActive && !hasUsableTmdbKey()) {
@@ -97,6 +105,8 @@ internal object AdvancedSearchUi {
         yearFrom: Spinner,
         yearTo: Spinner,
         genre: Spinner? = null,
+        sort: Spinner? = null,
+        platform: Spinner? = null,
     ) {
         contentType.setSelection(0)
         italian.setSelection(0)
@@ -104,6 +114,8 @@ internal object AdvancedSearchUi {
         yearFrom.setSelection(0)
         yearTo.setSelection(0)
         genre?.setSelection(0)
+        sort?.setSelection(0)
+        platform?.setSelection(0)
     }
 
     private fun compactAdapter(

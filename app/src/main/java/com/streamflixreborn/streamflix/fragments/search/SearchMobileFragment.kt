@@ -50,7 +50,9 @@ class SearchMobileFragment : Fragment() {
     private var appAdapter = AppAdapter()
     private lateinit var voiceHelper: VoiceRecognitionHelper
     private var actorSearchJob: Job? = null
+    private var directorSearchJob: Job? = null
     private var suppressActorTextChange: Boolean = false
+    private var suppressDirectorTextChange: Boolean = false
     private var searchHeaderOffset: Int = 0
 
     private val actorSuggestionsAdapter by lazy {
@@ -64,6 +66,21 @@ class SearchMobileFragment : Fragment() {
                 viewModel.selectActorFilter(people.id, people.name)
                 hideKeyboard()
                 binding.rvActorSuggestions.visibility = View.GONE
+                binding.searchHeaderMobile.post { updateGridTopPadding() }
+            }
+        }
+    }
+
+    private val directorSuggestionsAdapter by lazy {
+        AppAdapter().apply {
+            onPeopleClickListener = { people ->
+                suppressDirectorTextChange = true
+                binding.etDirectorSearch.setText(people.name)
+                binding.etDirectorSearch.setSelection(binding.etDirectorSearch.text?.length ?: 0)
+                suppressDirectorTextChange = false
+                viewModel.selectDirectorFilter(people.id, people.name)
+                hideKeyboard()
+                binding.rvDirectorSuggestions.visibility = View.GONE
                 binding.searchHeaderMobile.post { updateGridTopPadding() }
             }
         }
@@ -83,6 +100,7 @@ class SearchMobileFragment : Fragment() {
         initializeSearch()
         initializeAdvancedFilters()
         initializeActorSearch()
+        initializeDirectorSearch()
         initializeScrollableHeader()
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -156,10 +174,16 @@ class SearchMobileFragment : Fragment() {
                 .flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
                 .collect { displayActorSuggestions(it) }
         }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.directorSuggestions
+                .flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+                .collect { displayDirectorSuggestions(it) }
+        }
     }
 
     override fun onDestroyView() {
         actorSearchJob?.cancel()
+        directorSearchJob?.cancel()
         if (::voiceHelper.isInitialized) voiceHelper.stopRecognition()
         super.onDestroyView()
         _binding = null
@@ -172,6 +196,8 @@ class SearchMobileFragment : Fragment() {
             binding.spItalian,
             binding.spYear,
             binding.spGenre,
+            binding.spSort,
+            binding.spPlatform,
         )
 
         binding.btnApplyFilters.setOnClickListener { submitSearch() }
@@ -183,8 +209,11 @@ class SearchMobileFragment : Fragment() {
                 binding.etDateFrom,
                 binding.etDateTo,
                 binding.spGenre,
+                binding.spSort,
+                binding.spPlatform,
             )
             clearActorField()
+            clearDirectorField()
             viewModel.search(binding.etSearch.text?.toString().orEmpty())
         }
     }
@@ -236,6 +265,32 @@ class SearchMobileFragment : Fragment() {
         })
     }
 
+    private fun initializeDirectorSearch() {
+        binding.rvDirectorSuggestions.apply {
+            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+            adapter = directorSuggestionsAdapter
+            addItemDecoration(SpacingItemDecoration(8.dp(requireContext())))
+        }
+        binding.etDirectorSearch.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                val q = binding.etDirectorSearch.text?.toString().orEmpty().trim()
+                if (q.length >= 2 && viewModel.selectedDirectorId == null) viewModel.searchDirectors(q)
+                hideKeyboard(); true
+            } else false
+        }
+        binding.etDirectorSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(v: Editable?) {
+                if (suppressDirectorTextChange) return
+                directorSearchJob?.cancel(); viewModel.clearDirectorSelection()
+                val q = v?.toString().orEmpty().trim()
+                if (q.length < 2) { viewModel.clearDirectorSuggestions(); return }
+                directorSearchJob = viewLifecycleOwner.lifecycleScope.launch { delay(280); viewModel.searchDirectors(q) }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+        })
+    }
+
     private fun initializeScrollableHeader() {
         binding.searchHeaderMobile.post { updateGridTopPadding() }
 
@@ -282,6 +337,16 @@ class SearchMobileFragment : Fragment() {
         binding.searchHeaderMobile.post { updateGridTopPadding() }
     }
 
+    private fun clearDirectorField() {
+        directorSearchJob?.cancel()
+        suppressDirectorTextChange = true
+        binding.etDirectorSearch.setText("")
+        suppressDirectorTextChange = false
+        viewModel.clearDirectorSelection()
+        binding.rvDirectorSuggestions.visibility = View.GONE
+        binding.searchHeaderMobile.post { updateGridTopPadding() }
+    }
+
     private fun submitSearch(): Boolean {
         val query = binding.etSearch.text?.toString().orEmpty().trim()
         hideKeyboard()
@@ -294,6 +359,8 @@ class SearchMobileFragment : Fragment() {
                 binding.etDateFrom,
                 binding.etDateTo,
                 binding.spGenre,
+                binding.spSort,
+                binding.spPlatform,
             )
         } catch (e: IllegalArgumentException) {
             Toast.makeText(
@@ -315,9 +382,17 @@ class SearchMobileFragment : Fragment() {
             return true
         }
 
+        val directorText = binding.etDirectorSearch.text?.toString().orEmpty().trim()
+        if (directorText.isNotBlank() && viewModel.selectedDirectorId == null) {
+            if (directorText.length >= 2) viewModel.searchDirectors(directorText)
+            Toast.makeText(requireContext(), "Seleziona il regista dai suggerimenti", Toast.LENGTH_SHORT).show()
+            return true
+        }
         val filters = baseFilters.copy(
             actorId = viewModel.selectedActorId,
             actorName = viewModel.selectedActorName,
+            directorId = viewModel.selectedDirectorId,
+            directorName = viewModel.selectedDirectorName,
         )
 
         if (filters.isActive) {
@@ -436,6 +511,14 @@ class SearchMobileFragment : Fragment() {
         val items = list.onEach { it.itemType = AppAdapter.Type.PEOPLE_MOBILE_ITEM }
         actorSuggestionsAdapter.submitList(items)
         binding.rvActorSuggestions.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        binding.searchHeaderMobile.post { updateGridTopPadding() }
+    }
+
+    private fun displayDirectorSuggestions(list: List<People>) {
+        if (_binding == null) return
+        val items = list.onEach { it.itemType = AppAdapter.Type.PEOPLE_MOBILE_ITEM }
+        directorSuggestionsAdapter.submitList(items)
+        binding.rvDirectorSuggestions.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
         binding.searchHeaderMobile.post { updateGridTopPadding() }
     }
 

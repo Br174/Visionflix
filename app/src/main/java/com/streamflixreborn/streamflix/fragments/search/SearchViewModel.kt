@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 sealed class State {
     data object Searching : State()
@@ -383,16 +384,21 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
 
         if (query.isNotBlank()) {
-            val firstTmdbPage = ((page - 1) * 3) + 1
-            val searchDeferred = (firstTmdbPage..firstTmdbPage + 2).map { tmdbPage ->
-                async {
-                    TMDb3.Search.multi(
-                        query = query,
-                        page = tmdbPage,
-                        language = language,
-                    ).results
+            val queryVariants = buildQueryVariants(query)
+            val pagesPerVariant = if (queryVariants.size <= 2) 3 else 2
+            val firstSearchPage = ((page - 1) * pagesPerVariant) + 1
+            val searchDeferred = queryVariants.flatMap { variant ->
+                (firstSearchPage until firstSearchPage + pagesPerVariant).map { tmdbPage ->
+                    async {
+                        TMDb3.Search.multi(
+                            query = variant,
+                            page = tmdbPage,
+                            language = language,
+                        ).results
+                    }
                 }
             }
+            val firstDiscoverPage = ((page - 1) * 6) + 1
 
             val actorCreditsDeferred = actorId?.let { id ->
                 async { provider.getPeople(id, page = 1).filmography }
@@ -400,7 +406,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
             val needsDiscoverConstraint = platformProviderIds != null
             val movieConstraintDeferred = if (needsDiscoverConstraint && includeMovies) async {
-                (firstTmdbPage..firstTmdbPage + 2).map { discoverPage ->
+                (firstDiscoverPage until firstDiscoverPage + 6).map { discoverPage ->
                     async {
                         val params = mutableMapOf(
                             "language" to language,
@@ -417,7 +423,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 }.awaitAll().flatten().toHashSet()
             } else null
             val tvConstraintDeferred = if (needsDiscoverConstraint && includeTv) async {
-                (firstTmdbPage..firstTmdbPage + 2).map { discoverPage ->
+                (firstDiscoverPage until firstDiscoverPage + 6).map { discoverPage ->
                     async {
                         val params = mutableMapOf(
                             "language" to language,
@@ -666,6 +672,29 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         return (selectedYear == null || itemYear == selectedYear) &&
             (fromYear == null || itemYear >= fromYear) &&
             (toYear == null || itemYear <= toYear)
+    }
+
+    private fun buildQueryVariants(rawQuery: String): List<String> {
+        val clean = rawQuery.trim().replace(Regex("""\s+"""), " ")
+        if (clean.isBlank()) return emptyList()
+        val generic = setOf(
+            "film", "films", "movie", "movies", "serie", "series", "tv",
+            "cartone", "cartoni", "cartoon", "cartoons", "animazione", "animation",
+            "italia", "italy", "italiano", "italiana", "italiani", "italiane")
+        val words = clean.split(' ').filter { it.isNotBlank() }
+        val coreWords = words.filterNot { it.lowercase(Locale.ROOT) in generic }
+        val variants = linkedSetOf<String>()
+        variants += clean
+        val core = coreWords.joinToString(" ").trim()
+        if (core.length >= 2) variants += core
+        coreWords.filter { it.length >= 4 }.forEach { variants += it }
+        val low = core.lowercase(Locale.ROOT)
+        if ("natale" in low) { variants += core.replace(Regex("natale", RegexOption.IGNORE_CASE), "Christmas"); variants += "Christmas" }
+        if ("christmas" in low) variants += "Natale"
+        if ("pasqua" in low) variants += core.replace(Regex("pasqua", RegexOption.IGNORE_CASE), "Easter")
+        if ("easter" in low) variants += "Pasqua"
+        return variants.map { it.trim() }.filter { it.length >= 2 }
+            .distinctBy { it.lowercase(Locale.ROOT) }.take(6)
     }
 
     fun searchGlobal(query: String, currentLanguage: String) = viewModelScope.launch(Dispatchers.IO) {
