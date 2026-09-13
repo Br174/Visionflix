@@ -118,9 +118,9 @@ class SearchTvFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        // Questa scocca contiene solo componenti già usati dalla ricerca TV originale.
-        // I filtri vengono costruiti dopo il primo frame, così non possono impedire
-        // l'apertura della destinazione Cerca durante l'inflazione del layout.
+        // Mantiene la scocca crash-safe introdotta dopo il crash della ricerca TV.
+        // Non reinserire qui il vecchio layout complesso con filtri/Spinner statici:
+        // i controlli avanzati devono continuare a nascere solo dopo il primo frame.
         return inflater.inflate(R.layout.fragment_search_tv_safe, container, false)
     }
 
@@ -138,6 +138,7 @@ class SearchTvFragment : Fragment() {
         }
 
         // Mostra prima la pagina stabile, poi inizializza i sottosistemi separatamente.
+        // Database/ViewModel, filtri e voce NON devono tornare nel percorso di inflation.
         view.post {
             if (!isAdded || viewLifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) {
                 return@post
@@ -248,6 +249,7 @@ class SearchTvFragment : Fragment() {
                     position: Int,
                     subposition: Int,
                 ) {
+                    updateHeaderForSelectedPosition(position)
                     if (position in 0 until currentGridColumns.coerceAtLeast(1)) {
                         btnApplyFilters?.let { child?.itemView?.nextFocusUpId = it.id }
                     }
@@ -483,6 +485,7 @@ class SearchTvFragment : Fragment() {
                 button.setOnClickListener { submitSearch() }
             }
 
+            configureFilterFocus(actorSearchButton)
             searchHeader.post { updateGridTopPadding() }
         } catch (error: Throwable) {
             Log.e(TAG, "Advanced filter panel failed", error)
@@ -498,6 +501,53 @@ class SearchTvFragment : Fragment() {
             )
             showSafeToast("Cerca è aperta; i filtri avanzati non sono stati caricati")
         }
+    }
+
+    private fun configureFilterFocus(actorSearchButton: TextView) {
+        val type = typeSelector ?: return
+        val italian = italianSelector ?: return
+        val year = yearSelector ?: return
+        val genre = genreSelector ?: return
+        val from = fromSelector ?: return
+        val to = toSelector ?: return
+        val actor = actorEdit ?: return
+        val reset = btnResetFilters ?: return
+        val apply = btnApplyFilters ?: return
+
+        etSearch.nextFocusRightId = btnSearchClear.id
+        etSearch.nextFocusDownId = llGlobalSearch.id
+        btnSearchClear.nextFocusLeftId = etSearch.id
+        btnSearchClear.nextFocusRightId = btnSearchVoice.id
+        btnSearchClear.nextFocusDownId = llGlobalSearch.id
+        btnSearchVoice.nextFocusLeftId = btnSearchClear.id
+        btnSearchVoice.nextFocusDownId = llGlobalSearch.id
+        llGlobalSearch.nextFocusUpId = etSearch.id
+        llGlobalSearch.nextFocusDownId = type.viewId
+
+        type.setNextFocus(right = italian.viewId, up = llGlobalSearch.id, down = from.viewId)
+        italian.setNextFocus(left = type.viewId, right = year.viewId, up = llGlobalSearch.id, down = to.viewId)
+        year.setNextFocus(left = italian.viewId, right = genre.viewId, up = llGlobalSearch.id, down = actor.id)
+        genre.setNextFocus(left = year.viewId, up = llGlobalSearch.id, down = actorSearchButton.id)
+
+        from.setNextFocus(right = to.viewId, up = type.viewId, down = reset.id)
+        to.setNextFocus(left = from.viewId, right = actor.id, up = italian.viewId, down = reset.id)
+
+        actor.nextFocusLeftId = to.viewId
+        actor.nextFocusRightId = actorSearchButton.id
+        actor.nextFocusUpId = year.viewId
+        actor.nextFocusDownId = apply.id
+
+        actorSearchButton.nextFocusLeftId = actor.id
+        actorSearchButton.nextFocusUpId = genre.viewId
+        actorSearchButton.nextFocusDownId = apply.id
+
+        reset.nextFocusUpId = from.viewId
+        reset.nextFocusRightId = apply.id
+        reset.nextFocusDownId = vgvSearch.id
+        apply.nextFocusUpId = actor.id
+        apply.nextFocusLeftId = reset.id
+        apply.nextFocusDownId = vgvSearch.id
+        vgvSearch.nextFocusUpId = apply.id
     }
 
     private fun setupActorTextSearch() {
@@ -665,8 +715,8 @@ class SearchTvFragment : Fragment() {
             italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
             genre = genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
             year = yearSelector?.value,
-            dateFrom = from?.toString(),
-            dateTo = to?.toString(),
+            dateFrom = from?.let { "%04d-01-01".format(it) },
+            dateTo = to?.let { "%04d-12-31".format(it) },
             actorId = vm?.selectedActorId,
             actorName = vm?.selectedActorName.orEmpty(),
         )
@@ -744,8 +794,7 @@ class SearchTvFragment : Fragment() {
     private fun syncHeaderToGrid(recyclerView: RecyclerView) {
         val maxOffset = searchHeader.height
         if (maxOffset <= 0 || recyclerView.childCount == 0) {
-            searchHeaderOffset = 0
-            searchHeader.translationY = 0f
+            setSearchHeaderOffset(0, animate = false)
             return
         }
 
@@ -767,14 +816,38 @@ class SearchTvFragment : Fragment() {
         } else {
             maxOffset
         }
-        searchHeaderOffset = offset
-        searchHeader.translationY = -offset.toFloat()
+        setSearchHeaderOffset(offset, animate = false)
+    }
+
+    private fun updateHeaderForSelectedPosition(position: Int) {
+        if (position == RecyclerView.NO_POSITION || !this::searchHeader.isInitialized) return
+        val maxOffset = searchHeader.height
+        if (maxOffset <= 0) return
+        val firstRowSize = currentGridColumns.coerceAtLeast(1)
+        val targetOffset = if (position >= firstRowSize) maxOffset else 0
+        setSearchHeaderOffset(targetOffset, animate = true)
+    }
+
+    private fun setSearchHeaderOffset(offset: Int, animate: Boolean) {
+        if (!this::searchHeader.isInitialized) return
+        val maxOffset = searchHeader.height.coerceAtLeast(0)
+        val safeOffset = offset.coerceIn(0, maxOffset)
+        searchHeaderOffset = safeOffset
+        val translation = -safeOffset.toFloat()
+        searchHeader.animate().cancel()
+        if (animate) {
+            searchHeader.animate()
+                .translationY(translation)
+                .setDuration(140L)
+                .start()
+        } else {
+            searchHeader.translationY = translation
+        }
     }
 
     private fun revealSearchHeader() {
         if (searchHeaderOffset > 0) vgvSearch.scrollToPosition(0)
-        searchHeaderOffset = 0
-        searchHeader.translationY = 0f
+        setSearchHeaderOffset(0, animate = true)
     }
 
     private fun focusSearchContent(): Boolean {
@@ -912,7 +985,7 @@ class SearchTvFragment : Fragment() {
             valueView,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)),
         )
-        return CycleSelector(root, valueView, values, labeler)
+        return CycleSelector(title, root, valueView, values, labeler)
     }
 
     private fun addSelectorToRow(row: LinearLayout, selector: CycleSelector<*>?) {
@@ -962,6 +1035,7 @@ class SearchTvFragment : Fragment() {
         (value * resources.displayMetrics.density).toInt()
 
     private inner class CycleSelector<T>(
+        private val title: String,
         val root: LinearLayout,
         private val valueView: TextView,
         private val values: List<T>,
@@ -969,23 +1043,22 @@ class SearchTvFragment : Fragment() {
     ) {
         private var index = 0
         val value: T get() = values[index]
+        val viewId: Int get() = valueView.id
 
         init {
             require(values.isNotEmpty())
             render()
-            valueView.setOnClickListener { move(1) }
+            valueView.setOnClickListener { showChoices() }
             valueView.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus && searchHeaderOffset > 0) revealSearchHeader()
             }
             valueView.setOnKeyListener { _, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        move(-1)
-                        true
-                    }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        move(1)
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        showChoices()
                         true
                     }
                     else -> false
@@ -998,9 +1071,46 @@ class SearchTvFragment : Fragment() {
             render()
         }
 
-        private fun move(delta: Int) {
-            index = (index + delta).mod(values.size)
-            render()
+        fun setNextFocus(
+            left: Int? = null,
+            right: Int? = null,
+            up: Int? = null,
+            down: Int? = null,
+        ) {
+            left?.let { valueView.nextFocusLeftId = it }
+            right?.let { valueView.nextFocusRightId = it }
+            up?.let { valueView.nextFocusUpId = it }
+            down?.let { valueView.nextFocusDownId = it }
+        }
+
+        private fun showChoices() {
+            if (!isAdded) return
+            try {
+                val labels = values.map(labeler).toTypedArray()
+                val dialog = android.app.AlertDialog.Builder(requireContext())
+                    .setTitle(title)
+                    .setSingleChoiceItems(labels, index) { openedDialog, which ->
+                        index = which
+                        render()
+                        openedDialog.dismiss()
+                    }
+                    .setNegativeButton("Annulla", null)
+                    .create()
+
+                dialog.setOnShowListener {
+                    dialog.listView?.apply {
+                        setSelection(index)
+                        requestFocus()
+                    }
+                }
+                dialog.setOnDismissListener {
+                    if (isAdded) valueView.post { valueView.requestFocus() }
+                }
+                dialog.show()
+            } catch (error: Throwable) {
+                Log.e(TAG, "Filter selector '$title' failed", error)
+                showSafeToast("Impossibile aprire il filtro $title")
+            }
         }
 
         private fun render() {
