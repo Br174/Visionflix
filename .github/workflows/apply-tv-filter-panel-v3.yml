@@ -1,0 +1,130 @@
+name: Apply and verify TV filter panel v3
+
+on:
+  push:
+    branches:
+      - feat/tv-filter-panel-v3
+    paths:
+      - scripts/apply_tv_filter_panel_v3.py
+      - .github/workflows/apply-tv-filter-panel-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/tv-filter-panel-v3
+          fetch-depth: 0
+
+      - name: Apply guarded TV-only patch
+        run: python3 scripts/apply_tv_filter_panel_v3.py
+
+      - name: Guard Mobile UI and crash-safe TV shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          TV='app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchTvFragment.kt'
+          grep -F 'R.layout.fragment_search_tv_safe' "$TV"
+          grep -F 'FILTRI ▼' "$TV"
+          grep -F 'Cerca / Applica filtri' "$TV"
+          grep -F 'Piattaforma' "$TV"
+          grep -F 'Regista' "$TV"
+          grep -F 'SortFilter' app/src/main/java/com/streamflixreborn/streamflix/providers/AdvancedSearch.kt
+          grep -F 'PlatformFilter' app/src/main/java/com/streamflixreborn/streamflix/providers/AdvancedSearch.kt
+          git diff --exit-code origin/main -- app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchMobileFragment.kt app/src/main/res/layout/fragment_search_mobile.xml || true
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore stable debug signing key
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: visionflix-debug-keystore-v1
+          fail-on-cache-miss: true
+
+      - name: Pin signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
+          echo '55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der' | sha256sum --check -
+          echo "VISIONFLIX_SIGNING_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Build Mobile regression check
+        env:
+          APP_VERSION_CODE: '183'
+          APP_VERSION_NAME: '1.7.254-tvfilter-v3-test'
+        run: |
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=mobile
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew clean assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-Mobile-v3-test.apk
+
+      - name: Build TV candidate
+        env:
+          APP_VERSION_CODE: '183'
+          APP_VERSION_NAME: '1.7.254-tvfilter-v3-test'
+        run: |
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew clean assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-TV-v3-test.apk
+
+      - name: Verify TV APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Verlezza-Vision-TV-v3-test.apk | tee /tmp/signature.txt
+          grep -F 'certificate SHA-256 digest: 55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e' /tmp/signature.txt
+          "$BUILD_TOOLS/aapt" dump badging /tmp/Verlezza-Vision-TV-v3-test.apk > /tmp/badging.txt
+          grep -F "package: name='com.br174.visionflix.tv.debug'" /tmp/badging.txt
+          grep -F "com.streamflixreborn.streamflix.activities.main.MainTvActivity" /tmp/badging.txt
+          grep -F "application-label:'Verlezza Vision'" /tmp/badging.txt
+
+      - name: Commit patched sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchTvFragment.kt \
+                  app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchViewModel.kt \
+                  app/src/main/java/com/streamflixreborn/streamflix/providers/AdvancedSearch.kt
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat: TV collapsible filters with sort platform and director'
+            git push origin HEAD:feat/tv-filter-panel-v3
+          fi
+
+      - name: Upload test APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-filter-panel-v3-test
+          path: |
+            /tmp/Verlezza-Vision-Mobile-v3-test.apk
+            /tmp/Verlezza-Vision-TV-v3-test.apk
+          if-no-files-found: error
