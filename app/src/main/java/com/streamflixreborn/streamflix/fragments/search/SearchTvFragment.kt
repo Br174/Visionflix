@@ -1139,6 +1139,7 @@ class SearchTvFragment : Fragment() {
     private fun focusFirstResultWhenReady() {
         if (appAdapter.items.isEmpty()) return
         vgvSearch.scrollToPosition(0)
+        vgvSearch.setSelectedPosition(0)
         vgvSearch.post {
             if (vgvSearch.requestFocus()) pendingFocusFirstResult = false
         }

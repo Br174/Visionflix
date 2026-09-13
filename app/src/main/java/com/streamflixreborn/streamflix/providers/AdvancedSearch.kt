@@ -32,7 +32,7 @@ data class AdvancedSearchFilters(
         PRIME_VIDEO("Prime Video", "119"),
         APPLE_TV_PLUS("Apple TV+", "350"),
         SKY_NOW("Sky / NOW", "29|39"),
-        HBO_MAX("HBO Max", "1899"),
+        HBO_MAX("HBO Max / Max", "384|1899"),
     }
 
     enum class GenreFilter(

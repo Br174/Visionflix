@@ -359,6 +359,18 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val actorId = filters.actorId?.takeIf { it.isNotBlank() }
         val directorId = filters.directorId?.takeIf { it.isNotBlank() }
         val platformProviderIds = filters.platform.providerIds
+        val directorDetailsDeferred = directorId?.toIntOrNull()?.let { personId ->
+            async {
+                TMDb3.People.details(
+                    personId = personId,
+                    appendToResponse = listOf(
+                        TMDb3.Params.AppendToResponse.Person.MOVIE_CREDITS,
+                        TMDb3.Params.AppendToResponse.Person.TV_CREDITS,
+                    ),
+                    language = language,
+                )
+            }
+        }
         val movieSort = when (filters.sort) {
             AdvancedSearchFilters.SortFilter.DATE -> "primary_release_date.desc"
             AdvancedSearchFilters.SortFilter.VOTE -> "vote_average.desc"
@@ -386,7 +398,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 async { provider.getPeople(id, page = 1).filmography }
             }
 
-            val needsDiscoverConstraint = directorId != null || platformProviderIds != null
+            val needsDiscoverConstraint = platformProviderIds != null
             val movieConstraintDeferred = if (needsDiscoverConstraint && includeMovies) async {
                 (firstTmdbPage..firstTmdbPage + 2).map { discoverPage ->
                     async {
@@ -396,7 +408,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             "sort_by" to movieSort,
                             "include_adult" to "false",
                         )
-                        directorId?.let { params["with_crew"] = it }
                         platformProviderIds?.let {
                             params["watch_region"] = "IT"
                             params["with_watch_providers"] = it
@@ -414,7 +425,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             "sort_by" to tvSort,
                             "include_adult" to "false",
                         )
-                        directorId?.let { params["with_crew"] = it }
                         platformProviderIds?.let {
                             params["watch_region"] = "IT"
                             params["with_watch_providers"] = it
@@ -429,6 +439,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val actorMovieIds = actorCredits.filterIsInstance<Movie>().mapTo(hashSetOf()) { it.id }
             val actorTvIds = actorCredits.filterIsInstance<TvShow>().mapTo(hashSetOf()) { it.id }
             val restrictToActor = actorId != null
+            val directorDetails = directorDetailsDeferred?.await()
+            val directorMovieIds = directorDetails?.movieCredits?.crew
+                ?.filter { it.job.equals("Director", ignoreCase = true) }
+                ?.mapTo(hashSetOf()) { it.id.toString() }
+                .orEmpty()
+            val directorTvIds = directorDetails?.tvCredits?.crew
+                ?.filter { it.job.equals("Director", ignoreCase = true) }
+                ?.mapTo(hashSetOf()) { it.id.toString() }
+                .orEmpty()
+            val restrictToDirector = directorId != null
             val constrainedMovieIds = movieConstraintDeferred?.await()
             val constrainedTvIds = tvConstraintDeferred?.await()
             val sortedSearchResults = when (filters.sort) {
@@ -467,6 +487,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             if (genreId !in multi.genresIds) return@mapNotNull null
                         }
                         if (restrictToActor && multi.id.toString() !in actorMovieIds) return@mapNotNull null
+                        if (restrictToDirector && multi.id.toString() !in directorMovieIds) return@mapNotNull null
                         if (constrainedMovieIds != null && multi.id.toString() !in constrainedMovieIds) return@mapNotNull null
                         if (!matchesYearFilter(multi.releaseDate, filters)) return@mapNotNull null
 
@@ -491,6 +512,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             if (genreId !in multi.genresIds) return@mapNotNull null
                         }
                         if (restrictToActor && multi.id.toString() !in actorTvIds) return@mapNotNull null
+                        if (restrictToDirector && multi.id.toString() !in directorTvIds) return@mapNotNull null
                         if (constrainedTvIds != null && multi.id.toString() !in constrainedTvIds) return@mapNotNull null
                         if (!matchesYearFilter(multi.firstAirDate, filters)) return@mapNotNull null
 
@@ -564,9 +586,20 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             TMDb3.Discover.tv(params).results
         } else null
 
+        val blankDirectorDetails = directorDetailsDeferred?.await()
+        val blankDirectorMovieIds = blankDirectorDetails?.movieCredits?.crew
+            ?.filter { it.job.equals("Director", ignoreCase = true) }
+            ?.mapTo(hashSetOf()) { it.id.toString() }
+            .orEmpty()
+        val blankDirectorTvIds = blankDirectorDetails?.tvCredits?.crew
+            ?.filter { it.job.equals("Director", ignoreCase = true) }
+            ?.mapTo(hashSetOf()) { it.id.toString() }
+            .orEmpty()
+
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
+            .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
             .map { movie ->
                 Movie(
                     id = movie.id.toString(),
@@ -583,6 +616,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val tvItems = tvDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
+            .filter { directorId == null || it.id.toString() in blankDirectorTvIds }
             .map { tv ->
                 TvShow(
                     id = tv.id.toString(),
@@ -601,9 +635,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         when (filters.sort) {
             AdvancedSearchFilters.SortFilter.DATE -> combined.sortedByDescending {
                 when (it) {
-                    is Movie -> it.released.orEmpty()
-                    is TvShow -> it.released.orEmpty()
-                    else -> ""
+                    is Movie -> it.released?.timeInMillis ?: Long.MIN_VALUE
+                    is TvShow -> it.released?.timeInMillis ?: Long.MIN_VALUE
+                    else -> Long.MIN_VALUE
                 }
             }
             AdvancedSearchFilters.SortFilter.VOTE -> combined.sortedByDescending {
