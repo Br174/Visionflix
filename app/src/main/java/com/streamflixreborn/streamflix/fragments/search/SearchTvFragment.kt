@@ -2,6 +2,7 @@ package com.streamflixreborn.streamflix.fragments.search
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -14,11 +15,13 @@ import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
@@ -74,12 +77,12 @@ class SearchTvFragment : Fragment() {
     private var searchHeaderOffset = 0
     private var suppressActorTextChange = false
 
-    private var typeSelector: CycleSelector<AdvancedSearchFilters.ContentType>? = null
-    private var italianSelector: CycleSelector<AdvancedSearchFilters.ItalianFilter>? = null
-    private var yearSelector: CycleSelector<Int?>? = null
-    private var genreSelector: CycleSelector<AdvancedSearchFilters.GenreFilter>? = null
-    private var fromSelector: CycleSelector<Int?>? = null
-    private var toSelector: CycleSelector<Int?>? = null
+    private var typeSelector: DropdownSelector<AdvancedSearchFilters.ContentType>? = null
+    private var italianSelector: DropdownSelector<AdvancedSearchFilters.ItalianFilter>? = null
+    private var yearSelector: DropdownSelector<Int?>? = null
+    private var genreSelector: DropdownSelector<AdvancedSearchFilters.GenreFilter>? = null
+    private var fromSelector: DropdownSelector<Int?>? = null
+    private var toSelector: DropdownSelector<Int?>? = null
     private var actorEdit: EditText? = null
     private var actorSuggestionsGrid: HorizontalGridView? = null
     private var actorFallbackSuggestions: LinearLayout? = null
@@ -249,7 +252,6 @@ class SearchTvFragment : Fragment() {
                     position: Int,
                     subposition: Int,
                 ) {
-                    updateHeaderForSelectedPosition(position)
                     if (position in 0 until currentGridColumns.coerceAtLeast(1)) {
                         btnApplyFilters?.let { child?.itemView?.nextFocusUpId = it.id }
                     }
@@ -375,7 +377,7 @@ class SearchTvFragment : Fragment() {
                 when (it) {
                     AdvancedSearchFilters.ContentType.ALL -> "Tutti"
                     AdvancedSearchFilters.ContentType.MOVIE -> "Film"
-                    AdvancedSearchFilters.ContentType.TV -> "Serie TV"
+                    AdvancedSearchFilters.ContentType.TV -> "Serie"
                     AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
                 }
             }
@@ -768,9 +770,28 @@ class SearchTvFragment : Fragment() {
         vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 try {
-                    syncHeaderToGrid(recyclerView)
+                    if (!this@SearchTvFragment::searchHeader.isInitialized) return
+                    val maxOffset = searchHeader.height
+                    if (maxOffset <= 0) return
+
+                    // Il blocco Cerca + filtri si muove dello stesso delta verticale
+                    // delle locandine: andando verso i risultati scompare gradualmente;
+                    // tornando verso l'alto ricompare gradualmente. In cima torna a zero.
+                    val target = (searchHeaderOffset + dy).coerceIn(0, maxOffset)
+                    setSearchHeaderOffset(target, animate = false)
+                    if (!recyclerView.canScrollVertically(-1)) {
+                        setSearchHeaderOffset(0, animate = false)
+                    }
                 } catch (error: Throwable) {
                     Log.w(TAG, "Header scroll sync ignored", error)
+                }
+            }
+
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState == RecyclerView.SCROLL_STATE_IDLE &&
+                    !recyclerView.canScrollVertically(-1)
+                ) {
+                    setSearchHeaderOffset(0, animate = true)
                 }
             }
         })
@@ -966,29 +987,73 @@ class SearchTvFragment : Fragment() {
         title: String,
         values: List<T>,
         labeler: (T) -> String,
-    ): CycleSelector<T> {
+    ): DropdownSelector<T> {
         val root = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
         }
         root.addView(makeLabel(title, 12f, false, Color.rgb(169, 178, 194)))
-        val valueView = TextView(requireContext()).apply {
+
+        // Stessa struttura grafica del Mobile: cornice, Spinner trasparente e
+        // chevron a destra. Viene costruita qui, dopo il primo frame, così non
+        // torna nel layout statico che aveva reso fragile l'apertura di Cerca TV.
+        val controlFrame = FrameLayout(requireContext()).apply {
             id = View.generateViewId()
             isFocusable = true
+            isFocusableInTouchMode = true
             isClickable = true
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            setPadding(dp(12), 0, dp(12), 0)
+            contentDescription = title
             setBackgroundResource(R.drawable.bg_filter_control_tv)
         }
+
+        val labels = values.map(labeler)
+        val spinner = Spinner(requireContext(), Spinner.MODE_DROPDOWN).apply {
+            isFocusable = false
+            isClickable = false
+            background = null
+            setPadding(dp(12), 0, dp(30), 0)
+            adapter = ArrayAdapter(
+                requireContext(),
+                R.layout.item_filter_spinner_tv,
+                labels,
+            ).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            popupBackgroundDrawable = ColorDrawable(Color.rgb(48, 48, 48))
+            dropDownVerticalOffset = dp(2)
+            post {
+                if (width > 0) dropDownWidth = width
+            }
+        }
+        controlFrame.addView(
+            spinner,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
+        val chevron = ImageView(requireContext()).apply {
+            setImageResource(R.drawable.ic_filter_chevron_down)
+            isFocusable = false
+            isClickable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        controlFrame.addView(
+            chevron,
+            FrameLayout.LayoutParams(dp(18), dp(18)).apply {
+                gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+                marginEnd = dp(9)
+            },
+        )
+
         root.addView(
-            valueView,
+            controlFrame,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)),
         )
-        return CycleSelector(title, root, valueView, values, labeler)
+        return DropdownSelector(title, root, controlFrame, spinner, values)
     }
 
-    private fun addSelectorToRow(row: LinearLayout, selector: CycleSelector<*>?) {
+    private fun addSelectorToRow(row: LinearLayout, selector: DropdownSelector<*>?) {
         val control = selector ?: return
         row.addView(
             control.root,
@@ -1034,41 +1099,45 @@ class SearchTvFragment : Fragment() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
-    private inner class CycleSelector<T>(
+    private inner class DropdownSelector<T>(
         private val title: String,
         val root: LinearLayout,
-        private val valueView: TextView,
+        private val focusView: FrameLayout,
+        private val spinner: Spinner,
         private val values: List<T>,
-        private val labeler: (T) -> String,
     ) {
-        private var index = 0
-        val value: T get() = values[index]
-        val viewId: Int get() = valueView.id
+        val value: T
+            get() {
+                val selected = spinner.selectedItemPosition.takeIf { it in values.indices } ?: 0
+                return values[selected]
+            }
+        val viewId: Int get() = focusView.id
 
         init {
             require(values.isNotEmpty())
-            render()
-            valueView.setOnClickListener { showChoices() }
-            valueView.setOnFocusChangeListener { _, hasFocus ->
+
+            focusView.setOnClickListener { openDropdown() }
+            focusView.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus && searchHeaderOffset > 0) revealSearchHeader()
             }
-            valueView.setOnKeyListener { _, keyCode, event ->
+            focusView.setOnKeyListener { _, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 when (keyCode) {
                     KeyEvent.KEYCODE_DPAD_CENTER,
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                        showChoices()
+                        openDropdown()
                         true
                     }
+                    // Sinistra/destra/su/giù NON cambiano il valore: restano
+                    // disponibili alla normale navigazione D-pad tra le caselle.
                     else -> false
                 }
             }
         }
 
         fun reset() {
-            index = 0
-            render()
+            spinner.setSelection(0, false)
         }
 
         fun setNextFocus(
@@ -1077,44 +1146,20 @@ class SearchTvFragment : Fragment() {
             up: Int? = null,
             down: Int? = null,
         ) {
-            left?.let { valueView.nextFocusLeftId = it }
-            right?.let { valueView.nextFocusRightId = it }
-            up?.let { valueView.nextFocusUpId = it }
-            down?.let { valueView.nextFocusDownId = it }
+            left?.let { focusView.nextFocusLeftId = it }
+            right?.let { focusView.nextFocusRightId = it }
+            up?.let { focusView.nextFocusUpId = it }
+            down?.let { focusView.nextFocusDownId = it }
         }
 
-        private fun showChoices() {
+        private fun openDropdown() {
             if (!isAdded) return
             try {
-                val labels = values.map(labeler).toTypedArray()
-                val dialog = android.app.AlertDialog.Builder(requireContext())
-                    .setTitle(title)
-                    .setSingleChoiceItems(labels, index) { openedDialog, which ->
-                        index = which
-                        render()
-                        openedDialog.dismiss()
-                    }
-                    .setNegativeButton("Annulla", null)
-                    .create()
-
-                dialog.setOnShowListener {
-                    dialog.listView?.apply {
-                        setSelection(index)
-                        requestFocus()
-                    }
-                }
-                dialog.setOnDismissListener {
-                    if (isAdded) valueView.post { valueView.requestFocus() }
-                }
-                dialog.show()
+                spinner.performClick()
             } catch (error: Throwable) {
-                Log.e(TAG, "Filter selector '$title' failed", error)
+                Log.e(TAG, "Filter dropdown '$title' failed", error)
                 showSafeToast("Impossibile aprire il filtro $title")
             }
-        }
-
-        private fun render() {
-            valueView.text = labeler(values[index])
         }
     }
 
