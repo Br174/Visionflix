@@ -1,6 +1,7 @@
 package com.streamflixreborn.streamflix.fragments.search
 
 import android.content.Context
+import android.graphics.Color
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -13,63 +14,77 @@ import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.leanback.widget.HorizontalGridView
 import androidx.leanback.widget.OnChildViewHolderSelectedListener
+import androidx.leanback.widget.SearchEditText
+import androidx.leanback.widget.VerticalGridView
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.RecyclerView
 import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.database.AppDatabase
-import com.streamflixreborn.streamflix.databinding.FragmentSearchTvBinding
 import com.streamflixreborn.streamflix.models.Category
 import com.streamflixreborn.streamflix.models.Genre
 import com.streamflixreborn.streamflix.models.Movie
 import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
+import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
 import com.streamflixreborn.streamflix.providers.TmdbProvider
-import com.streamflixreborn.streamflix.utils.CacheUtils
-import com.streamflixreborn.streamflix.utils.LoggingUtils
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.VoiceRecognitionHelper
 import com.streamflixreborn.streamflix.utils.hideKeyboard
-import com.streamflixreborn.streamflix.utils.viewModelsFactory
+import java.util.Calendar
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class SearchTvFragment : Fragment() {
 
-    private var hasAutoCleared409: Boolean = false
-    private var _binding: FragmentSearchTvBinding? = null
-    private val binding get() = _binding!!
+    private lateinit var rootView: View
+    private lateinit var vgvSearch: VerticalGridView
+    private lateinit var pbSearch: ProgressBar
+    private lateinit var searchHeader: LinearLayout
+    private lateinit var etSearch: SearchEditText
+    private lateinit var btnSearchClear: ImageView
+    private lateinit var btnSearchVoice: ImageView
+    private lateinit var llGlobalSearch: LinearLayout
+    private lateinit var ivGlobalSearchSwitch: ImageView
+    private lateinit var filterContainer: LinearLayout
 
-    private val database by lazy { AppDatabase.getInstance(requireContext()) }
-    private val viewModel by viewModelsFactory { SearchViewModel(database) }
-    private var isGlobalSearchChecked: Boolean = false
-    private var currentGridColumns: Int = 1
+    private var searchViewModel: SearchViewModel? = null
+    private var voiceHelper: VoiceRecognitionHelper? = null
     private var actorSearchJob: Job? = null
-    private var suppressActorTextChange: Boolean = false
-    private var searchHeaderOffset: Int = 0
+    private var isGlobalSearchChecked = false
+    private var currentGridColumns = 1
+    private var searchHeaderOffset = 0
+    private var suppressActorTextChange = false
 
-    private val searchUiExceptionHandler = CoroutineExceptionHandler { _, error ->
-        Log.e("SearchTvFragment", "TV search coroutine failed", error)
-        activity?.runOnUiThread {
-            if (isAdded) {
-                Toast.makeText(
-                    requireContext(),
-                    "Cerca: errore isolato, la schermata resta aperta",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
-        }
-    }
+    private var typeSelector: CycleSelector<AdvancedSearchFilters.ContentType>? = null
+    private var italianSelector: CycleSelector<AdvancedSearchFilters.ItalianFilter>? = null
+    private var yearSelector: CycleSelector<Int?>? = null
+    private var genreSelector: CycleSelector<AdvancedSearchFilters.GenreFilter>? = null
+    private var fromSelector: CycleSelector<Int?>? = null
+    private var toSelector: CycleSelector<Int?>? = null
+    private var actorEdit: EditText? = null
+    private var actorSuggestionsGrid: HorizontalGridView? = null
+    private var actorFallbackSuggestions: LinearLayout? = null
+    private var btnApplyFilters: TextView? = null
+    private var btnResetFilters: TextView? = null
 
     private val appAdapter by lazy {
         AppAdapter().apply {
@@ -94,131 +109,44 @@ class SearchTvFragment : Fragment() {
 
     private val actorSuggestionsAdapter by lazy {
         AppAdapter().apply {
-            onPeopleClickListener = { people ->
-                suppressActorTextChange = true
-                binding.etActorSearch.setText(people.name)
-                binding.etActorSearch.setSelection(binding.etActorSearch.text?.length ?: 0)
-                suppressActorTextChange = false
-
-                viewModel.selectActorFilter(people.id, people.name)
-                hideKeyboard()
-                binding.hgvActorSuggestions.visibility = View.GONE
-                binding.btnApplyFilters.requestFocus()
-                binding.searchHeader.post { updateGridTopPadding() }
-            }
+            onPeopleClickListener = { people -> selectActor(people) }
         }
     }
 
-    private var voiceHelper: VoiceRecognitionHelper? = null
-
-    private fun switchProviderIfNeeded(providerName: String?) {
-        val targetName = providerName?.takeIf { it.isNotBlank() } ?: return
-        if (targetName == UserPreferences.currentProvider?.name) return
-
-        val targetProvider = Provider.providers.keys.find { it.name == targetName } ?: return
-        UserPreferences.currentProvider = targetProvider
-        Toast.makeText(
-            requireContext(),
-            getString(R.string.switching_to_provider, targetName),
-            Toast.LENGTH_SHORT,
-        ).show()
-    }
-
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
     ): View {
-        _binding = FragmentSearchTvBinding.inflate(inflater, container, false)
-        return binding.root
+        // Questa scocca contiene solo componenti già usati dalla ricerca TV originale.
+        // I filtri vengono costruiti dopo il primo frame, così non possono impedire
+        // l'apertura della destinazione Cerca durante l'inflazione del layout.
+        return inflater.inflate(R.layout.fragment_search_tv_safe, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        // Isola i sottosistemi opzionali: un problema locale non deve chiudere la TV.
-        safeInit("base") { initializeSearch() }
-        safeInit("filtri") { initializeAdvancedFilters() }
+        rootView = view
+
+        try {
+            bindBaseViews(view)
+            initializeBaseSearch()
+        } catch (error: Throwable) {
+            Log.e(TAG, "Base TV search shell failed", error)
+            showSafeToast("Cerca: apertura base non riuscita")
+            return
+        }
+
+        // Mostra prima la pagina stabile, poi inizializza i sottosistemi separatamente.
         view.post {
-            if (_binding == null) return@post
-            safeInit("attori") { initializeActorSearch() }
-            safeInit("scorrimento") { initializeScrollableHeader() }
-        }
-
-        viewLifecycleOwner.lifecycleScope.launch(searchUiExceptionHandler) {
-            viewModel.state.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED).collect { state ->
-                when (state) {
-                    is State.Searching, is State.GlobalSearching -> {
-                        binding.isLoading.apply {
-                            root.visibility = View.VISIBLE
-                            pbIsLoading.visibility = View.VISIBLE
-                            gIsLoadingRetry.visibility = View.GONE
-                        }
-                        appAdapter.isLoading = false
-                        appAdapter.setOnLoadMoreListener(null)
-                    }
-                    is State.SearchingMore -> appAdapter.isLoading = true
-                    is State.SuccessSearching -> {
-                        displaySearch(state.results, state.hasMore)
-                        appAdapter.isLoading = false
-                        binding.vgvSearch.visibility = View.VISIBLE
-                        binding.isLoading.root.visibility = View.GONE
-                    }
-                    is State.SuccessGlobalSearching -> {
-                        displayGlobalSearch(state.providerResults)
-                        appAdapter.isLoading = false
-                        binding.vgvSearch.visibility = View.VISIBLE
-                        binding.isLoading.root.visibility = View.GONE
-                    }
-                    is State.FailedSearching -> {
-                        val code = (state.error as? retrofit2.HttpException)?.code()
-                        if (code == 409 && !hasAutoCleared409) {
-                            hasAutoCleared409 = true
-                            CacheUtils.clearAppCache(requireContext())
-                            Toast.makeText(
-                                requireContext(),
-                                getString(R.string.clear_cache_done_409),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            if (appAdapter.isLoading) appAdapter.isLoading = false
-                            retryCurrentSearch()
-                            return@collect
-                        }
-                        Toast.makeText(
-                            requireContext(),
-                            state.error.message ?: "",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                        if (appAdapter.isLoading) {
-                            appAdapter.isLoading = false
-                        } else {
-                            binding.isLoading.apply {
-                                pbIsLoading.visibility = View.GONE
-                                gIsLoadingRetry.visibility = View.VISIBLE
-                                btnIsLoadingRetry.setOnClickListener { retryCurrentSearch() }
-                                btnIsLoadingClearCache.setOnClickListener {
-                                    CacheUtils.clearAppCache(requireContext())
-                                    Toast.makeText(
-                                        requireContext(),
-                                        getString(R.string.clear_cache_done),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                    retryCurrentSearch()
-                                }
-                                btnIsLoadingErrorDetails.setOnClickListener {
-                                    LoggingUtils.showErrorDialog(requireContext(), state.error)
-                                }
-                                binding.vgvSearch.visibility = View.INVISIBLE
-                                binding.etSearch.nextFocusDownId = binding.isLoading.btnIsLoadingRetry.id
-                                binding.isLoading.btnIsLoadingRetry.nextFocusUpId = binding.etSearch.id
-                            }
-                        }
-                    }
-                }
+            if (!isAdded || viewLifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) {
+                return@post
             }
-        }
-
-        viewLifecycleOwner.lifecycleScope.launch(searchUiExceptionHandler) {
-            viewModel.actorSuggestions
-                .flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
-                .collect { displayActorSuggestions(it) }
+            buildAdvancedFiltersSafely()
+            createViewModelSafely()
+            initializeScrollableHeader()
+            updateGridTopPadding()
+            etSearch.requestFocus()
         }
     }
 
@@ -226,63 +154,93 @@ class SearchTvFragment : Fragment() {
         actorSearchJob?.cancel()
         voiceHelper?.stopRecognition()
         voiceHelper = null
+        actorSuggestionsGrid = null
+        actorFallbackSuggestions = null
+        actorEdit = null
+        typeSelector = null
+        italianSelector = null
+        yearSelector = null
+        genreSelector = null
+        fromSelector = null
+        toSelector = null
+        btnApplyFilters = null
+        btnResetFilters = null
         super.onDestroyView()
-        _binding = null
     }
 
-    private fun initializeAdvancedFilters() {
-        AdvancedSearchUi.setup(
-            requireContext(),
-            binding.spContentType,
-            binding.spItalian,
-            binding.spYear,
-            binding.spGenre,
+    private fun bindBaseViews(view: View) {
+        vgvSearch = view.findViewById(R.id.vgv_search_safe)
+        pbSearch = view.findViewById(R.id.pb_search_safe)
+        searchHeader = view.findViewById(R.id.search_header_safe)
+        etSearch = view.findViewById(R.id.et_search_safe)
+        btnSearchClear = view.findViewById(R.id.btn_search_clear_safe)
+        btnSearchVoice = view.findViewById(R.id.btn_search_voice_safe)
+        llGlobalSearch = view.findViewById(R.id.ll_global_search_safe)
+        ivGlobalSearchSwitch = view.findViewById(R.id.iv_global_search_switch_safe)
+        filterContainer = view.findViewById(R.id.filter_container_safe)
+    }
+
+    private fun initializeBaseSearch() {
+        val isIptv = UserPreferences.currentProvider is IptvProvider
+        etSearch.hint = getString(
+            if (isIptv) R.string.search_input_hint_iptv else R.string.search_input_hint
         )
 
-        binding.btnApplyFilters.setOnClickListener { submitSearch() }
-        binding.btnResetFilters.setOnClickListener {
-            AdvancedSearchUi.reset(
-                binding.spContentType,
-                binding.spItalian,
-                binding.spYear,
-                binding.etDateFrom,
-                binding.etDateTo,
-                binding.spGenre,
-            )
-            clearActorField()
-            viewModel.search(binding.etSearch.text?.toString().orEmpty())
+        llGlobalSearch.setOnClickListener {
+            isGlobalSearchChecked = !isGlobalSearchChecked
+            updateGlobalSwitch()
         }
 
-        val filterViews = listOf(
-            binding.spContentType,
-            binding.spItalian,
-            binding.spYear,
-            binding.spGenre,
-            binding.etDateFrom,
-            binding.etDateTo,
-            binding.btnActorMode,
-            binding.etActorSearch,
-            binding.btnResetFilters,
-            binding.btnApplyFilters,
-        )
-        filterViews.forEach { view ->
-            view.setOnKeyListener { _, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_BACK) {
-                    focusSearchContent()
-                } else {
-                    false
+        etSearch.setOnEditorActionListener { _, actionId, event ->
+            val submitAction = actionId == EditorInfo.IME_ACTION_SEARCH ||
+                actionId == EditorInfo.IME_ACTION_DONE ||
+                actionId == EditorInfo.IME_NULL
+            val submitKey = event?.action == KeyEvent.ACTION_DOWN &&
+                (event.keyCode == KeyEvent.KEYCODE_ENTER ||
+                    event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)
+            if (submitAction || submitKey) submitSearch() else false
+        }
+
+        etSearch.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER,
+                KeyEvent.KEYCODE_SEARCH -> submitSearch()
+                KeyEvent.KEYCODE_BACK -> focusSearchContent()
+                else -> false
+            }
+        }
+
+        etSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (s.isNullOrBlank()) {
+                    val hint = if (UserPreferences.currentProvider is IptvProvider) {
+                        R.string.search_input_hint_iptv
+                    } else {
+                        R.string.search_input_hint
+                    }
+                    etSearch.hint = getString(hint)
                 }
             }
-            view.setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus && searchHeaderOffset > 0) revealSearchHeader()
-            }
-        }
-    }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+        })
 
-    private fun initializeActorSearch() {
-        binding.hgvActorSuggestions.apply {
-            adapter = actorSuggestionsAdapter
-            setItemSpacing((12 * resources.displayMetrics.density).toInt())
+        btnSearchClear.setOnClickListener {
+            etSearch.setText("")
+            searchViewModel?.clearActorSelection()
+            submitSearch()
+        }
+
+        // Il sottosistema vocale non viene costruito entrando nella pagina.
+        btnSearchVoice.setOnClickListener { startVoiceSearch() }
+
+        vgvSearch.apply {
+            adapter = appAdapter.apply {
+                stateRestorationPolicy = RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
+            }
+            setItemSpacing(resources.getDimension(R.dimen.search_spacing).toInt())
             addOnChildViewHolderSelectedListener(object : OnChildViewHolderSelectedListener() {
                 override fun onChildViewHolderSelected(
                     parent: RecyclerView,
@@ -290,89 +248,504 @@ class SearchTvFragment : Fragment() {
                     position: Int,
                     subposition: Int,
                 ) {
-                    child?.itemView?.nextFocusUpId = binding.etActorSearch.id
-                    child?.itemView?.nextFocusDownId = binding.btnApplyFilters.id
+                    if (position in 0 until currentGridColumns.coerceAtLeast(1)) {
+                        btnApplyFilters?.let { child?.itemView?.nextFocusUpId = it.id }
+                    }
                 }
             })
         }
+    }
 
-        binding.btnActorMode.setOnClickListener { focusActorField() }
-
-        binding.etActorSearch.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) revealSearchHeader()
-        }
-
-        binding.etActorSearch.setOnEditorActionListener { _, actionId, event ->
-            val isSubmitAction = actionId == EditorInfo.IME_ACTION_SEARCH ||
-                actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_NULL
-            val isSubmitKey = event?.action == KeyEvent.ACTION_DOWN &&
-                (event.keyCode == KeyEvent.KEYCODE_ENTER ||
-                    event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)
-            if (isSubmitAction || isSubmitKey) {
-                val actorQuery = binding.etActorSearch.text?.toString().orEmpty().trim()
-                if (actorQuery.length >= 2 && viewModel.selectedActorId == null) {
-                    viewModel.searchActors(actorQuery)
+    private fun createViewModelSafely() {
+        if (searchViewModel != null) return
+        try {
+            val database = AppDatabase.getInstance(requireContext())
+            val factory = object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    if (!modelClass.isAssignableFrom(SearchViewModel::class.java)) {
+                        throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
+                    }
+                    return SearchViewModel(database) as T
                 }
-                hideKeyboard()
-                true
-            } else {
-                false
+            }
+            searchViewModel = ViewModelProvider(this, factory)[SearchViewModel::class.java]
+            collectSearchStateSafely()
+            collectActorSuggestionsSafely()
+        } catch (error: Throwable) {
+            Log.e(TAG, "Search ViewModel creation failed", error)
+            showSafeToast("Cerca aperta, ma il motore di ricerca non è disponibile")
+        }
+    }
+
+    private fun collectSearchStateSafely() {
+        val vm = searchViewModel ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                vm.state
+                    .flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
+                    .collect { state ->
+                        try {
+                            when (state) {
+                                is State.Searching, is State.GlobalSearching -> {
+                                    pbSearch.visibility = View.VISIBLE
+                                    appAdapter.isLoading = false
+                                    appAdapter.setOnLoadMoreListener(null)
+                                }
+                                is State.SearchingMore -> appAdapter.isLoading = true
+                                is State.SuccessSearching -> {
+                                    pbSearch.visibility = View.GONE
+                                    appAdapter.isLoading = false
+                                    displaySearch(state.results, state.hasMore)
+                                }
+                                is State.SuccessGlobalSearching -> {
+                                    pbSearch.visibility = View.GONE
+                                    appAdapter.isLoading = false
+                                    displayGlobalSearch(state.providerResults)
+                                }
+                                is State.FailedSearching -> {
+                                    pbSearch.visibility = View.GONE
+                                    appAdapter.isLoading = false
+                                    showSafeToast(
+                                        state.error.message?.takeIf { it.isNotBlank() }
+                                            ?: "Ricerca non riuscita"
+                                    )
+                                }
+                            }
+                        } catch (uiError: Throwable) {
+                            Log.e(TAG, "Rendering search state failed", uiError)
+                            pbSearch.visibility = View.GONE
+                            showSafeToast("Cerca resta aperta: errore nella visualizzazione dei risultati")
+                        }
+                    }
+            } catch (collectorError: Throwable) {
+                Log.e(TAG, "Search state collector failed", collectorError)
+                pbSearch.visibility = View.GONE
+                showSafeToast("Cerca resta aperta: errore del motore risultati")
             }
         }
+    }
 
-        binding.etActorSearch.addTextChangedListener(object : TextWatcher {
+    private fun collectActorSuggestionsSafely() {
+        val vm = searchViewModel ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                vm.actorSuggestions
+                    .flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
+                    .collect { displayActorSuggestions(it) }
+            } catch (error: Throwable) {
+                Log.e(TAG, "Actor suggestions collector failed", error)
+            }
+        }
+    }
+
+    private fun buildAdvancedFiltersSafely() {
+        if (filterContainer.childCount > 0) return
+        try {
+            val panel = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(18), dp(16), dp(18), dp(14))
+                setBackgroundResource(R.drawable.bg_filter_panel_tv)
+            }
+            filterContainer.addView(
+                panel,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
+            )
+
+            panel.addView(makeLabel("Filtri avanzati", 18f, true))
+            panel.addView(makeLabel(
+                "Combina i criteri: testo, tipo, lingua, anno, genere e attore vengono applicati insieme.",
+                12f,
+                false,
+                Color.rgb(169, 178, 194),
+            ))
+
+            val typeValues = listOf(
+                AdvancedSearchFilters.ContentType.ALL,
+                AdvancedSearchFilters.ContentType.MOVIE,
+                AdvancedSearchFilters.ContentType.TV,
+                AdvancedSearchFilters.ContentType.CARTOON,
+            )
+            typeSelector = makeSelector("Tipo", typeValues) {
+                when (it) {
+                    AdvancedSearchFilters.ContentType.ALL -> "Tutti"
+                    AdvancedSearchFilters.ContentType.MOVIE -> "Film"
+                    AdvancedSearchFilters.ContentType.TV -> "Serie TV"
+                    AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
+                }
+            }
+
+            italianSelector = makeSelector(
+                "Italiano",
+                listOf(
+                    AdvancedSearchFilters.ItalianFilter.ALL,
+                    AdvancedSearchFilters.ItalianFilter.YES,
+                    AdvancedSearchFilters.ItalianFilter.NO,
+                ),
+            ) {
+                when (it) {
+                    AdvancedSearchFilters.ItalianFilter.ALL -> "Tutti"
+                    AdvancedSearchFilters.ItalianFilter.YES -> "Sì"
+                    AdvancedSearchFilters.ItalianFilter.NO -> "No"
+                }
+            }
+
+            val currentYear = Calendar.getInstance().get(Calendar.YEAR).coerceAtLeast(2026)
+            val yearValues: List<Int?> = listOf<Int?>(null) + (currentYear downTo 1900).map { it }
+            yearSelector = makeSelector("Anno", yearValues) { it?.toString() ?: "Tutti" }
+
+            val genres = AdvancedSearchFilters.GenreFilter.entries.toList()
+            genreSelector = makeSelector("Genere", genres) { it.label }
+
+            val firstRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(12), 0, 0)
+            }
+            panel.addView(firstRow)
+            addSelectorToRow(firstRow, typeSelector)
+            addSelectorToRow(firstRow, italianSelector)
+            addSelectorToRow(firstRow, yearSelector)
+            addSelectorToRow(firstRow, genreSelector)
+
+            fromSelector = makeSelector("Dal", yearValues) { it?.toString() ?: "Tutti" }
+            toSelector = makeSelector("Al", yearValues) { it?.toString() ?: "Tutti" }
+
+            val secondRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(10), 0, 0)
+            }
+            panel.addView(secondRow)
+            addSelectorToRow(secondRow, fromSelector)
+            addSelectorToRow(secondRow, toSelector)
+
+            val actorColumn = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            secondRow.addView(
+                actorColumn,
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f).apply {
+                    marginStart = dp(10)
+                },
+            )
+            actorColumn.addView(makeLabel("Attore", 12f, false, Color.rgb(169, 178, 194)))
+
+            val actorRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            actorColumn.addView(actorRow)
+
+            actorEdit = EditText(requireContext()).apply {
+                id = View.generateViewId()
+                isSingleLine = true
+                hint = "Scrivi almeno 2 lettere"
+                setHintTextColor(Color.rgb(150, 158, 172))
+                setTextColor(Color.WHITE)
+                textSize = 15f
+                setPadding(dp(12), 0, dp(12), 0)
+                setBackgroundResource(R.drawable.bg_filter_control_tv)
+            }
+            actorRow.addView(
+                actorEdit,
+                LinearLayout.LayoutParams(0, dp(46), 1f),
+            )
+
+            val actorSearchButton = makeActionButton("Cerca attore", primary = false)
+            actorRow.addView(
+                actorSearchButton,
+                LinearLayout.LayoutParams(dp(142), dp(46)).apply { marginStart = dp(8) },
+            )
+            actorSearchButton.setOnClickListener { triggerActorSearch() }
+
+            setupActorTextSearch()
+            addActorSuggestionsSurface(panel)
+
+            val actions = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.END
+                setPadding(0, dp(12), 0, 0)
+            }
+            panel.addView(actions)
+
+            btnResetFilters = makeActionButton("Azzera", primary = false).also { button ->
+                actions.addView(
+                    button,
+                    LinearLayout.LayoutParams(dp(150), dp(48)).apply { marginEnd = dp(10) },
+                )
+                button.setOnClickListener { resetFilters() }
+            }
+
+            btnApplyFilters = makeActionButton("Applica filtri", primary = true).also { button ->
+                actions.addView(button, LinearLayout.LayoutParams(dp(190), dp(48)))
+                button.setOnClickListener { submitSearch() }
+            }
+
+            searchHeader.post { updateGridTopPadding() }
+        } catch (error: Throwable) {
+            Log.e(TAG, "Advanced filter panel failed", error)
+            filterContainer.removeAllViews()
+            val fallback = makeActionButton("Ricerca base disponibile — filtri non caricati", primary = false)
+            fallback.isClickable = false
+            filterContainer.addView(
+                fallback,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(48),
+                )
+            )
+            showSafeToast("Cerca è aperta; i filtri avanzati non sono stati caricati")
+        }
+    }
+
+    private fun setupActorTextSearch() {
+        val edit = actorEdit ?: return
+        edit.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 if (suppressActorTextChange) return
                 actorSearchJob?.cancel()
-                viewModel.clearActorSelection()
-
-                val actorQuery = s?.toString().orEmpty().trim()
-                if (actorQuery.length < 2) {
-                    viewModel.clearActorSuggestions()
+                searchViewModel?.clearActorSelection()
+                val value = s?.toString().orEmpty().trim()
+                if (value.length < 2) {
+                    searchViewModel?.clearActorSuggestions()
+                    displayActorSuggestions(emptyList())
                     return
                 }
-
                 actorSearchJob = viewLifecycleOwner.lifecycleScope.launch {
-                    delay(280)
-                    viewModel.searchActors(actorQuery)
+                    delay(300)
+                    searchViewModel?.searchActors(value)
                 }
             }
-
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
         })
+
+        edit.setOnEditorActionListener { _, actionId, event ->
+            val submit = actionId == EditorInfo.IME_ACTION_SEARCH ||
+                actionId == EditorInfo.IME_ACTION_DONE ||
+                (event?.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_ENTER)
+            if (submit) {
+                triggerActorSearch()
+                hideKeyboard()
+                true
+            } else false
+        }
+    }
+
+    private fun addActorSuggestionsSurface(panel: LinearLayout) {
+        // HorizontalGridView è opzionale: se quel componente non è disponibile sul firmware,
+        // viene usato automaticamente un elenco testuale semplice senza chiudere Cerca.
+        try {
+            actorSuggestionsGrid = HorizontalGridView(requireContext()).apply {
+                id = View.generateViewId()
+                visibility = View.GONE
+                adapter = actorSuggestionsAdapter
+                setItemSpacing(dp(12))
+            }
+            panel.addView(
+                actorSuggestionsGrid,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(136)).apply {
+                    topMargin = dp(8)
+                },
+            )
+        } catch (error: Throwable) {
+            Log.w(TAG, "Horizontal actor grid unavailable, using fallback", error)
+            actorSuggestionsGrid = null
+        }
+
+        actorFallbackSuggestions = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+        }
+        panel.addView(
+            actorFallbackSuggestions,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) },
+        )
+    }
+
+    private fun triggerActorSearch() {
+        val actorName = actorEdit?.text?.toString().orEmpty().trim()
+        if (actorName.length < 2) {
+            showSafeToast("Scrivi almeno 2 lettere del nome dell'attore")
+            return
+        }
+        val vm = searchViewModel
+        if (vm == null) {
+            showSafeToast("Motore di ricerca ancora in inizializzazione")
+            return
+        }
+        vm.searchActors(actorName)
+    }
+
+    private fun displayActorSuggestions(list: List<People>) {
+        if (!isAdded || !this::searchHeader.isInitialized) return
+        try {
+            val items = list.onEach { it.itemType = AppAdapter.Type.PEOPLE_TV_ITEM }
+            actorSuggestionsGrid?.let { grid ->
+                actorSuggestionsAdapter.submitList(items)
+                grid.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+            }
+
+            actorFallbackSuggestions?.let { fallback ->
+                fallback.removeAllViews()
+                if (actorSuggestionsGrid == null && items.isNotEmpty()) {
+                    fallback.visibility = View.VISIBLE
+                    items.take(5).forEach { person ->
+                        val chip = makeActionButton(person.name, primary = false)
+                        chip.setOnClickListener { selectActor(person) }
+                        fallback.addView(
+                            chip,
+                            LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                                marginEnd = dp(6)
+                            },
+                        )
+                    }
+                } else {
+                    fallback.visibility = View.GONE
+                }
+            }
+            searchHeader.post { updateGridTopPadding() }
+        } catch (error: Throwable) {
+            Log.e(TAG, "Displaying actor suggestions failed", error)
+        }
+    }
+
+    private fun selectActor(people: People) {
+        suppressActorTextChange = true
+        actorEdit?.setText(people.name)
+        actorEdit?.setSelection(actorEdit?.text?.length ?: 0)
+        suppressActorTextChange = false
+        searchViewModel?.selectActorFilter(people.id, people.name)
+        actorSuggestionsGrid?.visibility = View.GONE
+        actorFallbackSuggestions?.visibility = View.GONE
+        btnApplyFilters?.requestFocus()
+        hideKeyboard()
+        searchHeader.post { updateGridTopPadding() }
+    }
+
+    private fun resetFilters() {
+        typeSelector?.reset()
+        italianSelector?.reset()
+        yearSelector?.reset()
+        genreSelector?.reset()
+        fromSelector?.reset()
+        toSelector?.reset()
+        suppressActorTextChange = true
+        actorEdit?.setText("")
+        suppressActorTextChange = false
+        searchViewModel?.clearActorSelection()
+        searchViewModel?.clearActorSuggestions()
+        displayActorSuggestions(emptyList())
+        searchViewModel?.search(etSearch.text?.toString().orEmpty().trim())
+    }
+
+    private fun currentFilters(): AdvancedSearchFilters? {
+        val from = fromSelector?.value
+        val to = toSelector?.value
+        if (from != null && to != null && from > to) {
+            showSafeToast("L'anno Dal non può essere successivo all'anno Al")
+            return null
+        }
+
+        val vm = searchViewModel
+        val actorText = actorEdit?.text?.toString().orEmpty().trim()
+        if (actorText.isNotBlank() && vm?.selectedActorId == null) {
+            triggerActorSearch()
+            showSafeToast("Seleziona l'attore dai suggerimenti")
+            return null
+        }
+
+        return AdvancedSearchFilters(
+            type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
+            italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
+            genre = genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
+            year = yearSelector?.value,
+            dateFrom = from?.toString(),
+            dateTo = to?.toString(),
+            actorId = vm?.selectedActorId,
+            actorName = vm?.selectedActorName.orEmpty(),
+        )
+    }
+
+    private fun submitSearch(): Boolean {
+        val vm = searchViewModel
+        if (vm == null) {
+            showSafeToast("Motore di ricerca ancora in inizializzazione")
+            return true
+        }
+
+        val query = etSearch.text?.toString().orEmpty().trim()
+        hideKeyboard()
+        val filters = currentFilters() ?: return true
+
+        if (filters.isActive) {
+            isGlobalSearchChecked = false
+            updateGlobalSwitch()
+            if (UserPreferences.currentProvider !is TmdbProvider) {
+                val language = UserPreferences.currentProvider?.language
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "it"
+                UserPreferences.currentProvider = TmdbProvider(language)
+            }
+            vm.searchAdvanced(query, filters)
+            return true
+        }
+
+        if (isGlobalSearchChecked) {
+            if (query.isBlank()) {
+                showSafeToast(getString(R.string.search_empty_query))
+                return true
+            }
+            vm.searchGlobal(query, UserPreferences.currentProvider?.language ?: "it")
+        } else {
+            vm.search(query)
+        }
+        return true
+    }
+
+    private fun updateGlobalSwitch() {
+        ivGlobalSearchSwitch.setImageResource(
+            if (isGlobalSearchChecked) R.drawable.ic_switch_on else R.drawable.ic_switch_off
+        )
     }
 
     private fun initializeScrollableHeader() {
-        binding.vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+        vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (_binding == null) return
-                syncHeaderToGrid(recyclerView)
+                try {
+                    syncHeaderToGrid(recyclerView)
+                } catch (error: Throwable) {
+                    Log.w(TAG, "Header scroll sync ignored", error)
+                }
             }
         })
     }
 
     private fun updateGridTopPadding() {
-        if (_binding == null) return
-        val extra = (12 * resources.displayMetrics.density).toInt()
-        val topPadding = binding.searchHeader.height + extra
-        if (binding.vgvSearch.paddingTop != topPadding) {
-            binding.vgvSearch.setPadding(
-                binding.vgvSearch.paddingLeft,
-                topPadding,
-                binding.vgvSearch.paddingRight,
-                binding.vgvSearch.paddingBottom,
+        if (!isAdded || !this::searchHeader.isInitialized) return
+        val top = searchHeader.height + dp(12)
+        if (top <= 0) return
+        if (vgvSearch.paddingTop != top) {
+            vgvSearch.setPadding(
+                vgvSearch.paddingLeft,
+                top,
+                vgvSearch.paddingRight,
+                vgvSearch.paddingBottom,
             )
         }
-        syncHeaderToGrid(binding.vgvSearch)
+        syncHeaderToGrid(vgvSearch)
     }
 
     private fun syncHeaderToGrid(recyclerView: RecyclerView) {
-        if (_binding == null) return
-        val maxOffset = binding.searchHeader.height
+        val maxOffset = searchHeader.height
         if (maxOffset <= 0 || recyclerView.childCount == 0) {
             searchHeaderOffset = 0
-            binding.searchHeader.translationY = 0f
+            searchHeader.translationY = 0f
             return
         }
 
@@ -394,347 +767,248 @@ class SearchTvFragment : Fragment() {
         } else {
             maxOffset
         }
-
         searchHeaderOffset = offset
-        binding.searchHeader.translationY = -offset.toFloat()
+        searchHeader.translationY = -offset.toFloat()
     }
 
     private fun revealSearchHeader() {
-        if (_binding == null) return
-        if (searchHeaderOffset > 0) binding.vgvSearch.scrollToPosition(0)
+        if (searchHeaderOffset > 0) vgvSearch.scrollToPosition(0)
         searchHeaderOffset = 0
-        binding.searchHeader.translationY = 0f
+        searchHeader.translationY = 0f
     }
-
-    private fun focusActorField() {
-        revealSearchHeader()
-        binding.etActorSearch.requestFocus()
-        binding.etActorSearch.post {
-            if (_binding == null) return@post
-            val input = requireContext()
-                .getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            input?.showSoftInput(binding.etActorSearch, InputMethodManager.SHOW_IMPLICIT)
-        }
-    }
-
-    private fun clearActorField() {
-        actorSearchJob?.cancel()
-        suppressActorTextChange = true
-        binding.etActorSearch.setText("")
-        suppressActorTextChange = false
-        viewModel.clearActorSelection()
-        binding.hgvActorSuggestions.visibility = View.GONE
-        binding.searchHeader.post { updateGridTopPadding() }
-    }
-
-    private fun submitSearch(): Boolean {
-        val query = binding.etSearch.text?.toString().orEmpty().trim()
-        hideKeyboard()
-
-        val baseFilters = try {
-            AdvancedSearchUi.read(
-                binding.spContentType,
-                binding.spItalian,
-                binding.spYear,
-                binding.etDateFrom,
-                binding.etDateTo,
-                binding.spGenre,
-            )
-        } catch (e: IllegalArgumentException) {
-            Toast.makeText(
-                requireContext(),
-                e.message ?: "Filtro non valido",
-                Toast.LENGTH_SHORT,
-            ).show()
-            return true
-        }
-
-        val actorText = binding.etActorSearch.text?.toString().orEmpty().trim()
-        if (actorText.isNotBlank() && viewModel.selectedActorId == null) {
-            if (actorText.length >= 2) viewModel.searchActors(actorText)
-            Toast.makeText(
-                requireContext(),
-                "Seleziona l'attore dai suggerimenti",
-                Toast.LENGTH_SHORT,
-            ).show()
-            return true
-        }
-
-        val filters = baseFilters.copy(
-            actorId = viewModel.selectedActorId,
-            actorName = viewModel.selectedActorName,
-        )
-
-        if (filters.isActive) {
-            isGlobalSearchChecked = false
-            binding.ivGlobalSearchSwitch.setImageResource(R.drawable.ic_switch_off)
-            if (UserPreferences.currentProvider !is TmdbProvider) {
-                val language = UserPreferences.currentProvider?.language
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "it"
-                UserPreferences.currentProvider = TmdbProvider(language)
-            }
-            viewModel.searchAdvanced(query, filters)
-            return true
-        }
-
-        if (isGlobalSearchChecked) {
-            if (query.isBlank()) {
-                Toast.makeText(
-                    requireContext(),
-                    getString(R.string.search_empty_query),
-                    Toast.LENGTH_SHORT,
-                ).show()
-                return true
-            }
-            val currentLanguage = UserPreferences.currentProvider?.language ?: "it"
-            viewModel.searchGlobal(query, currentLanguage)
-        } else {
-            viewModel.search(query)
-        }
-        return true
-    }
-
-    private fun retryCurrentSearch() {
-        when {
-            viewModel.advancedFilters.isActive ->
-                viewModel.searchAdvanced(viewModel.query, viewModel.advancedFilters)
-            else -> viewModel.search(viewModel.query)
-        }
-    }
-
-    private fun initializeSearch() {
-        val isIptv = UserPreferences.currentProvider is IptvProvider
-        val hintStringRes = if (isIptv) R.string.search_input_hint_iptv else R.string.search_input_hint
-        binding.etSearch.hint = getString(hintStringRes)
-
-        binding.llGlobalSearch.nextFocusUpId = binding.etSearch.id
-        binding.vgvSearch.nextFocusUpId = binding.btnApplyFilters.id
-
-        binding.llGlobalSearch.setOnClickListener {
-            isGlobalSearchChecked = !isGlobalSearchChecked
-            binding.ivGlobalSearchSwitch.setImageResource(
-                if (isGlobalSearchChecked) R.drawable.ic_switch_on else R.drawable.ic_switch_off
-            )
-        }
-
-        binding.etSearch.apply {
-            setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus) revealSearchHeader()
-            }
-
-            setOnEditorActionListener { _, actionId, event ->
-                val isSubmitAction = actionId == EditorInfo.IME_ACTION_SEARCH ||
-                    actionId == EditorInfo.IME_ACTION_DONE ||
-                    actionId == EditorInfo.IME_NULL
-                val isSubmitKey = event?.action == KeyEvent.ACTION_DOWN &&
-                    (event.keyCode == KeyEvent.KEYCODE_ENTER ||
-                        event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)
-
-                if (isSubmitAction || isSubmitKey) return@setOnEditorActionListener submitSearch()
-                false
-            }
-
-            setOnKeyListener { _, keyCode, event ->
-                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                if (keyCode == KeyEvent.KEYCODE_BACK) return@setOnKeyListener focusSearchContent()
-                if (
-                    keyCode == KeyEvent.KEYCODE_ENTER ||
-                    keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
-                    keyCode == KeyEvent.KEYCODE_SEARCH
-                ) return@setOnKeyListener submitSearch()
-                false
-            }
-
-            addTextChangedListener(object : TextWatcher {
-                override fun afterTextChanged(s: Editable?) {
-                    if (s.isNullOrBlank()) hint = getString(R.string.search_input_hint)
-                }
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            })
-        }
-
-        // Il riconoscimento vocale viene creato solo al click, mai entrando in Cerca.
-        binding.btnSearchVoice.apply {
-            visibility = View.VISIBLE
-            setOnClickListener { startVoiceSearch() }
-        }
-
-        listOf(binding.btnSearchClear, binding.btnSearchVoice, binding.llGlobalSearch).forEach { view ->
-            view.setOnKeyListener { _, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_BACK) {
-                    focusSearchContent()
-                } else false
-            }
-        }
-
-        binding.btnSearchClear.setOnClickListener {
-            binding.etSearch.setText("")
-            binding.etSearch.hint = getString(R.string.search_input_hint)
-            submitSearch()
-        }
-
-        binding.vgvSearch.apply {
-            adapter = appAdapter.apply {
-                stateRestorationPolicy =
-                    RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
-            }
-            setItemSpacing(resources.getDimension(R.dimen.search_spacing).toInt())
-            addOnChildViewHolderSelectedListener(object : OnChildViewHolderSelectedListener() {
-                override fun onChildViewHolderSelected(
-                    parent: RecyclerView,
-                    child: RecyclerView.ViewHolder?,
-                    position: Int,
-                    subposition: Int,
-                ) {
-                    child?.itemView?.nextFocusUpId =
-                        if (position in 0 until currentGridColumns) {
-                            binding.btnApplyFilters.id
-                        } else {
-                            View.NO_ID
-                        }
-                }
-            })
-        }
-
-        binding.root.requestFocus()
-    }
-
-    private inline fun safeInit(stage: String, block: () -> Unit) {
-    try {
-        block()
-    } catch (error: Throwable) {
-        Log.e("SearchTvFragment", "TV search init failed at $stage", error)
-        if (isAdded) {
-            Toast.makeText(
-                requireContext(),
-                "Cerca: inizializzazione $stage non riuscita",
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
-    }
-}
-
-private fun startVoiceSearch() {
-    val helper = voiceHelper ?: run {
-        val blink = AlphaAnimation(1f, 0.3f).apply {
-            duration = 500
-            repeatCount = Animation.INFINITE
-            repeatMode = Animation.REVERSE
-        }
-        VoiceRecognitionHelper(
-            fragment = this,
-            onResult = { query ->
-                if (_binding != null) {
-                    binding.btnSearchVoice.clearAnimation()
-                    binding.etSearch.setText(query)
-                    submitSearch()
-                }
-            },
-            onError = { msg ->
-                if (_binding != null) {
-                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
-                    binding.btnSearchVoice.clearAnimation()
-                    binding.etSearch.hint = getString(R.string.search_input_hint)
-                }
-            },
-            onListeningStateChanged = {
-                if (_binding != null) {
-                    binding.btnSearchVoice.startAnimation(blink)
-                    binding.etSearch.hint = getString(R.string.voice_prompt)
-                }
-            },
-        ).also { voiceHelper = it }
-    }
-
-    if (!helper.isAvailable()) {
-        binding.btnSearchVoice.visibility = View.GONE
-        return
-    }
-    if (!helper.isListening) helper.startWithPermissionCheck()
-}
 
     private fun focusSearchContent(): Boolean {
-        val hasResults = appAdapter.itemCount > 0 && binding.vgvSearch.visibility == View.VISIBLE
-        return when {
-            binding.hgvActorSuggestions.visibility == View.VISIBLE &&
-                actorSuggestionsAdapter.itemCount > 0 -> binding.hgvActorSuggestions.requestFocus()
-            hasResults -> binding.vgvSearch.requestFocus()
-            binding.etActorSearch.visibility == View.VISIBLE -> binding.etActorSearch.requestFocus()
-            binding.btnApplyFilters.visibility == View.VISIBLE -> binding.btnApplyFilters.requestFocus()
-            binding.llGlobalSearch.visibility == View.VISIBLE -> binding.llGlobalSearch.requestFocus()
-            else -> false
+        actorSuggestionsGrid?.let {
+            if (it.visibility == View.VISIBLE && actorSuggestionsAdapter.itemCount > 0) {
+                return it.requestFocus()
+            }
         }
-    }
-
-    private fun displayActorSuggestions(list: List<People>) {
-        if (_binding == null) return
-        val items = list.onEach { it.itemType = AppAdapter.Type.PEOPLE_TV_ITEM }
-        actorSuggestionsAdapter.submitList(items)
-        binding.hgvActorSuggestions.visibility =
-            if (items.isEmpty()) View.GONE else View.VISIBLE
-        binding.searchHeader.post { updateGridTopPadding() }
+        if (appAdapter.itemCount > 0) return vgvSearch.requestFocus()
+        actorEdit?.let { if (it.visibility == View.VISIBLE) return it.requestFocus() }
+        btnApplyFilters?.let { return it.requestFocus() }
+        return llGlobalSearch.requestFocus()
     }
 
     private fun displaySearch(list: List<AppAdapter.Item>, hasMore: Boolean) {
-        currentGridColumns =
-            if (viewModel.query.isEmpty() && !viewModel.advancedFilters.isActive) 5 else 6
-        binding.vgvSearch.post {
-            if (_binding == null) return@post
-            binding.vgvSearch.setNumColumns(currentGridColumns)
-            binding.vgvSearch.nextFocusUpId = binding.btnApplyFilters.id
-            updateGridTopPadding()
-        }
-
-        appAdapter.submitList(list.onEach {
-            when (it) {
-                is Genre -> it.itemType = AppAdapter.Type.GENRE_GRID_TV_ITEM
-                is Movie -> it.itemType = AppAdapter.Type.MOVIE_GRID_TV_ITEM
-                is TvShow -> it.itemType = AppAdapter.Type.TV_SHOW_GRID_TV_ITEM
-                is People -> it.itemType = AppAdapter.Type.PEOPLE_TV_ITEM
+        val vm = searchViewModel ?: return
+        currentGridColumns = if (vm.query.isEmpty() && !vm.advancedFilters.isActive) 5 else 6
+        vgvSearch.setNumColumns(currentGridColumns)
+        appAdapter.submitList(list.onEach { item ->
+            when (item) {
+                is Genre -> item.itemType = AppAdapter.Type.GENRE_GRID_TV_ITEM
+                is Movie -> item.itemType = AppAdapter.Type.MOVIE_GRID_TV_ITEM
+                is TvShow -> item.itemType = AppAdapter.Type.TV_SHOW_GRID_TV_ITEM
+                is People -> item.itemType = AppAdapter.Type.PEOPLE_TV_ITEM
             }
         })
-
-        if (hasMore && (viewModel.query.isNotEmpty() || viewModel.advancedFilters.isActive)) {
-            appAdapter.setOnLoadMoreListener { viewModel.loadMore() }
+        if (hasMore && (vm.query.isNotEmpty() || vm.advancedFilters.isActive)) {
+            appAdapter.setOnLoadMoreListener { vm.loadMore() }
         } else {
             appAdapter.setOnLoadMoreListener(null)
         }
+        searchHeader.post { updateGridTopPadding() }
     }
 
     private fun displayGlobalSearch(providerResults: List<ProviderResult>) {
         val categories = providerResults.map { providerResult ->
-            val headerTitle = when (val state = providerResult.state) {
+            val title = when (val providerState = providerResult.state) {
                 is ProviderResult.State.Loading ->
                     "${providerResult.provider.name} - ${getString(R.string.searching)}"
                 is ProviderResult.State.Error ->
                     "${providerResult.provider.name} - ${getString(R.string.search_error)}"
                 is ProviderResult.State.Success -> {
-                    val count = state.results.size
-                    val resultText =
-                        if (count == 1) getString(R.string.result) else getString(R.string.results)
-                    "${providerResult.provider.name} - $count $resultText"
+                    val count = providerState.results.size
+                    val word = if (count == 1) getString(R.string.result) else getString(R.string.results)
+                    "${providerResult.provider.name} - $count $word"
                 }
             }
-
             val items = (providerResult.state as? ProviderResult.State.Success)?.results?.onEach {
                 when (it) {
                     is Movie -> it.itemType = AppAdapter.Type.MOVIE_TV_ITEM
                     is TvShow -> it.itemType = AppAdapter.Type.TV_SHOW_TV_ITEM
                 }
             } ?: emptyList()
-
-            Category(name = headerTitle, list = items).apply {
+            Category(name = title, list = items).apply {
                 itemType = AppAdapter.Type.CATEGORY_TV_ITEM
             }
         }
-
         currentGridColumns = 1
-        binding.vgvSearch.post {
-            if (_binding != null) binding.vgvSearch.setNumColumns(currentGridColumns)
-        }
+        vgvSearch.setNumColumns(1)
         appAdapter.submitList(categories)
         appAdapter.setOnLoadMoreListener(null)
+        searchHeader.post { updateGridTopPadding() }
+    }
+
+    private fun startVoiceSearch() {
+        try {
+            val helper = voiceHelper ?: VoiceRecognitionHelper(
+                fragment = this,
+                onResult = { query ->
+                    if (!isAdded) return@VoiceRecognitionHelper
+                    btnSearchVoice.clearAnimation()
+                    etSearch.setText(query)
+                    submitSearch()
+                },
+                onError = { message ->
+                    if (isAdded) {
+                        btnSearchVoice.clearAnimation()
+                        showSafeToast(message)
+                    }
+                },
+                onListeningStateChanged = {
+                    if (isAdded) {
+                        val blink = AlphaAnimation(1f, 0.3f).apply {
+                            duration = 500
+                            repeatCount = Animation.INFINITE
+                            repeatMode = Animation.REVERSE
+                        }
+                        btnSearchVoice.startAnimation(blink)
+                        etSearch.hint = getString(R.string.voice_prompt)
+                    }
+                },
+            ).also { voiceHelper = it }
+
+            if (!helper.isAvailable()) {
+                btnSearchVoice.visibility = View.GONE
+                return
+            }
+            if (!helper.isListening) helper.startWithPermissionCheck()
+        } catch (error: Throwable) {
+            Log.e(TAG, "Voice search unavailable", error)
+            btnSearchVoice.clearAnimation()
+            btnSearchVoice.visibility = View.GONE
+            showSafeToast("Ricerca vocale non disponibile su questo dispositivo")
+        }
+    }
+
+    private fun switchProviderIfNeeded(providerName: String?) {
+        val targetName = providerName?.takeIf { it.isNotBlank() } ?: return
+        if (targetName == UserPreferences.currentProvider?.name) return
+        val targetProvider = Provider.providers.keys.find { it.name == targetName } ?: return
+        UserPreferences.currentProvider = targetProvider
+        showSafeToast(getString(R.string.switching_to_provider, targetName))
+    }
+
+    private fun <T> makeSelector(
+        title: String,
+        values: List<T>,
+        labeler: (T) -> String,
+    ): CycleSelector<T> {
+        val root = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(makeLabel(title, 12f, false, Color.rgb(169, 178, 194)))
+        val valueView = TextView(requireContext()).apply {
+            id = View.generateViewId()
+            isFocusable = true
+            isClickable = true
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setPadding(dp(12), 0, dp(12), 0)
+            setBackgroundResource(R.drawable.bg_filter_control_tv)
+        }
+        root.addView(
+            valueView,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)),
+        )
+        return CycleSelector(root, valueView, values, labeler)
+    }
+
+    private fun addSelectorToRow(row: LinearLayout, selector: CycleSelector<*>?) {
+        val control = selector ?: return
+        row.addView(
+            control.root,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(10)
+            },
+        )
+    }
+
+    private fun makeLabel(
+        text: String,
+        size: Float,
+        bold: Boolean,
+        color: Int = Color.WHITE,
+    ) = TextView(requireContext()).apply {
+        this.text = text
+        textSize = size
+        setTextColor(color)
+        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setPadding(0, if (size < 14f) dp(3) else 0, 0, dp(4))
+    }
+
+    private fun makeActionButton(text: String, primary: Boolean): TextView =
+        TextView(requireContext()).apply {
+            id = View.generateViewId()
+            this.text = text
+            isFocusable = true
+            isClickable = true
+            gravity = android.view.Gravity.CENTER
+            setTextColor(if (primary) Color.rgb(15, 20, 28) else Color.WHITE)
+            textSize = 15f
+            setBackgroundResource(
+                if (primary) R.drawable.bg_filter_action_primary_tv
+                else R.drawable.bg_filter_action_secondary_tv
+            )
+        }
+
+    private fun showSafeToast(message: String) {
+        if (!isAdded || message.isBlank()) return
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private inner class CycleSelector<T>(
+        val root: LinearLayout,
+        private val valueView: TextView,
+        private val values: List<T>,
+        private val labeler: (T) -> String,
+    ) {
+        private var index = 0
+        val value: T get() = values[index]
+
+        init {
+            require(values.isNotEmpty())
+            render()
+            valueView.setOnClickListener { move(1) }
+            valueView.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus && searchHeaderOffset > 0) revealSearchHeader()
+            }
+            valueView.setOnKeyListener { _, keyCode, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        move(-1)
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        move(1)
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
+
+        fun reset() {
+            index = 0
+            render()
+        }
+
+        private fun move(delta: Int) {
+            index = (index + delta).mod(values.size)
+            render()
+        }
+
+        private fun render() {
+            valueView.text = labeler(values[index])
+        }
+    }
+
+    companion object {
+        private const val TAG = "SearchTvSafe"
     }
 }
