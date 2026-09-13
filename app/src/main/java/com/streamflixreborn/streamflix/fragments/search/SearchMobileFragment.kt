@@ -64,6 +64,7 @@ class SearchMobileFragment : Fragment() {
                 suppressActorTextChange = false
 
                 viewModel.selectActorFilter(people.id, people.name)
+                savePersistedFilters()
                 hideKeyboard()
                 binding.rvActorSuggestions.visibility = View.GONE
                 binding.searchHeaderMobile.post { updateGridTopPadding() }
@@ -79,6 +80,7 @@ class SearchMobileFragment : Fragment() {
                 binding.etDirectorSearch.setSelection(binding.etDirectorSearch.text?.length ?: 0)
                 suppressDirectorTextChange = false
                 viewModel.selectDirectorFilter(people.id, people.name)
+                savePersistedFilters()
                 hideKeyboard()
                 binding.rvDirectorSuggestions.visibility = View.GONE
                 binding.searchHeaderMobile.post { updateGridTopPadding() }
@@ -101,6 +103,7 @@ class SearchMobileFragment : Fragment() {
         initializeAdvancedFilters()
         initializeActorSearch()
         initializeDirectorSearch()
+        restorePersistedFilters()
         initializeScrollableHeader()
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -181,6 +184,11 @@ class SearchMobileFragment : Fragment() {
         }
     }
 
+    override fun onPause() {
+        savePersistedFilters()
+        super.onPause()
+    }
+
     override fun onDestroyView() {
         actorSearchJob?.cancel()
         directorSearchJob?.cancel()
@@ -214,7 +222,10 @@ class SearchMobileFragment : Fragment() {
             )
             clearActorField()
             clearDirectorField()
-            viewModel.search(binding.etSearch.text?.toString().orEmpty())
+            binding.etSearch.setText("")
+            binding.swGlobalSearch.isChecked = false
+            SearchFilterPersistence.clear(requireContext())
+            viewModel.search("")
         }
     }
 
@@ -327,6 +338,103 @@ class SearchMobileFragment : Fragment() {
         binding.searchHeaderMobile.translationY = -offset.toFloat()
     }
 
+    private fun savePersistedFilters() {
+        if (_binding == null || !isAdded) return
+        try {
+            fun selectedYear(spinner: android.widget.Spinner): Int? =
+                spinner.selectedItem?.toString()?.toIntOrNull()
+            SearchFilterPersistence.save(
+                requireContext(),
+                SavedSearchFilterState(
+                    query = binding.etSearch.text?.toString().orEmpty(),
+                    globalSearch = binding.swGlobalSearch.isChecked,
+                    type = when (binding.spContentType.selectedItemPosition) {
+                        1 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.MOVIE
+                        2 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.TV
+                        3 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.CARTOON
+                        else -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.ALL
+                    },
+                    italian = when (binding.spItalian.selectedItemPosition) {
+                        1 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.YES
+                        2 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.NO
+                        else -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.ALL
+                    },
+                    year = selectedYear(binding.spYear),
+                    fromYear = selectedYear(binding.etDateFrom),
+                    toYear = selectedYear(binding.etDateTo),
+                    genre = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.values()
+                        .getOrElse(binding.spGenre.selectedItemPosition) { com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.ALL },
+                    sort = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.SortFilter.values()
+                        .getOrElse(binding.spSort.selectedItemPosition) { com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.SortFilter.POPULARITY },
+                    platform = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.PlatformFilter.values()
+                        .getOrElse(binding.spPlatform.selectedItemPosition) { com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.PlatformFilter.ALL },
+                    actorId = viewModel.selectedActorId,
+                    actorName = binding.etActorSearch.text?.toString().orEmpty().trim(),
+                    directorId = viewModel.selectedDirectorId,
+                    directorName = binding.etDirectorSearch.text?.toString().orEmpty().trim(),
+                ),
+            )
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun restorePersistedFilters() {
+        if (_binding == null || !isAdded) return
+        val saved = SearchFilterPersistence.load(requireContext())
+        binding.etSearch.setText(saved.query)
+        binding.swGlobalSearch.isChecked = saved.globalSearch
+        binding.spContentType.setSelection(
+            when (saved.type) {
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.MOVIE -> 1
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.TV -> 2
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.CARTOON -> 3
+                else -> 0
+            },
+            false,
+        )
+        binding.spItalian.setSelection(
+            when (saved.italian) {
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.YES -> 1
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.NO -> 2
+                else -> 0
+            },
+            false,
+        )
+        fun selectYear(spinner: android.widget.Spinner, year: Int?) {
+            if (year == null) {
+                spinner.setSelection(0, false)
+                return
+            }
+            val index = (0 until spinner.count).firstOrNull {
+                spinner.getItemAtPosition(it)?.toString()?.toIntOrNull() == year
+            } ?: 0
+            spinner.setSelection(index, false)
+        }
+        selectYear(binding.spYear, saved.year)
+        selectYear(binding.etDateFrom, saved.fromYear)
+        selectYear(binding.etDateTo, saved.toYear)
+        binding.spGenre.setSelection(saved.genre.ordinal.coerceAtMost(binding.spGenre.count - 1), false)
+        binding.spSort.setSelection(saved.sort.ordinal.coerceAtMost(binding.spSort.count - 1), false)
+        binding.spPlatform.setSelection(saved.platform.ordinal.coerceAtMost(binding.spPlatform.count - 1), false)
+
+        suppressActorTextChange = true
+        binding.etActorSearch.setText(saved.actorName)
+        suppressActorTextChange = false
+        suppressDirectorTextChange = true
+        binding.etDirectorSearch.setText(saved.directorName)
+        suppressDirectorTextChange = false
+        saved.actorId?.takeIf { saved.actorName.isNotBlank() }?.let {
+            viewModel.selectActorFilter(it, saved.actorName)
+        } ?: run {
+            if (saved.actorName.length >= 2) viewModel.searchActors(saved.actorName)
+        }
+        saved.directorId?.takeIf { saved.directorName.isNotBlank() }?.let {
+            viewModel.selectDirectorFilter(it, saved.directorName)
+        } ?: run {
+            if (saved.directorName.length >= 2) viewModel.searchDirectors(saved.directorName)
+        }
+    }
+
     private fun clearActorField() {
         actorSearchJob?.cancel()
         suppressActorTextChange = true
@@ -394,6 +502,7 @@ class SearchMobileFragment : Fragment() {
             directorId = viewModel.selectedDirectorId,
             directorName = viewModel.selectedDirectorName,
         )
+        savePersistedFilters()
 
         if (filters.isActive) {
             binding.swGlobalSearch.isChecked = false
