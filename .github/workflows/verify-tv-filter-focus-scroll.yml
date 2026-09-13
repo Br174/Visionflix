@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tv-filter-focus-scroll-publish
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -28,6 +32,26 @@ jobs:
           grep -F 'val target = (searchHeaderOffset + dy).coerceIn(0, maxOffset)' "$FILE"
           ! grep -F 'AlertDialog.Builder' "$FILE"
           ! grep -F 'popupBackgroundDrawable =' "$FILE"
+
+      - name: Force next globally installable app version
+        shell: bash
+        run: |
+          set -euo pipefail
+          LATEST_TAG="$(curl --fail --silent --show-error --location \
+            'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          LATEST_CODE="${LATEST_TAG##*-}"
+          case "$LATEST_CODE" in
+            ''|*[!0-9]*)
+              echo "::error::Impossibile ricavare il versionCode dall'ultima release pubblica: $LATEST_TAG"
+              exit 1
+              ;;
+          esac
+          APP_VERSION_CODE=$((LATEST_CODE + 1))
+          APP_VERSION_NAME="1.7.$((APP_VERSION_CODE + 71))"
+          echo "APP_VERSION_CODE=$APP_VERSION_CODE" >> "$GITHUB_ENV"
+          echo "APP_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
+          echo "Versione forzata: $APP_VERSION_NAME (build $APP_VERSION_CODE), successiva a $LATEST_TAG."
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -58,9 +82,6 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Mobile test APK
-        env:
-          APP_VERSION_CODE: '181'
-          APP_VERSION_NAME: '1.7.252-dropdown-test'
         run: |
           cat > local.properties <<'EOF'
           APP_LAYOUT=mobile
@@ -72,9 +93,6 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-Mobile-dropdown-test.apk
 
       - name: Build TV test APK
-        env:
-          APP_VERSION_CODE: '181'
-          APP_VERSION_NAME: '1.7.252-dropdown-test'
         run: |
           cat > local.properties <<'EOF'
           APP_LAYOUT=tv
@@ -84,24 +102,99 @@ jobs:
           EOF
           ./gradlew clean assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-TV-dropdown-test.apk
+          cp /tmp/Verlezza-Vision-TV-dropdown-test.apk /tmp/Visionflix_BV_TV.apk
 
       - name: Verify TV package launcher version and signature
         shell: bash
         run: |
           set -euo pipefail
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Verlezza-Vision-TV-dropdown-test.apk | tee /tmp/signature-info.txt
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk | tee /tmp/signature-info.txt
           grep -F "certificate SHA-256 digest: 55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e" /tmp/signature-info.txt
-          "$BUILD_TOOLS/aapt" dump badging /tmp/Verlezza-Vision-TV-dropdown-test.apk > /tmp/apk-info.txt
+          "$BUILD_TOOLS/aapt" dump badging /tmp/Visionflix_BV_TV.apk > /tmp/apk-info.txt
           grep -F "package: name='com.br174.visionflix.tv.debug'" /tmp/apk-info.txt
-          grep -F "versionCode='181'" /tmp/apk-info.txt
+          grep -F "versionCode='$APP_VERSION_CODE'" /tmp/apk-info.txt
           grep -F "com.streamflixreborn.streamflix.activities.main.MainTvActivity" /tmp/apk-info.txt
           grep -F "application-label:'Verlezza Vision'" /tmp/apk-info.txt
+          sha256sum /tmp/Visionflix_BV_TV.apk | sed 's#/tmp/##' > /tmp/SHA256SUMS.txt
 
-      - name: Upload test APKs
+      - name: Force public Downloader 3875230 to this exact TV APK
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          PUBLIC_REPO: Br174/streamflix-BV
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::PUBLISH_TOKEN non configurato: nessun APK TV e' considerato pronto senza aggiornare Downloader 3875230."
+            exit 1
+          fi
+
+          TAG="verlezza-tv-${APP_VERSION_CODE}"
+          TITLE="Verlezza Vision TV — ${APP_VERSION_NAME} (build ${APP_VERSION_CODE})"
+          cat > /tmp/release-notes.md <<EOF
+          Verlezza Vision TV ${APP_VERSION_NAME} (build ${APP_VERSION_CODE}).
+
+          Codice Downloader: **3875230**.
+          Build di prova corrente pubblicata forzatamente come versione piu recente, perche ogni nuovo APK TV deve essere subito raggiungibile dal codice Downloader.
+          Il nome dell'asset resta Visionflix_BV_TV.apk per mantenere invariato il codice Downloader.
+          EOF
+
+          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              /tmp/Visionflix_BV_TV.apk \
+              /tmp/SHA256SUMS.txt \
+              /tmp/apk-info.txt \
+              /tmp/signature-info.txt \
+              --repo "$PUBLIC_REPO" \
+              --clobber
+            gh release edit "$TAG" \
+              --repo "$PUBLIC_REPO" \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md \
+              --latest
+          else
+            gh release create "$TAG" \
+              /tmp/Visionflix_BV_TV.apk \
+              /tmp/SHA256SUMS.txt \
+              /tmp/apk-info.txt \
+              /tmp/signature-info.txt \
+              --repo "$PUBLIC_REPO" \
+              --target main \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md \
+              --latest
+          fi
+
+      - name: Verify Downloader 3875230 is serving this exact build
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_SHA="$(awk '{print $1}' /tmp/SHA256SUMS.txt)"
+          VERIFIED=0
+          for attempt in 1 2 3 4 5 6; do
+            rm -f /tmp/public-download.apk
+            if curl --fail --location --retry 2 --max-time 120 \
+              'https://github.com/Br174/streamflix-BV/releases/latest/download/Visionflix_BV_TV.apk' \
+              --output /tmp/public-download.apk; then
+              ACTUAL_SHA="$(sha256sum /tmp/public-download.apk | awk '{print $1}')"
+              if [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ]; then
+                VERIFIED=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          if [ "$VERIFIED" != "1" ]; then
+            echo "::error::Downloader 3875230 non sta ancora servendo l'APK appena compilato."
+            exit 1
+          fi
+          echo "Downloader 3875230 verificato: ${APP_VERSION_NAME} build ${APP_VERSION_CODE}." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload forced-version test APKs
         uses: actions/upload-artifact@v4
         with:
-          name: tv-dropdown-scroll-v3-test
+          name: tv-dropdown-scroll-forced-${{ env.APP_VERSION_CODE }}
           path: |
             /tmp/Verlezza-Vision-Mobile-dropdown-test.apk
             /tmp/Verlezza-Vision-TV-dropdown-test.apk
