@@ -75,7 +75,6 @@ class SearchTvFragment : Fragment() {
     private var directorSearchJob: Job? = null
     private var isGlobalSearchChecked = false
     private var currentGridColumns = 1
-    private var searchHeaderOffset = 0
     private var suppressActorTextChange = false
     private var suppressDirectorTextChange = false
     private var filterPanelExpanded = true
@@ -95,8 +94,7 @@ class SearchTvFragment : Fragment() {
     private var directorSuggestionsGrid: HorizontalGridView? = null
     private var actorFallbackSuggestions: LinearLayout? = null
     private var directorFallbackSuggestions: LinearLayout? = null
-    private var btnActorSearch: TextView? = null
-    private var btnDirectorSearch: TextView? = null
+    private var filterPanelBody: LinearLayout? = null
     private var btnApplyFilters: TextView? = null
     private var btnResetFilters: TextView? = null
     private var filterHandle: TextView? = null
@@ -191,8 +189,7 @@ class SearchTvFragment : Fragment() {
         toSelector = null
         sortSelector = null
         platformSelector = null
-        btnActorSearch = null
-        btnDirectorSearch = null
+        filterPanelBody = null
         btnApplyFilters = null
         btnResetFilters = null
         filterHandle = null
@@ -393,6 +390,7 @@ class SearchTvFragment : Fragment() {
                 setPadding(dp(18), dp(16), dp(18), dp(8))
                 setBackgroundResource(R.drawable.bg_filter_panel_tv)
             }
+            filterPanelBody = panel
             filterContainer.addView(
                 panel,
                 LinearLayout.LayoutParams(
@@ -505,14 +503,7 @@ class SearchTvFragment : Fragment() {
                 setBackgroundResource(R.drawable.bg_filter_control_tv)
                 setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
-            actorRow.addView(actorEdit, LinearLayout.LayoutParams(0, dp(46), 1f))
-            btnActorSearch = makeActionButton("Cerca attore", primary = false)
-            actorRow.addView(
-                btnActorSearch,
-                LinearLayout.LayoutParams(dp(142), dp(46)).apply { marginStart = dp(8) },
-            )
-            btnActorSearch?.setOnClickListener { triggerActorSearch() }
-            btnActorSearch?.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
+            actorRow.addView(actorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
             setupActorTextSearch()
             addActorSuggestionsSurface(panel)
 
@@ -555,14 +546,7 @@ class SearchTvFragment : Fragment() {
                 setBackgroundResource(R.drawable.bg_filter_control_tv)
                 setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
-            directorRow.addView(directorEdit, LinearLayout.LayoutParams(0, dp(46), 1f))
-            btnDirectorSearch = makeActionButton("Cerca regista", primary = false)
-            directorRow.addView(
-                btnDirectorSearch,
-                LinearLayout.LayoutParams(dp(142), dp(46)).apply { marginStart = dp(8) },
-            )
-            btnDirectorSearch?.setOnClickListener { triggerDirectorSearch() }
-            btnDirectorSearch?.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
+            directorRow.addView(directorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
             setupDirectorTextSearch()
             addDirectorSuggestionsSurface(panel)
 
@@ -586,12 +570,13 @@ class SearchTvFragment : Fragment() {
                 button.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
 
-            filterHandle = makeActionButton("▲ Filtri", primary = false).apply {
-                textSize = 11f
-                setOnFocusChangeListener { _, hasFocus -> if (hasFocus) setFilterPanelExpanded(true, true) }
-                setOnClickListener { setFilterPanelExpanded(true, true) }
+            filterHandle = makeActionButton("Filtri", primary = false).apply {
+                textSize = 12f
+                visibility = View.GONE
+                setOnClickListener { openFiltersFromResults() }
+                setOnFocusChangeListener { _, hasFocus -> if (hasFocus && !filterPanelExpanded) openFiltersFromResults() }
             }
-            panel.addView(
+            filterContainer.addView(
                 filterHandle,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(FILTER_PEEK_DP)).apply {
                     topMargin = dp(5)
@@ -627,8 +612,6 @@ class SearchTvFragment : Fragment() {
         val platform = platformSelector ?: return
         val actor = actorEdit ?: return
         val director = directorEdit ?: return
-        val actorSearch = btnActorSearch ?: return
-        val directorSearch = btnDirectorSearch ?: return
         val reset = btnResetFilters ?: return
         val apply = btnApplyFilters ?: return
 
@@ -645,27 +628,19 @@ class SearchTvFragment : Fragment() {
         type.setNextFocus(right = italian.viewId, up = llGlobalSearch.id, down = from.viewId)
         italian.setNextFocus(left = type.viewId, right = year.viewId, up = llGlobalSearch.id, down = to.viewId)
         year.setNextFocus(left = italian.viewId, right = genre.viewId, up = llGlobalSearch.id, down = actor.id)
-        genre.setNextFocus(left = year.viewId, up = llGlobalSearch.id, down = actorSearch.id)
+        genre.setNextFocus(left = year.viewId, up = llGlobalSearch.id, down = actor.id)
 
         from.setNextFocus(right = to.viewId, up = type.viewId, down = sort.viewId)
         to.setNextFocus(left = from.viewId, right = actor.id, up = italian.viewId, down = platform.viewId)
         actor.nextFocusLeftId = to.viewId
-        actor.nextFocusRightId = actorSearch.id
         actor.nextFocusUpId = year.viewId
         actor.nextFocusDownId = director.id
-        actorSearch.nextFocusLeftId = actor.id
-        actorSearch.nextFocusUpId = genre.viewId
-        actorSearch.nextFocusDownId = directorSearch.id
 
         sort.setNextFocus(right = platform.viewId, up = from.viewId, down = reset.id)
         platform.setNextFocus(left = sort.viewId, right = director.id, up = to.viewId, down = apply.id)
         director.nextFocusLeftId = platform.viewId
-        director.nextFocusRightId = directorSearch.id
         director.nextFocusUpId = actor.id
         director.nextFocusDownId = apply.id
-        directorSearch.nextFocusLeftId = director.id
-        directorSearch.nextFocusUpId = actorSearch.id
-        directorSearch.nextFocusDownId = apply.id
 
         reset.nextFocusUpId = sort.viewId
         reset.nextFocusRightId = apply.id
@@ -841,12 +816,10 @@ class SearchTvFragment : Fragment() {
                 grid.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
                 if (items.isNotEmpty()) {
                     actorEdit?.nextFocusDownId = grid.id
-                    btnActorSearch?.nextFocusDownId = grid.id
                     grid.nextFocusUpId = actorEdit?.id ?: View.NO_ID
                     grid.nextFocusDownId = sortSelector?.viewId ?: View.NO_ID
                 } else {
                     actorEdit?.nextFocusDownId = directorEdit?.id ?: View.NO_ID
-                    btnActorSearch?.nextFocusDownId = btnDirectorSearch?.id ?: View.NO_ID
                 }
             }
 
@@ -896,12 +869,10 @@ class SearchTvFragment : Fragment() {
                 grid.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
                 if (items.isNotEmpty()) {
                     directorEdit?.nextFocusDownId = grid.id
-                    btnDirectorSearch?.nextFocusDownId = grid.id
                     grid.nextFocusUpId = directorEdit?.id ?: View.NO_ID
                     grid.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
                 } else {
                     directorEdit?.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
-                    btnDirectorSearch?.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
                 }
             }
             directorFallbackSuggestions?.let { fallback ->
@@ -1048,86 +1019,38 @@ class SearchTvFragment : Fragment() {
 
     private fun initializeScrollableHeader() {
         vgvSearch.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus && filterPanelExpanded) {
-                setFilterPanelExpanded(false, true)
-            }
+            if (hasFocus && filterPanelExpanded) setFilterPanelExpanded(false, true)
+        }
+        vgvSearch.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+                !filterPanelExpanded && vgvSearch.selectedPosition in 0 until currentGridColumns.coerceAtLeast(1)) {
+                openFiltersFromResults(); true
+            } else false
         }
     }
 
     private fun updateGridTopPadding() {
         if (!isAdded || !this::searchHeader.isInitialized) return
-        val visibleHeader = if (filterPanelExpanded) searchHeader.height else dp(FILTER_PEEK_DP)
-        val top = visibleHeader + dp(10)
-        if (top <= 0) return
-        if (vgvSearch.paddingTop != top) {
-            vgvSearch.setPadding(
-                vgvSearch.paddingLeft,
-                top,
-                vgvSearch.paddingRight,
-                vgvSearch.paddingBottom,
-            )
-        }
-    }
-
-    private fun syncHeaderToGrid(recyclerView: RecyclerView) {
-        val maxOffset = searchHeader.height
-        if (maxOffset <= 0 || recyclerView.childCount == 0) {
-            setSearchHeaderOffset(0, animate = false)
-            return
-        }
-
-        var firstChild: View? = null
-        var firstPosition = Int.MAX_VALUE
-        for (index in 0 until recyclerView.childCount) {
-            val child = recyclerView.getChildAt(index)
-            val position = recyclerView.getChildAdapterPosition(child)
-            if (position != RecyclerView.NO_POSITION && position < firstPosition) {
-                firstPosition = position
-                firstChild = child
-            }
-        }
-
-        val offset = if (firstChild == null) {
-            0
-        } else if (firstPosition < currentGridColumns.coerceAtLeast(1)) {
-            (recyclerView.paddingTop - firstChild.top).coerceIn(0, maxOffset)
-        } else {
-            maxOffset
-        }
-        setSearchHeaderOffset(offset, animate = false)
-    }
-
-    private fun updateHeaderForSelectedPosition(position: Int) {
-        if (position == RecyclerView.NO_POSITION || !this::searchHeader.isInitialized) return
-        val maxOffset = searchHeader.height
-        if (maxOffset <= 0) return
-        val firstRowSize = currentGridColumns.coerceAtLeast(1)
-        val targetOffset = if (position >= firstRowSize) maxOffset else 0
-        setSearchHeaderOffset(targetOffset, animate = true)
-    }
-
-    private fun setSearchHeaderOffset(offset: Int, animate: Boolean) {
-        if (!this::searchHeader.isInitialized) return
-        val maxOffset = searchHeader.height.coerceAtLeast(0)
-        val safeOffset = offset.coerceIn(0, maxOffset)
-        searchHeaderOffset = safeOffset
-        val translation = -safeOffset.toFloat()
-        searchHeader.animate().cancel()
-        if (animate) {
-            searchHeader.animate().translationY(translation).setDuration(140L).start()
-        } else {
-            searchHeader.translationY = translation
+        searchHeader.post {
+            val top = searchHeader.height + dp(10)
+            if (top > 0 && vgvSearch.paddingTop != top) vgvSearch.setPadding(
+                vgvSearch.paddingLeft, top, vgvSearch.paddingRight, vgvSearch.paddingBottom)
         }
     }
 
     private fun setFilterPanelExpanded(expanded: Boolean, animate: Boolean) {
         if (!this::searchHeader.isInitialized) return
         filterPanelExpanded = expanded
-        searchHeader.post {
-            val offset = if (expanded) 0 else (searchHeader.height - dp(FILTER_PEEK_DP)).coerceAtLeast(0)
-            setSearchHeaderOffset(offset, animate)
-            updateGridTopPadding()
-        }
+        searchHeader.animate().cancel(); searchHeader.translationY = 0f
+        filterPanelBody?.visibility = if (expanded) View.VISIBLE else View.GONE
+        filterHandle?.visibility = if (expanded) View.GONE else View.VISIBLE
+        searchHeader.requestLayout()
+        searchHeader.post { updateGridTopPadding(); if (!expanded && pendingFocusFirstResult) focusFirstResultWhenReady() }
+    }
+
+    private fun openFiltersFromResults() {
+        setFilterPanelExpanded(true, false)
+        searchHeader.post { btnApplyFilters?.requestFocus() ?: etSearch.requestFocus() }
     }
 
     private fun collapseFiltersAndFocusResults() {
@@ -1402,7 +1325,7 @@ class SearchTvFragment : Fragment() {
 
             focusView.setOnClickListener { openDropdown() }
             focusView.setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus && searchHeaderOffset > 0) revealSearchHeader()
+                if (hasFocus && !filterPanelExpanded) revealSearchHeader()
             }
             focusView.setOnKeyListener { _, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
@@ -1451,6 +1374,6 @@ class SearchTvFragment : Fragment() {
 
     companion object {
         private const val TAG = "SearchTvSafe"
-        private const val FILTER_PEEK_DP = 26
+        private const val FILTER_PEEK_DP = 28
     }
 }
