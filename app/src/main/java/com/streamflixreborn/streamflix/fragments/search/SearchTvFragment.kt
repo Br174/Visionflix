@@ -1018,7 +1018,7 @@ class SearchTvFragment : Fragment() {
             ).apply {
                 setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
-            popupBackgroundDrawable = ColorDrawable(Color.rgb(48, 48, 48))
+            setPopupBackgroundDrawable(ColorDrawable(Color.rgb(48, 48, 48)))
             dropDownVerticalOffset = dp(2)
             post {
                 if (width > 0) dropDownWidth = width
