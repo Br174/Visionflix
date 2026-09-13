@@ -37,7 +37,7 @@ r('''        if (query.isNotBlank()) {
 s=s.replace('(firstTmdbPage..firstTmdbPage + 2).map { discoverPage ->','(firstDiscoverPage until firstDiscoverPage + 6).map { discoverPage ->')
 marker='    fun searchGlobal(query: String, currentLanguage: String) = viewModelScope.launch(Dispatchers.IO) {'
 helper='''    private fun buildQueryVariants(rawQuery: String): List<String> {
-        val clean = rawQuery.trim().replace(Regex("\\s+"), " ")
+        val clean = rawQuery.trim().replace(Regex("""\\s+"""), " ")
         if (clean.isBlank()) return emptyList()
         val generic = setOf(
             "film", "films", "movie", "movies", "serie", "series", "tv",
