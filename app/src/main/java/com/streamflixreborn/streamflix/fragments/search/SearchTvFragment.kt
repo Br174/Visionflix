@@ -72,10 +72,14 @@ class SearchTvFragment : Fragment() {
     private var searchViewModel: SearchViewModel? = null
     private var voiceHelper: VoiceRecognitionHelper? = null
     private var actorSearchJob: Job? = null
+    private var directorSearchJob: Job? = null
     private var isGlobalSearchChecked = false
     private var currentGridColumns = 1
     private var searchHeaderOffset = 0
     private var suppressActorTextChange = false
+    private var suppressDirectorTextChange = false
+    private var filterPanelExpanded = true
+    private var pendingFocusFirstResult = false
 
     private var typeSelector: DropdownSelector<AdvancedSearchFilters.ContentType>? = null
     private var italianSelector: DropdownSelector<AdvancedSearchFilters.ItalianFilter>? = null
@@ -83,11 +87,19 @@ class SearchTvFragment : Fragment() {
     private var genreSelector: DropdownSelector<AdvancedSearchFilters.GenreFilter>? = null
     private var fromSelector: DropdownSelector<Int?>? = null
     private var toSelector: DropdownSelector<Int?>? = null
+    private var sortSelector: DropdownSelector<AdvancedSearchFilters.SortFilter>? = null
+    private var platformSelector: DropdownSelector<AdvancedSearchFilters.PlatformFilter>? = null
     private var actorEdit: EditText? = null
+    private var directorEdit: EditText? = null
     private var actorSuggestionsGrid: HorizontalGridView? = null
+    private var directorSuggestionsGrid: HorizontalGridView? = null
     private var actorFallbackSuggestions: LinearLayout? = null
+    private var directorFallbackSuggestions: LinearLayout? = null
+    private var btnActorSearch: TextView? = null
+    private var btnDirectorSearch: TextView? = null
     private var btnApplyFilters: TextView? = null
     private var btnResetFilters: TextView? = null
+    private var filterHandle: TextView? = null
 
     private val appAdapter by lazy {
         AppAdapter().apply {
@@ -113,6 +125,12 @@ class SearchTvFragment : Fragment() {
     private val actorSuggestionsAdapter by lazy {
         AppAdapter().apply {
             onPeopleClickListener = { people -> selectActor(people) }
+        }
+    }
+
+    private val directorSuggestionsAdapter by lazy {
+        AppAdapter().apply {
+            onPeopleClickListener = { people -> selectDirector(people) }
         }
     }
 
@@ -156,19 +174,28 @@ class SearchTvFragment : Fragment() {
 
     override fun onDestroyView() {
         actorSearchJob?.cancel()
+        directorSearchJob?.cancel()
         voiceHelper?.stopRecognition()
         voiceHelper = null
         actorSuggestionsGrid = null
+        directorSuggestionsGrid = null
         actorFallbackSuggestions = null
+        directorFallbackSuggestions = null
         actorEdit = null
+        directorEdit = null
         typeSelector = null
         italianSelector = null
         yearSelector = null
         genreSelector = null
         fromSelector = null
         toSelector = null
+        sortSelector = null
+        platformSelector = null
+        btnActorSearch = null
+        btnDirectorSearch = null
         btnApplyFilters = null
         btnResetFilters = null
+        filterHandle = null
         super.onDestroyView()
     }
 
@@ -253,7 +280,8 @@ class SearchTvFragment : Fragment() {
                     subposition: Int,
                 ) {
                     if (position in 0 until currentGridColumns.coerceAtLeast(1)) {
-                        btnApplyFilters?.let { child?.itemView?.nextFocusUpId = it.id }
+                        val target = filterHandle?.id ?: btnApplyFilters?.id
+                        if (target != null) child?.itemView?.nextFocusUpId = target
                     }
                 }
             })
@@ -276,6 +304,7 @@ class SearchTvFragment : Fragment() {
             searchViewModel = ViewModelProvider(this, factory)[SearchViewModel::class.java]
             collectSearchStateSafely()
             collectActorSuggestionsSafely()
+            collectDirectorSuggestionsSafely()
         } catch (error: Throwable) {
             Log.e(TAG, "Search ViewModel creation failed", error)
             showSafeToast("Cerca aperta, ma il motore di ricerca non è disponibile")
@@ -343,12 +372,25 @@ class SearchTvFragment : Fragment() {
         }
     }
 
+    private fun collectDirectorSuggestionsSafely() {
+        val vm = searchViewModel ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                vm.directorSuggestions
+                    .flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
+                    .collect { displayDirectorSuggestions(it) }
+            } catch (error: Throwable) {
+                Log.e(TAG, "Director suggestions collector failed", error)
+            }
+        }
+    }
+
     private fun buildAdvancedFiltersSafely() {
         if (filterContainer.childCount > 0) return
         try {
             val panel = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(18), dp(16), dp(18), dp(14))
+                setPadding(dp(18), dp(16), dp(18), dp(8))
                 setBackgroundResource(R.drawable.bg_filter_panel_tv)
             }
             filterContainer.addView(
@@ -359,9 +401,30 @@ class SearchTvFragment : Fragment() {
                 )
             )
 
-            panel.addView(makeLabel("Filtri avanzati", 18f, true))
+            // TV only: search bar + clear + mic + Ricerca globale now belong to the same box.
+            val searchBar = etSearch.parent as? View
+            (searchBar?.parent as? ViewGroup)?.removeView(searchBar)
+            if (searchBar != null) {
+                panel.addView(
+                    searchBar,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
+            (llGlobalSearch.parent as? ViewGroup)?.removeView(llGlobalSearch)
+            panel.addView(
+                llGlobalSearch,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(8) },
+            )
+
+            panel.addView(makeLabel("Filtri avanzati", 18f, true).apply { setPadding(0, dp(10), 0, 0) })
             panel.addView(makeLabel(
-                "Combina i criteri: testo, tipo, lingua, anno, genere e attore vengono applicati insieme.",
+                "Combina testo, tipo, lingua, anno, genere, attore, regista, piattaforma e ordinamento.",
                 12f,
                 false,
                 Color.rgb(169, 178, 194),
@@ -381,7 +444,6 @@ class SearchTvFragment : Fragment() {
                     AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
                 }
             }
-
             italianSelector = makeSelector(
                 "Italiano",
                 listOf(
@@ -396,17 +458,14 @@ class SearchTvFragment : Fragment() {
                     AdvancedSearchFilters.ItalianFilter.NO -> "No"
                 }
             }
-
             val currentYear = Calendar.getInstance().get(Calendar.YEAR).coerceAtLeast(2026)
             val yearValues: List<Int?> = listOf<Int?>(null) + (currentYear downTo 1900).map { it }
             yearSelector = makeSelector("Anno", yearValues) { it?.toString() ?: "Tutti" }
-
-            val genres = AdvancedSearchFilters.GenreFilter.entries.toList()
-            genreSelector = makeSelector("Genere", genres) { it.label }
+            genreSelector = makeSelector("Genere", AdvancedSearchFilters.GenreFilter.entries.toList()) { it.label }
 
             val firstRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(12), 0, 0)
+                setPadding(0, dp(10), 0, 0)
             }
             panel.addView(firstRow)
             addSelectorToRow(firstRow, typeSelector)
@@ -416,32 +475,25 @@ class SearchTvFragment : Fragment() {
 
             fromSelector = makeSelector("Dal", yearValues) { it?.toString() ?: "Tutti" }
             toSelector = makeSelector("Al", yearValues) { it?.toString() ?: "Tutti" }
-
             val secondRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(10), 0, 0)
+                setPadding(0, dp(8), 0, 0)
             }
             panel.addView(secondRow)
             addSelectorToRow(secondRow, fromSelector)
             addSelectorToRow(secondRow, toSelector)
 
-            val actorColumn = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-            }
+            val actorColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
             secondRow.addView(
                 actorColumn,
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f).apply {
-                    marginStart = dp(10)
-                },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f).apply { marginStart = dp(10) },
             )
             actorColumn.addView(makeLabel("Attore", 12f, false, Color.rgb(169, 178, 194)))
-
             val actorRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
             actorColumn.addView(actorRow)
-
             actorEdit = EditText(requireContext()).apply {
                 id = View.generateViewId()
                 isSingleLine = true
@@ -451,44 +503,106 @@ class SearchTvFragment : Fragment() {
                 textSize = 15f
                 setPadding(dp(12), 0, dp(12), 0)
                 setBackgroundResource(R.drawable.bg_filter_control_tv)
+                setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
+            actorRow.addView(actorEdit, LinearLayout.LayoutParams(0, dp(46), 1f))
+            btnActorSearch = makeActionButton("Cerca attore", primary = false)
             actorRow.addView(
-                actorEdit,
-                LinearLayout.LayoutParams(0, dp(46), 1f),
-            )
-
-            val actorSearchButton = makeActionButton("Cerca attore", primary = false)
-            actorRow.addView(
-                actorSearchButton,
+                btnActorSearch,
                 LinearLayout.LayoutParams(dp(142), dp(46)).apply { marginStart = dp(8) },
             )
-            actorSearchButton.setOnClickListener { triggerActorSearch() }
-
+            btnActorSearch?.setOnClickListener { triggerActorSearch() }
+            btnActorSearch?.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             setupActorTextSearch()
             addActorSuggestionsSurface(panel)
+
+            sortSelector = makeSelector(
+                "Ordina per",
+                AdvancedSearchFilters.SortFilter.entries.toList(),
+            ) { it.label }
+            platformSelector = makeSelector(
+                "Piattaforma",
+                AdvancedSearchFilters.PlatformFilter.entries.toList(),
+            ) { it.label }
+
+            val thirdRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(8), 0, 0)
+            }
+            panel.addView(thirdRow)
+            addSelectorToRow(thirdRow, sortSelector)
+            addSelectorToRow(thirdRow, platformSelector)
+
+            val directorColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+            thirdRow.addView(
+                directorColumn,
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f).apply { marginStart = dp(10) },
+            )
+            directorColumn.addView(makeLabel("Regista", 12f, false, Color.rgb(169, 178, 194)))
+            val directorRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            directorColumn.addView(directorRow)
+            directorEdit = EditText(requireContext()).apply {
+                id = View.generateViewId()
+                isSingleLine = true
+                hint = "Scrivi almeno 2 lettere"
+                setHintTextColor(Color.rgb(150, 158, 172))
+                setTextColor(Color.WHITE)
+                textSize = 15f
+                setPadding(dp(12), 0, dp(12), 0)
+                setBackgroundResource(R.drawable.bg_filter_control_tv)
+                setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
+            }
+            directorRow.addView(directorEdit, LinearLayout.LayoutParams(0, dp(46), 1f))
+            btnDirectorSearch = makeActionButton("Cerca regista", primary = false)
+            directorRow.addView(
+                btnDirectorSearch,
+                LinearLayout.LayoutParams(dp(142), dp(46)).apply { marginStart = dp(8) },
+            )
+            btnDirectorSearch?.setOnClickListener { triggerDirectorSearch() }
+            btnDirectorSearch?.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
+            setupDirectorTextSearch()
+            addDirectorSuggestionsSurface(panel)
 
             val actions = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.END
-                setPadding(0, dp(12), 0, 0)
+                setPadding(0, dp(10), 0, 0)
             }
             panel.addView(actions)
-
             btnResetFilters = makeActionButton("Azzera", primary = false).also { button ->
                 actions.addView(
                     button,
                     LinearLayout.LayoutParams(dp(150), dp(48)).apply { marginEnd = dp(10) },
                 )
                 button.setOnClickListener { resetFilters() }
+                button.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
-
             btnApplyFilters = makeActionButton("Applica filtri", primary = true).also { button ->
                 actions.addView(button, LinearLayout.LayoutParams(dp(190), dp(48)))
                 button.setOnClickListener { submitSearch() }
+                button.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
 
-            configureFilterFocus(actorSearchButton)
-            searchHeader.post { updateGridTopPadding() }
+            filterHandle = makeActionButton("▲ Filtri", primary = false).apply {
+                textSize = 11f
+                setOnFocusChangeListener { _, hasFocus -> if (hasFocus) setFilterPanelExpanded(true, true) }
+                setOnClickListener { setFilterPanelExpanded(true, true) }
+            }
+            panel.addView(
+                filterHandle,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(FILTER_PEEK_DP)).apply {
+                    topMargin = dp(5)
+                },
+            )
+
+            configureFilterFocus()
+            searchHeader.post {
+                setFilterPanelExpanded(true, false)
+                updateGridTopPadding()
+            }
         } catch (error: Throwable) {
             Log.e(TAG, "Advanced filter panel failed", error)
             filterContainer.removeAllViews()
@@ -496,23 +610,25 @@ class SearchTvFragment : Fragment() {
             fallback.isClickable = false
             filterContainer.addView(
                 fallback,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(48),
-                )
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)),
             )
             showSafeToast("Cerca è aperta; i filtri avanzati non sono stati caricati")
         }
     }
 
-    private fun configureFilterFocus(actorSearchButton: TextView) {
+    private fun configureFilterFocus() {
         val type = typeSelector ?: return
         val italian = italianSelector ?: return
         val year = yearSelector ?: return
         val genre = genreSelector ?: return
         val from = fromSelector ?: return
         val to = toSelector ?: return
+        val sort = sortSelector ?: return
+        val platform = platformSelector ?: return
         val actor = actorEdit ?: return
+        val director = directorEdit ?: return
+        val actorSearch = btnActorSearch ?: return
+        val directorSearch = btnDirectorSearch ?: return
         val reset = btnResetFilters ?: return
         val apply = btnApplyFilters ?: return
 
@@ -529,27 +645,35 @@ class SearchTvFragment : Fragment() {
         type.setNextFocus(right = italian.viewId, up = llGlobalSearch.id, down = from.viewId)
         italian.setNextFocus(left = type.viewId, right = year.viewId, up = llGlobalSearch.id, down = to.viewId)
         year.setNextFocus(left = italian.viewId, right = genre.viewId, up = llGlobalSearch.id, down = actor.id)
-        genre.setNextFocus(left = year.viewId, up = llGlobalSearch.id, down = actorSearchButton.id)
+        genre.setNextFocus(left = year.viewId, up = llGlobalSearch.id, down = actorSearch.id)
 
-        from.setNextFocus(right = to.viewId, up = type.viewId, down = reset.id)
-        to.setNextFocus(left = from.viewId, right = actor.id, up = italian.viewId, down = reset.id)
-
+        from.setNextFocus(right = to.viewId, up = type.viewId, down = sort.viewId)
+        to.setNextFocus(left = from.viewId, right = actor.id, up = italian.viewId, down = platform.viewId)
         actor.nextFocusLeftId = to.viewId
-        actor.nextFocusRightId = actorSearchButton.id
+        actor.nextFocusRightId = actorSearch.id
         actor.nextFocusUpId = year.viewId
-        actor.nextFocusDownId = apply.id
+        actor.nextFocusDownId = director.id
+        actorSearch.nextFocusLeftId = actor.id
+        actorSearch.nextFocusUpId = genre.viewId
+        actorSearch.nextFocusDownId = directorSearch.id
 
-        actorSearchButton.nextFocusLeftId = actor.id
-        actorSearchButton.nextFocusUpId = genre.viewId
-        actorSearchButton.nextFocusDownId = apply.id
+        sort.setNextFocus(right = platform.viewId, up = from.viewId, down = reset.id)
+        platform.setNextFocus(left = sort.viewId, right = director.id, up = to.viewId, down = apply.id)
+        director.nextFocusLeftId = platform.viewId
+        director.nextFocusRightId = directorSearch.id
+        director.nextFocusUpId = actor.id
+        director.nextFocusDownId = apply.id
+        directorSearch.nextFocusLeftId = director.id
+        directorSearch.nextFocusUpId = actorSearch.id
+        directorSearch.nextFocusDownId = apply.id
 
-        reset.nextFocusUpId = from.viewId
+        reset.nextFocusUpId = sort.viewId
         reset.nextFocusRightId = apply.id
         reset.nextFocusDownId = vgvSearch.id
-        apply.nextFocusUpId = actor.id
+        apply.nextFocusUpId = director.id
         apply.nextFocusLeftId = reset.id
         apply.nextFocusDownId = vgvSearch.id
-        vgvSearch.nextFocusUpId = apply.id
+        vgvSearch.nextFocusUpId = filterHandle?.id ?: apply.id
     }
 
     private fun setupActorTextSearch() {
@@ -620,6 +744,80 @@ class SearchTvFragment : Fragment() {
         )
     }
 
+    private fun setupDirectorTextSearch() {
+        val edit = directorEdit ?: return
+        edit.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (suppressDirectorTextChange) return
+                directorSearchJob?.cancel()
+                searchViewModel?.clearDirectorSelection()
+                val value = s?.toString().orEmpty().trim()
+                if (value.length < 2) {
+                    searchViewModel?.clearDirectorSuggestions()
+                    displayDirectorSuggestions(emptyList())
+                    return
+                }
+                directorSearchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    delay(300)
+                    searchViewModel?.searchDirectors(value)
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+        })
+        edit.setOnEditorActionListener { _, actionId, event ->
+            val submit = actionId == EditorInfo.IME_ACTION_SEARCH ||
+                actionId == EditorInfo.IME_ACTION_DONE ||
+                (event?.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_ENTER)
+            if (submit) {
+                triggerDirectorSearch()
+                hideKeyboard()
+                true
+            } else false
+        }
+    }
+
+    private fun addDirectorSuggestionsSurface(panel: LinearLayout) {
+        try {
+            directorSuggestionsGrid = HorizontalGridView(requireContext()).apply {
+                id = View.generateViewId()
+                visibility = View.GONE
+                adapter = directorSuggestionsAdapter
+                setItemSpacing(dp(12))
+            }
+            panel.addView(
+                directorSuggestionsGrid,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(136)).apply { topMargin = dp(8) },
+            )
+        } catch (error: Throwable) {
+            Log.w(TAG, "Horizontal director grid unavailable, using fallback", error)
+            directorSuggestionsGrid = null
+        }
+        directorFallbackSuggestions = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+        }
+        panel.addView(
+            directorFallbackSuggestions,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8)
+            },
+        )
+    }
+
+    private fun triggerDirectorSearch() {
+        val name = directorEdit?.text?.toString().orEmpty().trim()
+        if (name.length < 2) {
+            showSafeToast("Scrivi almeno 2 lettere del nome del regista")
+            return
+        }
+        val vm = searchViewModel ?: run {
+            showSafeToast("Motore di ricerca ancora in inizializzazione")
+            return
+        }
+        vm.searchDirectors(name)
+    }
+
     private fun triggerActorSearch() {
         val actorName = actorEdit?.text?.toString().orEmpty().trim()
         if (actorName.length < 2) {
@@ -641,6 +839,15 @@ class SearchTvFragment : Fragment() {
             actorSuggestionsGrid?.let { grid ->
                 actorSuggestionsAdapter.submitList(items)
                 grid.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+                if (items.isNotEmpty()) {
+                    actorEdit?.nextFocusDownId = grid.id
+                    btnActorSearch?.nextFocusDownId = grid.id
+                    grid.nextFocusUpId = actorEdit?.id ?: View.NO_ID
+                    grid.nextFocusDownId = sortSelector?.viewId ?: View.NO_ID
+                } else {
+                    actorEdit?.nextFocusDownId = directorEdit?.id ?: View.NO_ID
+                    btnActorSearch?.nextFocusDownId = btnDirectorSearch?.id ?: View.NO_ID
+                }
             }
 
             actorFallbackSuggestions?.let { fallback ->
@@ -675,6 +882,58 @@ class SearchTvFragment : Fragment() {
         searchViewModel?.selectActorFilter(people.id, people.name)
         actorSuggestionsGrid?.visibility = View.GONE
         actorFallbackSuggestions?.visibility = View.GONE
+        sortSelector?.requestFocus()
+        hideKeyboard()
+        searchHeader.post { updateGridTopPadding() }
+    }
+
+    private fun displayDirectorSuggestions(list: List<People>) {
+        if (!isAdded || !this::searchHeader.isInitialized) return
+        try {
+            val items = list.onEach { it.itemType = AppAdapter.Type.PEOPLE_TV_ITEM }
+            directorSuggestionsGrid?.let { grid ->
+                directorSuggestionsAdapter.submitList(items)
+                grid.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+                if (items.isNotEmpty()) {
+                    directorEdit?.nextFocusDownId = grid.id
+                    btnDirectorSearch?.nextFocusDownId = grid.id
+                    grid.nextFocusUpId = directorEdit?.id ?: View.NO_ID
+                    grid.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
+                } else {
+                    directorEdit?.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
+                    btnDirectorSearch?.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
+                }
+            }
+            directorFallbackSuggestions?.let { fallback ->
+                fallback.removeAllViews()
+                if (directorSuggestionsGrid == null && items.isNotEmpty()) {
+                    fallback.visibility = View.VISIBLE
+                    items.take(5).forEach { person ->
+                        val chip = makeActionButton(person.name, primary = false)
+                        chip.setOnClickListener { selectDirector(person) }
+                        fallback.addView(
+                            chip,
+                            LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) },
+                        )
+                    }
+                } else {
+                    fallback.visibility = View.GONE
+                }
+            }
+            searchHeader.post { updateGridTopPadding() }
+        } catch (error: Throwable) {
+            Log.e(TAG, "Displaying director suggestions failed", error)
+        }
+    }
+
+    private fun selectDirector(people: People) {
+        suppressDirectorTextChange = true
+        directorEdit?.setText(people.name)
+        directorEdit?.setSelection(directorEdit?.text?.length ?: 0)
+        suppressDirectorTextChange = false
+        searchViewModel?.selectDirectorFilter(people.id, people.name)
+        directorSuggestionsGrid?.visibility = View.GONE
+        directorFallbackSuggestions?.visibility = View.GONE
         btnApplyFilters?.requestFocus()
         hideKeyboard()
         searchHeader.post { updateGridTopPadding() }
@@ -687,12 +946,20 @@ class SearchTvFragment : Fragment() {
         genreSelector?.reset()
         fromSelector?.reset()
         toSelector?.reset()
+        sortSelector?.reset()
+        platformSelector?.reset()
         suppressActorTextChange = true
         actorEdit?.setText("")
         suppressActorTextChange = false
+        suppressDirectorTextChange = true
+        directorEdit?.setText("")
+        suppressDirectorTextChange = false
         searchViewModel?.clearActorSelection()
         searchViewModel?.clearActorSuggestions()
+        searchViewModel?.clearDirectorSelection()
+        searchViewModel?.clearDirectorSuggestions()
         displayActorSuggestions(emptyList())
+        displayDirectorSuggestions(emptyList())
         searchViewModel?.search(etSearch.text?.toString().orEmpty().trim())
     }
 
@@ -711,6 +978,12 @@ class SearchTvFragment : Fragment() {
             showSafeToast("Seleziona l'attore dai suggerimenti")
             return null
         }
+        val directorText = directorEdit?.text?.toString().orEmpty().trim()
+        if (directorText.isNotBlank() && vm?.selectedDirectorId == null) {
+            triggerDirectorSearch()
+            showSafeToast("Seleziona il regista dai suggerimenti")
+            return null
+        }
 
         return AdvancedSearchFilters(
             type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
@@ -721,6 +994,10 @@ class SearchTvFragment : Fragment() {
             dateTo = to?.let { "%04d-12-31".format(it) },
             actorId = vm?.selectedActorId,
             actorName = vm?.selectedActorName.orEmpty(),
+            directorId = vm?.selectedDirectorId,
+            directorName = vm?.selectedDirectorName.orEmpty(),
+            sort = sortSelector?.value ?: AdvancedSearchFilters.SortFilter.POPULARITY,
+            platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
         )
     }
 
@@ -745,6 +1022,7 @@ class SearchTvFragment : Fragment() {
                 UserPreferences.currentProvider = TmdbProvider(language)
             }
             vm.searchAdvanced(query, filters)
+            collapseFiltersAndFocusResults()
             return true
         }
 
@@ -754,8 +1032,10 @@ class SearchTvFragment : Fragment() {
                 return true
             }
             vm.searchGlobal(query, UserPreferences.currentProvider?.language ?: "it")
+            collapseFiltersAndFocusResults()
         } else {
             vm.search(query)
+            collapseFiltersAndFocusResults()
         }
         return true
     }
@@ -767,39 +1047,17 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun initializeScrollableHeader() {
-        vgvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                try {
-                    if (!this@SearchTvFragment::searchHeader.isInitialized) return
-                    val maxOffset = searchHeader.height
-                    if (maxOffset <= 0) return
-
-                    // Il blocco Cerca + filtri si muove dello stesso delta verticale
-                    // delle locandine: andando verso i risultati scompare gradualmente;
-                    // tornando verso l'alto ricompare gradualmente. In cima torna a zero.
-                    val target = (searchHeaderOffset + dy).coerceIn(0, maxOffset)
-                    setSearchHeaderOffset(target, animate = false)
-                    if (!recyclerView.canScrollVertically(-1)) {
-                        setSearchHeaderOffset(0, animate = false)
-                    }
-                } catch (error: Throwable) {
-                    Log.w(TAG, "Header scroll sync ignored", error)
-                }
+        vgvSearch.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus && filterPanelExpanded) {
+                setFilterPanelExpanded(false, true)
             }
-
-            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
-                if (newState == RecyclerView.SCROLL_STATE_IDLE &&
-                    !recyclerView.canScrollVertically(-1)
-                ) {
-                    setSearchHeaderOffset(0, animate = true)
-                }
-            }
-        })
+        }
     }
 
     private fun updateGridTopPadding() {
         if (!isAdded || !this::searchHeader.isInitialized) return
-        val top = searchHeader.height + dp(12)
+        val visibleHeader = if (filterPanelExpanded) searchHeader.height else dp(FILTER_PEEK_DP)
+        val top = visibleHeader + dp(10)
         if (top <= 0) return
         if (vgvSearch.paddingTop != top) {
             vgvSearch.setPadding(
@@ -809,7 +1067,6 @@ class SearchTvFragment : Fragment() {
                 vgvSearch.paddingBottom,
             )
         }
-        syncHeaderToGrid(vgvSearch)
     }
 
     private fun syncHeaderToGrid(recyclerView: RecyclerView) {
@@ -857,18 +1114,38 @@ class SearchTvFragment : Fragment() {
         val translation = -safeOffset.toFloat()
         searchHeader.animate().cancel()
         if (animate) {
-            searchHeader.animate()
-                .translationY(translation)
-                .setDuration(140L)
-                .start()
+            searchHeader.animate().translationY(translation).setDuration(140L).start()
         } else {
             searchHeader.translationY = translation
         }
     }
 
+    private fun setFilterPanelExpanded(expanded: Boolean, animate: Boolean) {
+        if (!this::searchHeader.isInitialized) return
+        filterPanelExpanded = expanded
+        searchHeader.post {
+            val offset = if (expanded) 0 else (searchHeader.height - dp(FILTER_PEEK_DP)).coerceAtLeast(0)
+            setSearchHeaderOffset(offset, animate)
+            updateGridTopPadding()
+        }
+    }
+
+    private fun collapseFiltersAndFocusResults() {
+        pendingFocusFirstResult = true
+        setFilterPanelExpanded(false, true)
+        focusFirstResultWhenReady()
+    }
+
+    private fun focusFirstResultWhenReady() {
+        if (appAdapter.items.isEmpty()) return
+        vgvSearch.scrollToPosition(0)
+        vgvSearch.post {
+            if (vgvSearch.requestFocus()) pendingFocusFirstResult = false
+        }
+    }
+
     private fun revealSearchHeader() {
-        if (searchHeaderOffset > 0) vgvSearch.scrollToPosition(0)
-        setSearchHeaderOffset(0, animate = true)
+        setFilterPanelExpanded(true, true)
     }
 
     private fun focusSearchContent(): Boolean {
@@ -900,7 +1177,10 @@ class SearchTvFragment : Fragment() {
         } else {
             appAdapter.setOnLoadMoreListener(null)
         }
-        searchHeader.post { updateGridTopPadding() }
+        searchHeader.post {
+            updateGridTopPadding()
+            if (pendingFocusFirstResult) focusFirstResultWhenReady()
+        }
     }
 
     private fun displayGlobalSearch(providerResults: List<ProviderResult>) {
@@ -930,7 +1210,10 @@ class SearchTvFragment : Fragment() {
         vgvSearch.setNumColumns(1)
         appAdapter.submitList(categories)
         appAdapter.setOnLoadMoreListener(null)
-        searchHeader.post { updateGridTopPadding() }
+        searchHeader.post {
+            updateGridTopPadding()
+            if (pendingFocusFirstResult) focusFirstResultWhenReady()
+        }
     }
 
     private fun startVoiceSearch() {
@@ -1140,6 +1423,8 @@ class SearchTvFragment : Fragment() {
             spinner.setSelection(0, false)
         }
 
+        fun requestFocus(): Boolean = focusView.requestFocus()
+
         fun setNextFocus(
             left: Int? = null,
             right: Int? = null,
@@ -1165,5 +1450,6 @@ class SearchTvFragment : Fragment() {
 
     companion object {
         private const val TAG = "SearchTvSafe"
+        private const val FILTER_PEEK_DP = 26
     }
 }

@@ -558,8 +558,9 @@ class AppAdapter(
                 isItemSelectedListener?.invoke(items[adjustedPosition]) == true,
             ) // Los listeners se manejan dentro del ViewHolder
             is PeopleViewHolder -> holder.bind(
-                items[adjustedPosition] as People
-            ) // Tu original no pasaba listener, lo respeto
+                items[adjustedPosition] as People,
+                onPeopleClickListener,
+            )
             is ProviderViewHolder -> holder.bind(
                 items[adjustedPosition] as Provider
             ) // Tu original no pasaba listener, lo respeto
