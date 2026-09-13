@@ -56,6 +56,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private val _state = MutableStateFlow<State>(State.SuccessSearching(emptyList(), hasMore = false))
     private val _actorSuggestions = MutableStateFlow<List<People>>(emptyList())
     val actorSuggestions: Flow<List<People>> = _actorSuggestions
+    private val _directorSuggestions = MutableStateFlow<List<People>>(emptyList())
+    val directorSuggestions: Flow<List<People>> = _directorSuggestions
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val state: Flow<State> = combine(
@@ -114,6 +116,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         private set
     var selectedActorName: String = ""
         private set
+    var selectedDirectorId: String? = null
+        private set
+    var selectedDirectorName: String = ""
+        private set
 
     private var page = 1
     private var usingWebFallback = false
@@ -122,7 +128,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         advancedFilters = AdvancedSearchFilters()
         selectedActorId = null
         selectedActorName = ""
+        selectedDirectorId = null
+        selectedDirectorName = ""
         _actorSuggestions.value = emptyList()
+        _directorSuggestions.value = emptyList()
         executeSearch(query, advancedFilters, 1)
     }
 
@@ -131,7 +140,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             advancedFilters = normalizeFilters(filters)
             selectedActorId = advancedFilters.actorId
             selectedActorName = advancedFilters.actorName
+            selectedDirectorId = advancedFilters.directorId
+            selectedDirectorName = advancedFilters.directorName
             _actorSuggestions.value = emptyList()
+            _directorSuggestions.value = emptyList()
             executeSearch(query, advancedFilters, 1)
         }
 
@@ -151,19 +163,39 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         _actorSuggestions.value = emptyList()
     }
 
-    fun searchActors(actorQuery: String) = viewModelScope.launch(Dispatchers.IO) {
-        val cleanQuery = actorQuery.trim()
-        if (cleanQuery.length < 2) {
-            _actorSuggestions.value = emptyList()
-            return@launch
-        }
+    fun selectDirectorFilter(directorId: String, directorName: String) {
+        selectedDirectorId = directorId
+        selectedDirectorName = directorName
+        _directorSuggestions.value = emptyList()
+    }
 
-        try {
+    fun clearDirectorSelection() {
+        selectedDirectorId = null
+        selectedDirectorName = ""
+        _directorSuggestions.value = emptyList()
+    }
+
+    fun clearDirectorSuggestions() {
+        _directorSuggestions.value = emptyList()
+    }
+
+    fun searchActors(actorQuery: String) = viewModelScope.launch(Dispatchers.IO) {
+        _actorSuggestions.value = searchPeopleSuggestions(actorQuery)
+    }
+
+    fun searchDirectors(directorQuery: String) = viewModelScope.launch(Dispatchers.IO) {
+        _directorSuggestions.value = searchPeopleSuggestions(directorQuery)
+    }
+
+    private suspend fun searchPeopleSuggestions(personQuery: String): List<People> {
+        val cleanQuery = personQuery.trim()
+        if (cleanQuery.length < 2) return emptyList()
+
+        return try {
             val language = UserPreferences.currentProvider?.language
                 ?.takeIf { it.isNotBlank() }
                 ?: "it"
-
-            _actorSuggestions.value = TMDb3.Search.multi(
+            val people = TMDb3.Search.multi(
                 query = cleanQuery,
                 page = 1,
                 language = language,
@@ -172,16 +204,27 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 .sortedByDescending { it.popularity }
                 .distinctBy { it.id }
                 .take(12)
-                .map { person ->
-                    People(
-                        id = person.id.toString(),
-                        name = person.name,
-                        image = person.profilePath?.w500,
-                    )
-                }
+
+            coroutineScope {
+                people.map { person ->
+                    async {
+                        val image = person.profilePath?.w500 ?: runCatching {
+                            TMDb3.People.details(
+                                personId = person.id,
+                                language = language,
+                            ).profilePath?.w500
+                        }.getOrNull()
+                        People(
+                            id = person.id.toString(),
+                            name = person.name,
+                            image = image,
+                        )
+                    }
+                }.awaitAll()
+            }
         } catch (e: Exception) {
-            Log.e("SearchViewModel", "searchActors: ", e)
-            _actorSuggestions.value = emptyList()
+            Log.e("SearchViewModel", "searchPeopleSuggestions: ", e)
+            emptyList()
         }
     }
 
@@ -314,6 +357,30 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
         val selectedGenre = filters.genre
         val actorId = filters.actorId?.takeIf { it.isNotBlank() }
+        val directorId = filters.directorId?.takeIf { it.isNotBlank() }
+        val platformProviderIds = filters.platform.providerIds
+        val directorDetailsDeferred = directorId?.toIntOrNull()?.let { personId ->
+            async {
+                TMDb3.People.details(
+                    personId = personId,
+                    appendToResponse = listOf(
+                        TMDb3.Params.AppendToResponse.Person.MOVIE_CREDITS,
+                        TMDb3.Params.AppendToResponse.Person.TV_CREDITS,
+                    ),
+                    language = language,
+                )
+            }
+        }
+        val movieSort = when (filters.sort) {
+            AdvancedSearchFilters.SortFilter.DATE -> "primary_release_date.desc"
+            AdvancedSearchFilters.SortFilter.VOTE -> "vote_average.desc"
+            AdvancedSearchFilters.SortFilter.POPULARITY -> "popularity.desc"
+        }
+        val tvSort = when (filters.sort) {
+            AdvancedSearchFilters.SortFilter.DATE -> "first_air_date.desc"
+            AdvancedSearchFilters.SortFilter.VOTE -> "vote_average.desc"
+            AdvancedSearchFilters.SortFilter.POPULARITY -> "popularity.desc"
+        }
 
         if (query.isNotBlank()) {
             val firstTmdbPage = ((page - 1) * 3) + 1
@@ -331,13 +398,84 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 async { provider.getPeople(id, page = 1).filmography }
             }
 
+            val needsDiscoverConstraint = platformProviderIds != null
+            val movieConstraintDeferred = if (needsDiscoverConstraint && includeMovies) async {
+                (firstTmdbPage..firstTmdbPage + 2).map { discoverPage ->
+                    async {
+                        val params = mutableMapOf(
+                            "language" to language,
+                            "page" to discoverPage.toString(),
+                            "sort_by" to movieSort,
+                            "include_adult" to "false",
+                        )
+                        platformProviderIds?.let {
+                            params["watch_region"] = "IT"
+                            params["with_watch_providers"] = it
+                        }
+                        TMDb3.Discover.movie(params).results.map { it.id.toString() }
+                    }
+                }.awaitAll().flatten().toHashSet()
+            } else null
+            val tvConstraintDeferred = if (needsDiscoverConstraint && includeTv) async {
+                (firstTmdbPage..firstTmdbPage + 2).map { discoverPage ->
+                    async {
+                        val params = mutableMapOf(
+                            "language" to language,
+                            "page" to discoverPage.toString(),
+                            "sort_by" to tvSort,
+                            "include_adult" to "false",
+                        )
+                        platformProviderIds?.let {
+                            params["watch_region"] = "IT"
+                            params["with_watch_providers"] = it
+                        }
+                        TMDb3.Discover.tv(params).results.map { it.id.toString() }
+                    }
+                }.awaitAll().flatten().toHashSet()
+            } else null
+
             val searchResults = searchDeferred.awaitAll().flatten()
             val actorCredits = actorCreditsDeferred?.await().orEmpty()
             val actorMovieIds = actorCredits.filterIsInstance<Movie>().mapTo(hashSetOf()) { it.id }
             val actorTvIds = actorCredits.filterIsInstance<TvShow>().mapTo(hashSetOf()) { it.id }
             val restrictToActor = actorId != null
+            val directorDetails = directorDetailsDeferred?.await()
+            val directorMovieIds = directorDetails?.movieCredits?.crew
+                ?.filter { it.job.equals("Director", ignoreCase = true) }
+                ?.mapTo(hashSetOf()) { it.id.toString() }
+                .orEmpty()
+            val directorTvIds = directorDetails?.tvCredits?.crew
+                ?.filter { it.job.equals("Director", ignoreCase = true) }
+                ?.mapTo(hashSetOf()) { it.id.toString() }
+                .orEmpty()
+            val restrictToDirector = directorId != null
+            val constrainedMovieIds = movieConstraintDeferred?.await()
+            val constrainedTvIds = tvConstraintDeferred?.await()
+            val sortedSearchResults = when (filters.sort) {
+                AdvancedSearchFilters.SortFilter.DATE -> searchResults.sortedByDescending {
+                    when (it) {
+                        is TMDb3.Movie -> it.releaseDate.orEmpty()
+                        is TMDb3.Tv -> it.firstAirDate.orEmpty()
+                        else -> ""
+                    }
+                }
+                AdvancedSearchFilters.SortFilter.VOTE -> searchResults.sortedByDescending {
+                    when (it) {
+                        is TMDb3.Movie -> it.voteAverage
+                        is TMDb3.Tv -> it.voteAverage
+                        else -> 0f
+                    }
+                }
+                AdvancedSearchFilters.SortFilter.POPULARITY -> searchResults.sortedByDescending {
+                    when (it) {
+                        is TMDb3.Movie -> it.popularity
+                        is TMDb3.Tv -> it.popularity
+                        is TMDb3.Person -> it.popularity
+                    }
+                }
+            }
 
-            return@coroutineScope searchResults.mapNotNull { multi ->
+            return@coroutineScope sortedSearchResults.mapNotNull { multi ->
                 when (multi) {
                     is TMDb3.Movie -> {
                         if (!includeMovies) return@mapNotNull null
@@ -349,6 +487,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             if (genreId !in multi.genresIds) return@mapNotNull null
                         }
                         if (restrictToActor && multi.id.toString() !in actorMovieIds) return@mapNotNull null
+                        if (restrictToDirector && multi.id.toString() !in directorMovieIds) return@mapNotNull null
+                        if (constrainedMovieIds != null && multi.id.toString() !in constrainedMovieIds) return@mapNotNull null
                         if (!matchesYearFilter(multi.releaseDate, filters)) return@mapNotNull null
 
                         Movie(
@@ -372,6 +512,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             if (genreId !in multi.genresIds) return@mapNotNull null
                         }
                         if (restrictToActor && multi.id.toString() !in actorTvIds) return@mapNotNull null
+                        if (restrictToDirector && multi.id.toString() !in directorTvIds) return@mapNotNull null
+                        if (constrainedTvIds != null && multi.id.toString() !in constrainedTvIds) return@mapNotNull null
                         if (!matchesYearFilter(multi.firstAirDate, filters)) return@mapNotNull null
 
                         TvShow(
@@ -394,11 +536,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val params = mutableMapOf(
                 "language" to language,
                 "page" to page.toString(),
-                "sort_by" to "popularity.desc",
+                "sort_by" to movieSort,
                 "include_adult" to "false",
             )
             if (italianOnly) params["with_original_language"] = "it"
             actorId?.let { params["with_cast"] = it }
+            directorId?.let { params["with_crew"] = it }
+            platformProviderIds?.let {
+                params["watch_region"] = "IT"
+                params["with_watch_providers"] = it
+            }
 
             val genreIds = buildList {
                 if (cartoonOnly) add(16)
@@ -416,11 +563,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val params = mutableMapOf(
                 "language" to language,
                 "page" to page.toString(),
-                "sort_by" to "popularity.desc",
+                "sort_by" to tvSort,
                 "include_adult" to "false",
             )
             if (italianOnly) params["with_original_language"] = "it"
             actorId?.let { params["with_cast"] = it }
+            directorId?.let { params["with_crew"] = it }
+            platformProviderIds?.let {
+                params["watch_region"] = "IT"
+                params["with_watch_providers"] = it
+            }
 
             val genreIds = buildList {
                 if (cartoonOnly) add(16)
@@ -434,9 +586,20 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             TMDb3.Discover.tv(params).results
         } else null
 
+        val blankDirectorDetails = directorDetailsDeferred?.await()
+        val blankDirectorMovieIds = blankDirectorDetails?.movieCredits?.crew
+            ?.filter { it.job.equals("Director", ignoreCase = true) }
+            ?.mapTo(hashSetOf()) { it.id.toString() }
+            .orEmpty()
+        val blankDirectorTvIds = blankDirectorDetails?.tvCredits?.crew
+            ?.filter { it.job.equals("Director", ignoreCase = true) }
+            ?.mapTo(hashSetOf()) { it.id.toString() }
+            .orEmpty()
+
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
+            .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
             .map { movie ->
                 Movie(
                     id = movie.id.toString(),
@@ -453,6 +616,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val tvItems = tvDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
+            .filter { directorId == null || it.id.toString() in blankDirectorTvIds }
             .map { tv ->
                 TvShow(
                     id = tv.id.toString(),
@@ -466,15 +630,25 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             }
             .toList()
 
-        (movieItems + tvItems)
+        val combined = (movieItems + tvItems)
             .distinctBy { it.searchIdentityKey() }
-            .sortedByDescending {
+        when (filters.sort) {
+            AdvancedSearchFilters.SortFilter.DATE -> combined.sortedByDescending {
+                when (it) {
+                    is Movie -> it.released?.timeInMillis ?: Long.MIN_VALUE
+                    is TvShow -> it.released?.timeInMillis ?: Long.MIN_VALUE
+                    else -> Long.MIN_VALUE
+                }
+            }
+            AdvancedSearchFilters.SortFilter.VOTE -> combined.sortedByDescending {
                 when (it) {
                     is Movie -> it.rating
                     is TvShow -> it.rating
                     else -> 0.0
                 }
             }
+            AdvancedSearchFilters.SortFilter.POPULARITY -> combined
+        }
     }
 
     private fun matchesYearFilter(
@@ -497,7 +671,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     fun searchGlobal(query: String, currentLanguage: String) = viewModelScope.launch(Dispatchers.IO) {
         selectedActorId = null
         selectedActorName = ""
+        selectedDirectorId = null
+        selectedDirectorName = ""
         _actorSuggestions.value = emptyList()
+        _directorSuggestions.value = emptyList()
         _state.emit(State.GlobalSearching)
 
         val isCurrentProviderIptv = UserPreferences.currentProvider is IptvProvider

@@ -30,19 +30,26 @@ class PeopleViewHolder(
     private val context = itemView.context
     private lateinit var people: People
 
-    fun bind(people: People) {
+    fun bind(people: People, onPeopleClickListener: ((People) -> Unit)? = null) {
         this.people = people
 
         when (_binding) {
-            is ItemPeopleMobileBinding -> displayMobileItem(_binding)
-            is ItemPeopleTvBinding -> displayTvItem(_binding)
+            is ItemPeopleMobileBinding -> displayMobileItem(_binding, onPeopleClickListener)
+            is ItemPeopleTvBinding -> displayTvItem(_binding, onPeopleClickListener)
         }
     }
 
 
-    private fun displayMobileItem(binding: ItemPeopleMobileBinding) {
+    private fun displayMobileItem(
+        binding: ItemPeopleMobileBinding,
+        onPeopleClickListener: ((People) -> Unit)?,
+    ) {
         binding.root.apply {
             setOnClickListener {
+                if (onPeopleClickListener != null) {
+                    onPeopleClickListener(people)
+                    return@setOnClickListener
+                }
                 when (context.toActivity()?.getCurrentFragment()) {
                     is MovieMobileFragment -> findNavController().navigate(
                         MovieMobileFragmentDirections.actionMovieToPeople(
@@ -75,9 +82,16 @@ class PeopleViewHolder(
         binding.tvPeopleName.text = people.name
     }
 
-    private fun displayTvItem(binding: ItemPeopleTvBinding) {
+    private fun displayTvItem(
+        binding: ItemPeopleTvBinding,
+        onPeopleClickListener: ((People) -> Unit)?,
+    ) {
         binding.root.apply {
             setOnClickListener {
+                if (onPeopleClickListener != null) {
+                    onPeopleClickListener(people)
+                    return@setOnClickListener
+                }
                 when (context.toActivity()?.getCurrentFragment()) {
                     is MovieTvFragment -> findNavController().navigate(
                         MovieTvFragmentDirections.actionMovieToPeople(

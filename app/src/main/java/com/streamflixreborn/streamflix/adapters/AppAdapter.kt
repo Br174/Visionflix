@@ -557,9 +557,13 @@ class AppAdapter(
                 onMovieKeyListener,
                 isItemSelectedListener?.invoke(items[adjustedPosition]) == true,
             ) // Los listeners se manejan dentro del ViewHolder
-            is PeopleViewHolder -> holder.bind(
-                items[adjustedPosition] as People
-            ) // Tu original no pasaba listener, lo respeto
+            is PeopleViewHolder -> {
+                val people = items[adjustedPosition] as People
+                holder.bind(
+                    people,
+                    onPeopleClickListener.takeIf { people.itemType == Type.PEOPLE_TV_ITEM },
+                )
+            }
             is ProviderViewHolder -> holder.bind(
                 items[adjustedPosition] as Provider
             ) // Tu original no pasaba listener, lo respeto

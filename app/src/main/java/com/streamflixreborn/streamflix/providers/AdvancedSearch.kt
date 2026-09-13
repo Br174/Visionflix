@@ -11,9 +11,29 @@ data class AdvancedSearchFilters(
     val dateTo: String? = null,
     val actorId: String? = null,
     val actorName: String = "",
+    val directorId: String? = null,
+    val directorName: String = "",
+    val sort: SortFilter = SortFilter.POPULARITY,
+    val platform: PlatformFilter = PlatformFilter.ALL,
 ) {
     enum class ContentType { ALL, MOVIE, TV, CARTOON }
     enum class ItalianFilter { ALL, YES, NO }
+
+    enum class SortFilter(val label: String) {
+        POPULARITY("Popolarità"),
+        DATE("Data"),
+        VOTE("Voto"),
+    }
+
+    enum class PlatformFilter(val label: String, val providerIds: String?) {
+        ALL("Tutte", null),
+        NETFLIX("Netflix", "8"),
+        DISNEY_PLUS("Disney+", "337"),
+        PRIME_VIDEO("Prime Video", "119"),
+        APPLE_TV_PLUS("Apple TV+", "350"),
+        SKY_NOW("Sky / NOW", "29|39"),
+        HBO_MAX("HBO Max / Max", "384|1899"),
+    }
 
     enum class GenreFilter(
         val label: String,
@@ -43,7 +63,10 @@ data class AdvancedSearchFilters(
             year != null ||
             !dateFrom.isNullOrBlank() ||
             !dateTo.isNullOrBlank() ||
-            !actorId.isNullOrBlank()
+            !actorId.isNullOrBlank() ||
+            !directorId.isNullOrBlank() ||
+            sort != SortFilter.POPULARITY ||
+            platform != PlatformFilter.ALL
 }
 
 interface AdvancedSearchProvider {
