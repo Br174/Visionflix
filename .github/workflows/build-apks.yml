@@ -25,11 +25,25 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Set automatic app version
+      - name: Force next globally installable app version
         shell: bash
         run: |
-          echo "APP_VERSION_CODE=$((131 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "APP_VERSION_NAME=1.7.$((202 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          set -euo pipefail
+          LATEST_TAG="$(curl --fail --silent --show-error --location \
+            'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          LATEST_CODE="${LATEST_TAG##*-}"
+          case "$LATEST_CODE" in
+            ''|*[!0-9]*)
+              echo "::error::Impossibile ricavare il versionCode dall'ultima release pubblica: $LATEST_TAG"
+              exit 1
+              ;;
+          esac
+          APP_VERSION_CODE=$((LATEST_CODE + 1))
+          APP_VERSION_NAME="1.7.$((APP_VERSION_CODE + 71))"
+          echo "APP_VERSION_CODE=$APP_VERSION_CODE" >> "$GITHUB_ENV"
+          echo "APP_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
+          echo "Versione forzata: $APP_VERSION_NAME (build $APP_VERSION_CODE), successiva a $LATEST_TAG."
 
       - name: Restore stable debug signing key
         uses: actions/cache/restore@v4
