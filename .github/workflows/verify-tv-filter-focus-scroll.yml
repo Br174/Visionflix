@@ -118,6 +118,19 @@ jobs:
           grep -F "application-label:'Verlezza Vision'" /tmp/apk-info.txt
           sha256sum /tmp/Visionflix_BV_TV.apk | sed 's#/tmp/##' > /tmp/SHA256SUMS.txt
 
+      - name: Upload forced-version test APKs before publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-dropdown-scroll-forced-${{ env.APP_VERSION_CODE }}
+          path: |
+            /tmp/Verlezza-Vision-Mobile-dropdown-test.apk
+            /tmp/Verlezza-Vision-TV-dropdown-test.apk
+            /tmp/Visionflix_BV_TV.apk
+            /tmp/SHA256SUMS.txt
+            /tmp/apk-info.txt
+            /tmp/signature-info.txt
+          if-no-files-found: error
+
       - name: Force public Downloader 3875230 to this exact TV APK
         env:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
@@ -126,7 +139,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::PUBLISH_TOKEN non configurato: nessun APK TV e' considerato pronto senza aggiornare Downloader 3875230."
+            echo "::error::PUBLISH_TOKEN non configurato: APK conservato come artifact, ma Downloader 3875230 deve essere aggiornato tramite il bridge release-manifest prima di considerare pronta la build."
             exit 1
           fi
 
@@ -190,12 +203,3 @@ jobs:
             exit 1
           fi
           echo "Downloader 3875230 verificato: ${APP_VERSION_NAME} build ${APP_VERSION_CODE}." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload forced-version test APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: tv-dropdown-scroll-forced-${{ env.APP_VERSION_CODE }}
-          path: |
-            /tmp/Verlezza-Vision-Mobile-dropdown-test.apk
-            /tmp/Verlezza-Vision-TV-dropdown-test.apk
-          if-no-files-found: error
