@@ -1,0 +1,50 @@
+name: Apply Spinner popup compile fix
+
+on:
+  push:
+    branches:
+      - fix/tv-filter-focus-scroll
+    paths:
+      - scripts/fix_spinner_popup_compile.py
+      - .github/workflows/apply-spinner-popup-compile-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/tv-filter-focus-scroll
+          fetch-depth: 0
+
+      - name: Apply compile-only correction
+        run: python3 scripts/fix_spinner_popup_compile.py
+
+      - name: Verify only safe dropdown architecture remains
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE='app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchTvFragment.kt'
+          grep -F 'R.layout.fragment_search_tv_safe' "$FILE"
+          grep -F 'Spinner(requireContext(), Spinner.MODE_DROPDOWN)' "$FILE"
+          grep -F 'setPopupBackgroundDrawable(ColorDrawable(Color.rgb(48, 48, 48)))' "$FILE"
+          grep -F 'val target = (searchHeaderOffset + dy).coerceIn(0, maxOffset)' "$FILE"
+          ! grep -F 'popupBackgroundDrawable =' "$FILE"
+
+      - name: Commit corrected source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchTvFragment.kt
+          git commit -m 'fix: call Spinner popup background setter explicitly'
+          git push origin HEAD:fix/tv-filter-focus-scroll
