@@ -1,9 +1,15 @@
-name: Build Verlezza Vision Mobile and TV APKs
+name: UAB-CORE Visionflix Mobile and TV adapter
 
 on:
   push:
     branches:
       - main
+      - 'lab/**'
+      - 'candidate/**'
+      - 'mother/**'
+    paths-ignore:
+      - '.uab/**'
+      - '.github/workflows/build-apks.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,8 +19,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Progress 5% - accepted
+        run: echo "[UAB_PROGRESS=5] Visionflix adapter preso in carico"
+
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Detect UAB lifecycle stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            mother/*) UAB_STAGE="MADRE" ;;
+            candidate/*) UAB_STAGE="CANDIDATA" ;;
+            lab/*) UAB_STAGE="LAB" ;;
+            *) UAB_STAGE="BASE" ;;
+          esac
+          echo "UAB_STAGE=$UAB_STAGE" >> "$GITHUB_ENV"
+          echo "[UAB_PROGRESS=15] Stage=$UAB_STAGE; pubblicazione permanente consentita solo a MADRE"
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -22,8 +44,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
+      - name: Setup Gradle persistent cache
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-cleanup: on-success
 
       - name: Force next globally installable app version
         shell: bash
@@ -43,7 +67,7 @@ jobs:
           APP_VERSION_NAME="1.7.$((APP_VERSION_CODE + 71))"
           echo "APP_VERSION_CODE=$APP_VERSION_CODE" >> "$GITHUB_ENV"
           echo "APP_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
-          echo "Versione forzata: $APP_VERSION_NAME (build $APP_VERSION_CODE), successiva a $LATEST_TAG."
+          echo "Versione di test/promozione: $APP_VERSION_NAME (build $APP_VERSION_CODE)."
 
       - name: Restore stable debug signing key
         uses: actions/cache/restore@v4
@@ -52,7 +76,7 @@ jobs:
           key: visionflix-debug-keystore-v1
           fail-on-cache-miss: true
 
-      - name: Pin the existing signing key and check its public certificate
+      - name: Pin signing identity
         shell: bash
         run: |
           set -euo pipefail
@@ -60,9 +84,13 @@ jobs:
           keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
           echo "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der" | sha256sum --check -
           echo "VISIONFLIX_SIGNING_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+          echo "[UAB_PROGRESS=45] Firma e controlli preliminari verificati"
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
+
+      - name: Progress 60% - cache and toolchain ready
+        run: echo "[UAB_PROGRESS=60] Cache Gradle e toolchain pronte"
 
       - name: Build Android mobile debug APK
         run: |
@@ -72,7 +100,7 @@ jobs:
           SUBDL_API_KEY=dummy
           RABBITSTREAM_SOURCE_API=
           EOF
-          ./gradlew clean assembleDebug --stacktrace
+          ./gradlew clean assembleDebug --build-cache --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-Mobile.apk
 
       - name: Build Android TV debug APK
@@ -83,9 +111,10 @@ jobs:
           SUBDL_API_KEY=dummy
           RABBITSTREAM_SOURCE_API=
           EOF
-          ./gradlew clean assembleDebug --stacktrace
+          ./gradlew clean assembleDebug --build-cache --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-TV.apk
           cp /tmp/Verlezza-Vision-TV.apk /tmp/Visionflix_BV_TV.apk
+          echo "[UAB_PROGRESS=75] Build Mobile e TV completate"
 
       - name: Verify Android TV APK
         shell: bash
@@ -101,88 +130,95 @@ jobs:
           grep -F "versionCode='$APP_VERSION_CODE'" /tmp/apk-info.txt
           grep -F "application-label:'Verlezza Vision'" /tmp/apk-info.txt
           sha256sum /tmp/Visionflix_BV_TV.apk | sed 's#/tmp/##' > /tmp/SHA256SUMS.txt
+          echo "[UAB_PROGRESS=85] Firma, package, versione, launcher e checksum verificati"
 
-      - name: Upload APKs artifact
+      - name: Upload temporary build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Verlezza-Vision-debug-APKs
+          name: Verlezza-Vision-${{ env.UAB_STAGE }}-${{ github.run_number }}
           path: |
             /tmp/Verlezza-Vision-Mobile.apk
             /tmp/Verlezza-Vision-TV.apk
+            /tmp/SHA256SUMS.txt
+            /tmp/apk-info.txt
+            /tmp/signature-info.txt
           if-no-files-found: error
+          retention-days: 14
 
-      - name: Publish fixed latest TV release in source repository
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: tv-latest
-          name: Verlezza Vision TV - Latest
-          prerelease: false
-          make_latest: true
-          files: /tmp/Visionflix_BV_TV.apk
-          overwrite_files: true
-          body: |
-            Verlezza Vision TV ${{ env.APP_VERSION_NAME }} (build ${{ env.APP_VERSION_CODE }}).
-            Questa release privata viene aggiornata automaticamente a ogni build di main.
+      - name: Publish immutable private MADRE release
+        if: env.UAB_STAGE == 'MADRE'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="visionflix-madre-${APP_VERSION_CODE}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::La MADRE $TAG esiste già ed è immutabile."
+            exit 41
+          fi
+          cat > /tmp/private-release-notes.md <<EOF
+          Verlezza Vision MADRE ${APP_VERSION_NAME} (build ${APP_VERSION_CODE}).
+          UAB-CORE-V1: release immutabile promossa dal ramo $GITHUB_REF_NAME.
+          Source commit: $GITHUB_SHA
+          EOF
+          gh release create "$TAG" \
+            /tmp/Verlezza-Vision-Mobile.apk \
+            /tmp/Verlezza-Vision-TV.apk \
+            /tmp/Visionflix_BV_TV.apk \
+            /tmp/SHA256SUMS.txt \
+            /tmp/apk-info.txt \
+            /tmp/signature-info.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Verlezza Vision MADRE — ${APP_VERSION_NAME} (build ${APP_VERSION_CODE})" \
+            --notes-file /tmp/private-release-notes.md \
+            --latest
 
-      - name: Force public Downloader release to the new TV APK
+      - name: Publish immutable Downloader MADRE release
+        if: env.UAB_STAGE == 'MADRE'
         env:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           PUBLIC_REPO: Br174/streamflix-BV
         shell: bash
         run: |
           set -euo pipefail
-
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::PUBLISH_TOKEN non configurato: la build non puo essere considerata pronta finche Downloader non viene aggiornato."
+            echo "::error::PUBLISH_TOKEN non configurato."
             exit 1
           fi
-
           TAG="verlezza-tv-${APP_VERSION_CODE}"
           TITLE="Verlezza Vision TV — ${APP_VERSION_NAME} (build ${APP_VERSION_CODE})"
-
+          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+            echo "::error::La release pubblica $TAG esiste già ed è immutabile."
+            exit 42
+          fi
           cat > /tmp/release-notes.md <<EOF
           Verlezza Vision TV ${APP_VERSION_NAME} (build ${APP_VERSION_CODE}).
 
           Codice Downloader: **3875230**.
-          Questo asset alimenta il collegamento stabile registrato nel codice Downloader 3875230.
-          Il nome pubblico dell'asset resta Visionflix_BV_TV.apk per mantenere invariato il codice Downloader.
-
-          Firma stabilizzata dalla versione 1.7.239 (build 168). Le precedenti build usavano chiavi temporanee diverse: questo APK non puo aggiornare direttamente quelle installazioni. La rimozione della vecchia app puo cancellarne i dati; salvare prima le impostazioni.
+          Il file resta Visionflix_BV_TV.apk; il puntatore /releases/latest/ segue la nuova MADRE senza cancellare le MADRI precedenti.
+          Firma stabile dalla build 168.
+          UAB-CORE-V1 source commit: $GITHUB_SHA
           EOF
+          gh release create "$TAG" \
+            /tmp/Visionflix_BV_TV.apk \
+            /tmp/SHA256SUMS.txt \
+            /tmp/apk-info.txt \
+            /tmp/signature-info.txt \
+            --repo "$PUBLIC_REPO" \
+            --target main \
+            --title "$TITLE" \
+            --notes-file /tmp/release-notes.md \
+            --latest
 
-          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" \
-              /tmp/Visionflix_BV_TV.apk \
-              /tmp/SHA256SUMS.txt \
-              /tmp/apk-info.txt \
-              --repo "$PUBLIC_REPO" \
-              --clobber
-            gh release edit "$TAG" \
-              --repo "$PUBLIC_REPO" \
-              --title "$TITLE" \
-              --notes-file /tmp/release-notes.md \
-              --latest
-          else
-            gh release create "$TAG" \
-              /tmp/Visionflix_BV_TV.apk \
-              /tmp/SHA256SUMS.txt \
-              /tmp/apk-info.txt \
-              --repo "$PUBLIC_REPO" \
-              --target main \
-              --title "$TITLE" \
-              --notes-file /tmp/release-notes.md \
-              --latest
-          fi
-
-          gh release view "$TAG" --repo "$PUBLIC_REPO" --json tagName,url,isLatest
-
-      - name: Verify Downloader 3875230 is serving this exact build
+      - name: Verify Downloader 3875230 serves promoted MADRE
+        if: env.UAB_STAGE == 'MADRE'
         shell: bash
         run: |
           set -euo pipefail
           EXPECTED_SHA="$(awk '{print $1}' /tmp/SHA256SUMS.txt)"
           VERIFIED=0
-
           for attempt in 1 2 3 4 5 6; do
             rm -f /tmp/public-download.apk
             if curl --fail --location --retry 2 --max-time 120 \
@@ -194,13 +230,23 @@ jobs:
                 break
               fi
             fi
-            echo "Il link latest non serve ancora la build nuova; nuovo controllo tra 5 secondi..."
             sleep 5
           done
-
           if [ "$VERIFIED" != "1" ]; then
-            echo "::error::Downloader 3875230 non sta ancora servendo l'APK appena compilato."
+            echo "::error::Downloader 3875230 non serve ancora la MADRE appena promossa."
             exit 1
           fi
+          echo "Downloader 3875230 verificato sulla MADRE ${APP_VERSION_NAME}." >> "$GITHUB_STEP_SUMMARY"
 
-          echo "Downloader 3875230 verificato: ${APP_VERSION_NAME} build ${APP_VERSION_CODE}." >> "$GITHUB_STEP_SUMMARY"
+      - name: Progress 95% - handoff or promotion complete
+        shell: bash
+        run: |
+          if [ "$UAB_STAGE" = "MADRE" ]; then
+            echo "[UAB_PROGRESS=95] MADRE immutabile pubblicata e puntatore Downloader aggiornato"
+          else
+            echo "[UAB_PROGRESS=95] Artefatto temporaneo $UAB_STAGE pronto; nessuna Release permanente modificata"
+          fi
+
+      - name: Progress 100% - complete
+        shell: bash
+        run: echo "[UAB_PROGRESS=100] Visionflix UAB-CORE-V1 completato per stage $UAB_STAGE"
