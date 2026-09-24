@@ -26,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Detect UAB lifecycle stage
+        id: stage
         shell: bash
         run: |
           set -euo pipefail
@@ -36,6 +37,7 @@ jobs:
             *) UAB_STAGE="BASE" ;;
           esac
           echo "UAB_STAGE=$UAB_STAGE" >> "$GITHUB_ENV"
+          echo "stage=$UAB_STAGE" >> "$GITHUB_OUTPUT"
           echo "[UAB_PROGRESS=15] Stage=$UAB_STAGE; pubblicazione permanente consentita solo a MADRE"
 
       - name: Setup JDK 17
@@ -135,7 +137,7 @@ jobs:
       - name: Upload temporary build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Verlezza-Vision-${{ env.UAB_STAGE }}-${{ github.run_number }}
+          name: Verlezza-Vision-${{ steps.stage.outputs.stage }}-${{ github.run_number }}
           path: |
             /tmp/Verlezza-Vision-Mobile.apk
             /tmp/Verlezza-Vision-TV.apk
@@ -146,7 +148,7 @@ jobs:
           retention-days: 14
 
       - name: Publish immutable private MADRE release
-        if: env.UAB_STAGE == 'MADRE'
+        if: steps.stage.outputs.stage == 'MADRE'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -176,7 +178,7 @@ jobs:
             --latest
 
       - name: Publish immutable Downloader MADRE release
-        if: env.UAB_STAGE == 'MADRE'
+        if: steps.stage.outputs.stage == 'MADRE'
         env:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           PUBLIC_REPO: Br174/streamflix-BV
@@ -213,7 +215,7 @@ jobs:
             --latest
 
       - name: Verify Downloader 3875230 serves promoted MADRE
-        if: env.UAB_STAGE == 'MADRE'
+        if: steps.stage.outputs.stage == 'MADRE'
         shell: bash
         run: |
           set -euo pipefail
