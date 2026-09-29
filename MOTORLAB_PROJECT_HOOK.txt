@@ -1,0 +1,26 @@
+MOTORLAB PROJECT HOOK V1
+
+PROJECT_NAME=Visionflix
+PROJECT_REPOSITORY=Br174/Visionflix
+MOTORLAB_CONTROL_REPOSITORY=Br174/Chatgpt
+MOTORLAB_BOOTSTRAP_MODULE=MOTORLAB_AUTO_BOOTSTRAP_V1.txt
+MOTORLAB_GOVERNANCE_MODULE=MOTORLAB_GOVERNANCE_V1.txt
+MOTORLAB_ACTIVATION_MODE=implicit
+MOTORLAB_PROJECT_CHAT_POLICY=canonical-project-chat
+MOTORLAB_NATIVE_ENGINE_POLICY=coexist-preserve
+
+PURPOSE
+Persistent project-side structural hook for MotorLab. When the execution surface identifies this repository/project, MotorLab is implicitly enabled and must load the current canonical CORE from Br174/Chatgpt before write-capable or lifecycle-changing work.
+
+MANDATORY RULES
+1. Do not require Bruno to paste an activation string in each new Visionflix/Verlezza Vision chat.
+2. Br174/Chatgpt remains authoritative; do not freeze a CORE copy here.
+3. MotorLab operates alongside Visionflix native/domain engines and must not replace, disable, absorb or rewrite them merely because MotorLab is active.
+4. Before write-capable/lifecycle work, reconcile current CORE/governance/routing/registry and relevant durable job/checkpoint/lock state.
+5. This hook is orchestration metadata only and must not alter application logic, Mobile/TV UI, signing, package identity, Downloader behavior or playback functionality by itself.
+6. If control state is unavailable, preserve project state and report the blocker rather than guessing.
+7. Later canonical MotorLab governance revisions supersede frozen assumptions in this hook.
+
+VERSION
+MOTORLAB-PROJECT-HOOK-V1.0
+Established: 2026-09-29
