@@ -3,6 +3,12 @@ MOTORLAB PROJECT HOOK V1
 PROJECT_NAME=Visionflix
 PROJECT_REPOSITORY=Br174/Visionflix
 MOTORLAB_CONTROL_REPOSITORY=Br174/Chatgpt
+MOTORLAB_CORE_ENTRYPOINT=MOTORLAB_CORE_ENTRYPOINT_V1.txt
+MOTORLAB_RELEASE_MANIFEST=MOTORLAB_RELEASE_MANIFEST_V1.txt
+MOTORLAB_SATELLITE_SYNC_MODULE=MOTORLAB_SATELLITE_SYNC_V1.txt
+MOTORLAB_LOCAL_CORE=.motorlab/MOTORLAB_LOCAL_CORE.txt
+MOTORLAB_LOCAL_LAST_GOOD=.motorlab/MOTORLAB_LOCAL_CORE_LAST_GOOD.txt
+MOTORLAB_LOCAL_SYNC_STATE=.motorlab/MOTORLAB_SYNC_STATE.txt
 MOTORLAB_BOOTSTRAP_MODULE=MOTORLAB_AUTO_BOOTSTRAP_V1.txt
 MOTORLAB_GOVERNANCE_MODULE=MOTORLAB_GOVERNANCE_V1.txt
 MOTORLAB_GLOBAL_PERSISTENT_ACTIVATION_MODULE=MOTORLAB_GLOBAL_PERSISTENT_ACTIVATION_V1.txt
@@ -11,32 +17,27 @@ MOTORLAB_PROGRESS_REPORTING_MODULE=MOTORLAB_PROGRESS_REPORTING_V1.txt
 MOTORLAB_VISUAL_STATUS_MODULE=MOTORLAB_VISUAL_STATUS_V1.txt
 MOTORLAB_WATCHDOG_MODULE=MOTORLAB_WATCHDOG_V1.txt
 MOTORLAB_RESUME_RECOVERY_MODULE=MOTORLAB_RESUME_RECOVERY_V1.txt
-MOTORLAB_ACTIVATION_MODE=implicit-persistent
+MOTORLAB_ACTIVATION_MODE=implicit-persistent-local-first
 MOTORLAB_PROJECT_CHAT_POLICY=canonical-project-chat
 MOTORLAB_NATIVE_ENGINE_POLICY=coexist-preserve
 MOTORLAB_VISIBLE_ACTIVATION_PROOF=required
 
 PURPOSE
-Persistent project-side structural hook for MotorLab. When the execution surface identifies this repository/project, MotorLab is implicitly and persistently enabled and must load the current canonical CORE from Br174/Chatgpt before write-capable or lifecycle-changing work.
+Persistent project-side MotorLab hook. A recognized Visionflix/Verlezza Vision session loads the VERIFIED local satellite first and then checks the central Br174/Chatgpt release at the first safe boundary.
 
 MANDATORY RULES
-1. Do not require Bruno to paste an activation string in each new Visionflix/Verlezza Vision chat.
-2. Every new identifiable Visionflix/Verlezza Vision chat inherits MotorLab automatically by project context alone.
-3. At the first available user-facing response of every recognized Visionflix/Verlezza Vision chat/session, visibly state that MotorLab is active and operating alongside the project's native engine.
-4. If the visible MotorLab startup message has not appeared, Bruno must not be expected to assume that MotorLab is active.
-5. After startup, apply the current MotorLab progress percentage, watchdog lightning/recovery and verified fireworks-success contracts whenever applicable.
-6. Br174/Chatgpt remains authoritative; do not freeze a CORE copy here.
-7. MotorLab operates alongside Visionflix native/domain engines and must not replace, disable, absorb or rewrite them merely because MotorLab is active.
-8. Before write-capable/lifecycle work, reconcile current CORE/governance/routing/registry and relevant durable job/checkpoint/lock state.
-9. This hook is orchestration metadata only and must not alter application logic, Mobile/TV UI, signing, package identity, Downloader behavior or playback functionality by itself.
-10. MOTORLAB_GLOBAL_PERSISTENT_ACTIVATION_V1.txt is mandatory and remains inherited by this project until explicitly superseded through canonical MotorLab governance.
-11. MOTORLAB_RESUME_RECOVERY_V1.txt is mandatory. Incomplete tool-driven work must continue in the same turn when control remains available; host interruptions must resume at the first later execution cycle from the last verified checkpoint with a visible lightning recovery event.
-12. If control state is unavailable, preserve project state and report the blocker rather than guessing.
-13. Later canonical MotorLab governance revisions supersede frozen assumptions in this hook.
+1. No per-chat manual MotorLab activation string is required.
+2. Load local sync state/core immediately and synchronize only at a safe boundary.
+3. Pin the MotorLab release during an active operation.
+4. Use VERIFIED local/LAST_GOOD fallback if central access is temporarily unavailable.
+5. Show the visible MotorLab startup banner in the first available response.
+6. Apply progress, Watchdog, Resume Recovery and fireworks-success contracts.
+7. Br174/Chatgpt remains authoritative; local files are synchronized satellites.
+8. MotorLab must coexist with Visionflix native/domain engines and must not replace or rewrite them merely because MotorLab is active.
+9. Satellite synchronization must not alter application logic, Mobile/TV UI, signing, package identity, Downloader behavior, playback functionality or lifecycle state.
+10. Reconcile repository/ref, checkpoint, pending-action and single-writer state before write-capable work.
 
 VERSION
-MOTORLAB-PROJECT-HOOK-V1.3
+MOTORLAB-PROJECT-HOOK-V1.4
 Established: 2026-09-29
-Revision 1.1: mandatory visible session boot banner plus explicit progress/watchdog/visual-status bindings.
-Revision 1.2: explicit binding to global persistent MotorLab activation for every future Visionflix/Verlezza Vision chat.
-Revision 1.3: mandatory Resume Recovery binding.
+Revision 1.4: local-first synchronized satellite with LAST_GOOD fallback and safe-boundary release pinning.
