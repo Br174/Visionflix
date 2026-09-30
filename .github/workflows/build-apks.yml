@@ -9,6 +9,8 @@ on:
       - 'mother/**'
     paths-ignore:
       - '.uab/**'
+      - '.motorlab/**'
+      - 'MOTORLAB_PROJECT_HOOK.txt'
       - '.github/workflows/build-apks.yml'
   workflow_dispatch:
 
