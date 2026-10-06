@@ -8,6 +8,10 @@ MOTORLAB_RELEASE_MANIFEST=MOTORLAB_RELEASE_MANIFEST_V1.txt
 MOTORLAB_PROJECT_CONTINUITY_MODULE=MOTORLAB_PROJECT_CONTINUITY_V1.txt
 MOTORLAB_PROJECT_STATE=MOTORLAB_PROJECT_STATE_VISIONFLIX_V1.txt
 MOTORLAB_SATELLITE_SYNC_MODULE=MOTORLAB_SATELLITE_SYNC_V1.txt
+MOTORLAB_POLLICINO_MODULE=MOTORLAB_POLLICINO_CONTINUITY_V1.txt
+MOTORLAB_PERSISTENT_OPERATIONAL_STATE_MODULE=MOTORLAB_PERSISTENT_OPERATIONAL_STATE_V1.txt
+MOTORLAB_EXECUTION_FABRIC_MODULE=MOTORLAB_EXECUTION_FABRIC_V1.txt
+MOTORLAB_VELOCITY_LAYER_MODULE=MOTORLAB_VELOCITY_LAYER_V1.txt
 MOTORLAB_LOCAL_CORE=.motorlab/MOTORLAB_LOCAL_CORE.txt
 MOTORLAB_LOCAL_LAST_GOOD=.motorlab/MOTORLAB_LOCAL_CORE_LAST_GOOD.txt
 MOTORLAB_LOCAL_SYNC_STATE=.motorlab/MOTORLAB_SYNC_STATE.txt
@@ -22,6 +26,14 @@ MOTORLAB_PROJECT_CONTINUITY=required
 MOTORLAB_PROJECT_CHAT_POLICY=promptless-cross-chat-continuity
 MOTORLAB_NATIVE_ENGINE_POLICY=coexist-preserve
 MOTORLAB_VISIBLE_ACTIVATION_PROOF=required
+MOTORLAB_DEFERRED_MATERIALIZATION=required
+MOTORLAB_EVENT_MEMORY=required
+MOTORLAB_DYNAMIC_PRUNING=required
+MOTORLAB_PROGRESSIVE_BRANCHING=required
+MOTORLAB_DYNAMIC_DAG=required
+MOTORLAB_CONTENT_ADDRESSED_REUSE=required
+MOTORLAB_WORK_ELIMINATION_FIRST=required
+MOTORLAB_LOCAL_EXECUTION_FABRIC=.motorlab/execution/motorlab_execution_fabric.mjs
 
 PURPOSE
 Persistent Visionflix/Verlezza Vision hook. Every recognizable project chat activates MotorLab first, reconciles the central Visionflix continuity ledger with live source/delivery state, preserves native/domain engines and resumes latest verified work without transfer prompts.
@@ -39,7 +51,13 @@ MANDATORY RULES
 10. Satellite/continuity metadata must not alter Mobile/TV UI, signing, package identity, Downloader/playback behavior or lifecycle state.
 11. Apply Change Compatibility Guard, single-writer and lifecycle protections before writes.
 
+MOTORLAB_LOCAL_RELEASE_TARGET=2026.10.06-r23
+
+R23 ADOPTION
+MotorLab r23 is the active project control plane: eliminate reusable work first, recompute only invalidated deltas, prioritize the TTTA critical path, grow/prune the DAG dynamically, branch progressively and preserve material event memory. Project-native engines remain authoritative.
+
 VERSION
-MOTORLAB-PROJECT-HOOK-V1.5
+MOTORLAB-PROJECT-HOOK-V1.6
 Established: 2026-09-29
 Revision 1.5: r8 pre-response MotorLab gate plus canonical promptless cross-chat Visionflix continuity ledger.
+Revision: r23 incremental dynamic execution adopted; obsolete active satellite semantics are superseded while LAST_GOOD rollback remains preserved.
