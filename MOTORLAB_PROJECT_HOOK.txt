@@ -41,7 +41,7 @@ PURPOSE
 Persistent Visionflix/Verlezza Vision hook. Every recognizable project chat activates MotorLab first, reconciles the central Visionflix continuity ledger with live source/delivery state, preserves native/domain engines and resumes latest verified work without transfer prompts.
 
 MANDATORY RULES
-1. MotorLab activates before substantive Visionflix work and first visible line is "⚙️ MotorLab attivo".
+1. MotorLab activates before substantive Visionflix work and first visible line is "⚙️ MotorLab rNN attivo".
 2. No recurring activation/transfer prompt is required.
 3. Load MOTORLAB_PROJECT_STATE_VISIONFLIX_V1.txt and reconcile live source refs/head/jobs/artifacts plus streamflix-BV delivery relationship before choosing a starting point.
 4. Visionflix remains source lifecycle authority; streamflix-BV remains delivery adapter.
