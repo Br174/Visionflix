@@ -54,7 +54,7 @@ MANDATORY RULES
 10. Satellite/continuity metadata must not alter Mobile/TV UI, signing, package identity, Downloader/playback behavior or lifecycle state.
 11. Apply Change Compatibility Guard, single-writer and lifecycle protections before writes.
 
-MOTORLAB_LOCAL_RELEASE_TARGET=2026.10.08-r31
+MOTORLAB_LOCAL_RELEASE_TARGET=2026.10.08-r33
 
 R23 ADOPTION
 MotorLab r23 is the active project control plane: eliminate reusable work first, recompute only invalidated deltas, prioritize the TTTA critical path, grow/prune the DAG dynamically, branch progressively and preserve material event memory. Project-native engines remain authoritative.
@@ -71,3 +71,6 @@ MOTORLAB_CAPSULE_FIRST_CONTEXT=required
 MOTORLAB_REENTRY_GATE_MODULE=MOTORLAB_REENTRY_GATE_V1.txt
 MOTORLAB_PROJECT_TURN_REENTRY=required
 MOTORLAB_USER_PROMPT_BOOTSTRAP=required
+
+MOTORLAB_BUILD_MICRO_ACCELERATION=non_compiler_only
+MOTORLAB_KOTLIN_KSP_TUNING=explicit_approval_only
