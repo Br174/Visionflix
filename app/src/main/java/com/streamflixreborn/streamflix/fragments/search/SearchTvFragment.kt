@@ -23,6 +23,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.Spinner
+import android.widget.ScrollView
+import android.view.ViewTreeObserver
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
@@ -99,6 +101,9 @@ class SearchTvFragment : Fragment() {
     private var actorFallbackSuggestions: LinearLayout? = null
     private var directorFallbackSuggestions: LinearLayout? = null
     private var filterPanelBody: LinearLayout? = null
+    private var filterPanelScroll: ScrollView? = null
+    private var navigationFocusObserver: ViewTreeObserver.OnGlobalFocusChangeListener? = null
+    private var afterFilterReturnPending = false
     private var btnApplyFilters: TextView? = null
     private var btnResetFilters: TextView? = null
     private var filterFocusSentinel: View? = null
@@ -173,6 +178,7 @@ class SearchTvFragment : Fragment() {
         try {
             bindBaseViews(view)
             initializeBaseSearch()
+            installNavigationFocusRouting()
         } catch (error: Throwable) {
             Log.e(TAG, "Base TV search shell failed", error)
             showSafeToast("Cerca: apertura base non riuscita")
@@ -220,6 +226,12 @@ class SearchTvFragment : Fragment() {
         sortSelector = null
         platformSelector = null
         countrySelector = null
+        navigationFocusObserver?.let { observer ->
+            val tree = rootView.rootView.viewTreeObserver
+            if (tree.isAlive) tree.removeOnGlobalFocusChangeListener(observer)
+        }
+        navigationFocusObserver = null
+        filterPanelScroll = null
         filterPanelBody = null
         btnApplyFilters = null
         btnResetFilters = null
@@ -240,6 +252,25 @@ class SearchTvFragment : Fragment() {
         ivGlobalSearchSwitch = view.findViewById(R.id.iv_global_search_switch_safe)
         filterContainer = view.findViewById(R.id.filter_container_safe)
         rowJumpRail = view.findViewById(R.id.search_row_jump_rail)
+    }
+
+    private fun installNavigationFocusRouting() {
+        // When the remote enters from the *external* left sidebar, focus X,
+        // rather than activating the editable query and keyboard immediately.
+        val observer = ViewTreeObserver.OnGlobalFocusChangeListener { from, to ->
+            if (to !== etSearch || from == null) return@OnGlobalFocusChangeListener
+            val nav = requireActivity().findViewById<View>(R.id.nav_main) ?: return@OnGlobalFocusChangeListener
+            var current: android.view.ViewParent? = from
+            while (current != null) {
+                if (current === nav) {
+                    btnSearchClear.post { if (isAdded && etSearch.hasFocus()) btnSearchClear.requestFocus() }
+                    break
+                }
+                current = current.parent
+            }
+        }
+        rootView.rootView.viewTreeObserver.addOnGlobalFocusChangeListener(observer)
+        navigationFocusObserver = observer
     }
 
     private fun initializeBaseSearch() {
@@ -299,6 +330,11 @@ class SearchTvFragment : Fragment() {
         btnSearchVoice.setOnClickListener { startVoiceSearch() }
 
         vgvSearch.apply {
+            // Restore the native wall columns BEFORE the first adapter/layout frame.
+            // LAB153 initialized at 1 column, occasionally expanding a single
+            // poster to almost the full TV width when navigating back.
+            setNumColumns(6)
+            currentGridColumns = 6
             adapter = appAdapter.apply {
                 stateRestorationPolicy = RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
             }
@@ -315,18 +351,24 @@ class SearchTvFragment : Fragment() {
                     position: Int,
                     subposition: Int,
                 ) {
-                    refreshRowJumpArrows()
-                    if (position in 0 until currentGridColumns.coerceAtLeast(1)) {
-                        val target = dropdownArrow?.id ?: btnApplyFilters?.id
-                        if (target != null) child?.itemView?.nextFocusUpId = target
-                        child?.itemView?.setOnKeyListener { _, keyCode, event ->
-                            if (event.action == KeyEvent.ACTION_DOWN &&
-                                keyCode == KeyEvent.KEYCODE_DPAD_UP &&
-                                !filterPanelExpanded) {
+                    if (position !in appAdapter.items.indices) return
+                    if (position < currentGridColumns) {
+                        child?.itemView?.nextFocusUpId = dropdownArrow?.id ?: btnApplyFilters?.id ?: View.NO_ID
+                    }
+                    // Left/right movement belongs to the current focused poster.
+                    // Only a RIGHT press beyond its row end reveals the shortcut.
+                    child?.itemView?.setOnKeyListener { _, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        when {
+                            keyCode == KeyEvent.KEYCODE_DPAD_RIGHT &&
+                                SearchRowShortcut.isRowEnd(position, currentGridColumns, appAdapter.items.size) ->
+                                revealRowJumpArrow(position)
+                            keyCode == KeyEvent.KEYCODE_DPAD_UP && position < currentGridColumns ->
                                 dropdownArrow?.requestFocus() == true
-                            } else false
+                            else -> false
                         }
                     }
+                    refreshRowJumpArrows()
                 }
             })
         }
@@ -434,7 +476,7 @@ class SearchTvFragment : Fragment() {
         try {
             val panel = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(14), dp(10), dp(14), dp(6))
+                setPadding(dp(10), dp(5), dp(10), dp(4))
                 setBackgroundResource(R.drawable.bg_filter_panel_tv)
             }
             filterPanelBody = panel
@@ -444,7 +486,25 @@ class SearchTvFragment : Fragment() {
             }
             filterContainer.addView(dropdown, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            dropdown.addView(panel, LinearLayout.LayoutParams(
+            // Keep all original filter widgets inside a height-limited scroll
+            // viewport. Suggestions scroll inside the dropdown rather than
+            // pushing Apply/Reset below the TV edge.
+            val scroll = object : ScrollView(requireContext()) {
+                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                    val maxHeight = minOf((rootView.height * 0.59f).toInt().coerceAtLeast(dp(180)), dp(345))
+                    super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(
+                        maxHeight, View.MeasureSpec.AT_MOST))
+                }
+            }.apply {
+                isFillViewport = false
+                isVerticalScrollBarEnabled = true
+                clipToPadding = false
+                descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            }
+            filterPanelScroll = scroll
+            dropdown.addView(scroll, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            scroll.addView(panel, ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
             // TV only: search bar + clear + mic + Ricerca globale now belong to the same box.
@@ -460,10 +520,10 @@ class SearchTvFragment : Fragment() {
                 ).apply { topMargin = dp(8) },
             )
 
-            panel.addView(makeLabel("Filtri avanzati", 18f, true).apply { setPadding(0, dp(6), 0, 0) })
+            panel.addView(makeLabel("Filtri avanzati", 15f, true).apply { setPadding(0, dp(2), 0, 0) })
             panel.addView(makeLabel(
                 "Combina testo, tipo, lingua, anno, genere, attore, regista, piattaforma e ordinamento.",
-                12f,
+                11f,
                 false,
                 Color.rgb(169, 178, 194),
             ))
@@ -504,7 +564,7 @@ class SearchTvFragment : Fragment() {
 
             val firstRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(6), 0, 0)
+                setPadding(0, dp(3), 0, 0)
             }
             panel.addView(firstRow)
             addSelectorToRow(firstRow, typeSelector)
@@ -516,7 +576,7 @@ class SearchTvFragment : Fragment() {
             toSelector = makeSelector("Al", yearValues) { it?.toString() ?: "Tutti" }
             val secondRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(5), 0, 0)
+                setPadding(0, dp(2), 0, 0)
             }
             panel.addView(secondRow)
             addSelectorToRow(secondRow, fromSelector)
@@ -544,7 +604,7 @@ class SearchTvFragment : Fragment() {
                 setBackgroundResource(R.drawable.bg_filter_control_tv)
                 setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
-            actorRow.addView(actorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
+            actorRow.addView(actorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(35)))
             setupActorTextSearch()
             addActorSuggestionsSurface(panel)
 
@@ -559,7 +619,7 @@ class SearchTvFragment : Fragment() {
 
             val thirdRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(5), 0, 0)
+                setPadding(0, dp(2), 0, 0)
             }
             panel.addView(thirdRow)
             addSelectorToRow(thirdRow, sortSelector)
@@ -587,14 +647,14 @@ class SearchTvFragment : Fragment() {
                 setBackgroundResource(R.drawable.bg_filter_control_tv)
                 setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
-            directorRow.addView(directorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
+            directorRow.addView(directorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(35)))
             setupDirectorTextSearch()
             addDirectorSuggestionsSurface(panel)
 
             countrySelector = makeSelector("Paese di produzione", AdvancedSearchFilters.CountryFilter.entries.toList()) { it.label }
             val countryRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(5), 0, 0)
+                setPadding(0, dp(2), 0, 0)
             }
             panel.addView(countryRow)
             addSelectorToRow(countryRow, countrySelector)
@@ -602,19 +662,19 @@ class SearchTvFragment : Fragment() {
             val actions = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.END
-                setPadding(0, dp(6), 0, 0)
+                setPadding(0, dp(3), 0, 0)
             }
             panel.addView(actions)
             btnResetFilters = makeActionButton("Azzera", primary = false).also { button ->
                 actions.addView(
                     button,
-                    LinearLayout.LayoutParams(dp(150), dp(44)).apply { marginEnd = dp(10) },
+                    LinearLayout.LayoutParams(dp(125), dp(37)).apply { marginEnd = dp(7) },
                 )
                 button.setOnClickListener { resetFilters() }
                 button.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
             btnApplyFilters = makeActionButton("Applica filtri", primary = true).also { button ->
-                actions.addView(button, LinearLayout.LayoutParams(dp(190), dp(44)))
+                actions.addView(button, LinearLayout.LayoutParams(dp(162), dp(37)))
                 button.setOnClickListener { submitSearch() }
                 button.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
@@ -624,28 +684,28 @@ class SearchTvFragment : Fragment() {
             val lip = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(4), dp(12), dp(6))
+                setPadding(dp(8), dp(2), dp(8), dp(3))
             }
             dropdown.addView(lip, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             searchBar?.let {
-                lip.addView(it, LinearLayout.LayoutParams(0, dp(54), 5f).apply { marginEnd = dp(8) })
+                lip.addView(it, LinearLayout.LayoutParams(0, dp(42), 7f).apply { marginEnd = dp(6) })
             }
             fun quickButton(label: String, width: Int, callback: () -> Unit): TextView =
                 makeActionButton(label, primary = false).apply {
-                    textSize = 14f
+                    textSize = 12f
                     setOnClickListener { callback() }
-                    lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(48)).apply { marginEnd = dp(5) })
+                    lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(4) })
                 }
             fun quickType(type: AdvancedSearchFilters.ContentType) {
                 typeSelector?.selectValue(type)
                 updateQuickBar()
                 submitSearch()
             }
-            quickAll = quickButton("Tutti", 82) { quickType(AdvancedSearchFilters.ContentType.ALL) }
-            quickFilm = quickButton("Film", 82) { quickType(AdvancedSearchFilters.ContentType.MOVIE) }
-            quickSeries = quickButton("Serie", 82) { quickType(AdvancedSearchFilters.ContentType.TV) }
-            quickDate = quickButton("Più nuovi", 104) {
+            quickAll = quickButton("Tutti", 68) { quickType(AdvancedSearchFilters.ContentType.ALL) }
+            quickFilm = quickButton("Film", 68) { quickType(AdvancedSearchFilters.ContentType.MOVIE) }
+            quickSeries = quickButton("Serie", 68) { quickType(AdvancedSearchFilters.ContentType.TV) }
+            quickDate = quickButton("Più nuovi", 87) {
                 sortSelector?.selectValue(if (sortSelector?.value == AdvancedSearchFilters.SortFilter.OLDEST)
                     AdvancedSearchFilters.SortFilter.DATE else AdvancedSearchFilters.SortFilter.OLDEST)
                 updateQuickBar()
@@ -669,7 +729,7 @@ class SearchTvFragment : Fragment() {
                 setOnFocusChangeListener { _, focused ->
                     setTextColor(if (focused) Color.CYAN else Color.WHITE)
                 }
-                lip.addView(this, LinearLayout.LayoutParams(dp(45), dp(50)))
+                lip.addView(this, LinearLayout.LayoutParams(dp(45), dp(44)))
             }
             updateQuickBar()
             configureFilterFocus()
@@ -857,7 +917,7 @@ class SearchTvFragment : Fragment() {
             }
             panel.addView(
                 directorSuggestionsGrid,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(118)).apply { topMargin = dp(8) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(84)).apply { topMargin = dp(4) },
             )
         } catch (error: Throwable) {
             Log.w(TAG, "Horizontal director grid unavailable, using fallback", error)
@@ -927,7 +987,7 @@ class SearchTvFragment : Fragment() {
                         chip.setOnClickListener { selectActor(person) }
                         fallback.addView(
                             chip,
-                            LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                            LinearLayout.LayoutParams(0, dp(35), 1f).apply {
                                 marginEnd = dp(6)
                             },
                         )
@@ -980,7 +1040,7 @@ class SearchTvFragment : Fragment() {
                         chip.setOnClickListener { selectDirector(person) }
                         fallback.addView(
                             chip,
-                            LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) },
+                            LinearLayout.LayoutParams(0, dp(35), 1f).apply { marginEnd = dp(6) },
                         )
                     }
                 } else {
@@ -1262,7 +1322,7 @@ class SearchTvFragment : Fragment() {
             ?: vgvSearch.selectedPosition.takeIf { it > 0 }
             ?: 0
         rowJumpResumePosition = preferredPosition
-        rowJumpResumeLayout = vgvSearch.layoutManager?.onSaveInstanceState()
+        rowJumpResumeLayout = null
         pendingFocusFirstResult = false
         returnPosterId = null
         setFilterPanelExpanded(false, true)
@@ -1348,6 +1408,19 @@ class SearchTvFragment : Fragment() {
         rowJumpRail?.post { if (isAdded) updateVisibleRowJumpArrows() }
     }
 
+    private fun revealRowJumpArrow(position: Int): Boolean {
+        if (position !in appAdapter.items.indices) return false
+        val row = SearchRowShortcut.rowOf(position, currentGridColumns)
+        if (row < 0) return false
+        // The arrow stays hidden until pressing RIGHT from the last card.
+        refreshRowJumpArrows()
+        val arrow = rowJumpArrows[row] ?: return false
+        rememberRowJump(row)
+        arrow.visibility = View.VISIBLE
+        arrow.requestFocus()
+        return true
+    }
+
     private fun updateVisibleRowJumpArrows() {
         val rail = rowJumpRail ?: return
         if (rail.height <= 0 || currentGridColumns <= 0) return
@@ -1383,6 +1456,7 @@ class SearchTvFragment : Fragment() {
                     contentDescription = "Vai ai filtri della ricerca"
                     setOnFocusChangeListener { _, focused ->
                         setTextColor(if (focused) Color.CYAN else Color.WHITE)
+                        if (!focused) visibility = View.INVISIBLE
                     }
                     setOnClickListener {
                         rememberRowJump(row)
@@ -1390,10 +1464,15 @@ class SearchTvFragment : Fragment() {
                         // The dropdown opens exclusively on the user's next OK.
                         dropdownArrow?.requestFocus()
                     }
+                    setOnKeyListener { _, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                            restoreRowJumpPosition()
+                        } else false
+                    }
                     rail.addView(this, FrameLayout.LayoutParams(dp(48), dp(52)))
                 }
             }
-            arrow.visibility = View.VISIBLE
+            arrow.visibility = if (arrow.hasFocus()) View.VISIBLE else View.INVISIBLE
             val targetTop = (candidate.first - dp(26)).coerceIn(0, rail.height - dp(52))
             val lp = arrow.layoutParams as FrameLayout.LayoutParams
             if (lp.topMargin != targetTop) {
@@ -1440,7 +1519,7 @@ class SearchTvFragment : Fragment() {
         }
         val position = SearchRowShortcut.clampToAvailable(
             if (byIdentity >= 0) byIdentity else requested, appAdapter.items.size)
-        rowJumpResumeLayout?.let { vgvSearch.layoutManager?.onRestoreInstanceState(it) }
+        vgvSearch.setNumColumns(currentGridColumns.coerceAtLeast(5))
         vgvSearch.setSelectedPosition(position)
         vgvSearch.post {
             if (!isAdded) return@post
@@ -1488,7 +1567,8 @@ class SearchTvFragment : Fragment() {
     private fun rememberPoster(id: String, kind: String) {
         returnPosterId = "$kind:$id"
         returnPosterPosition = vgvSearch.selectedPosition
-        returnPosterLayout = vgvSearch.layoutManager?.onSaveInstanceState()
+        // Store only the movie identity and position, never a 1-column stale layout.
+        returnPosterLayout = null
     }
 
     private fun restorePosterIfNeeded() {
@@ -1502,7 +1582,7 @@ class SearchTvFragment : Fragment() {
             }
         }.takeIf { it >= 0 } ?: returnPosterPosition
         if (index !in appAdapter.items.indices) return
-        returnPosterLayout?.let { vgvSearch.layoutManager?.onRestoreInstanceState(it) }
+        vgvSearch.setNumColumns(currentGridColumns.coerceAtLeast(5))
         vgvSearch.setSelectedPosition(index)
         vgvSearch.post {
             if (!isAdded) return@post
@@ -1629,7 +1709,7 @@ class SearchTvFragment : Fragment() {
 
         root.addView(
             controlFrame,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(35)),
         )
         return DropdownSelector(title, root, controlFrame, spinner, values)
     }
@@ -1654,7 +1734,7 @@ class SearchTvFragment : Fragment() {
         textSize = size
         setTextColor(color)
         if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(0, if (size < 14f) dp(3) else 0, 0, dp(4))
+        setPadding(0, if (size < 14f) dp(1) else 0, 0, dp(1))
     }
 
     private fun makeActionButton(text: String, primary: Boolean): TextView =
