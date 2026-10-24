@@ -469,6 +469,7 @@ object ProviderEndpointRegistry {
         }
         val compact = hostOf(url).replace(".", "").replace("-", "")
         return aliases.entries.firstOrNull { compact.contains(it.key) }?.value
+            ?: "Adaptive Cinema"
     }
 
     private fun probe(url: String): Pair<Boolean, String?> {
