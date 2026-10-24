@@ -20,6 +20,11 @@ on:
 permissions:
   contents: write
 
+# Keep one active LAB build per branch. A later validated change supersedes obsolete builds.
+concurrency:
+  group: visionflix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/heads/lab/') }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
