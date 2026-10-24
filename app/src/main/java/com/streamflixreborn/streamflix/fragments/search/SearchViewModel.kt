@@ -429,16 +429,18 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             }
             if (!matchesYearFilter(date, filters)) return@filter false
 
-            if (filters.genre != AdvancedSearchFilters.GenreFilter.ALL) {
+            if (filters.effectiveGenres.isNotEmpty()) {
                 val genres = when (item) {
                     is Movie -> item.genres
                     is TvShow -> item.genres
                     else -> emptyList()
                 }
-                if (genres.isNotEmpty() && genres.none {
-                        it.name.equals(filters.genre.label, ignoreCase = true) ||
-                            it.name.contains(filters.genre.label, ignoreCase = true)
-                    }) return@filter false
+                if (genres.isNotEmpty() && genres.none { present ->
+                    filters.effectiveGenres.any { chosen ->
+                        present.name.equals(chosen.label, ignoreCase = true) ||
+                            present.name.contains(chosen.label, ignoreCase = true)
+                    }
+                }) return@filter false
             }
             true
         }
@@ -524,7 +526,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val italianOnly = filters.italian == AdvancedSearchFilters.ItalianFilter.YES
         val excludeItalian = filters.italian == AdvancedSearchFilters.ItalianFilter.NO
         val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
-        val selectedGenre = filters.genre
+        val selectedGenres = filters.effectiveGenres
         val actorId = filters.actorId?.takeIf { it.isNotBlank() }
         val directorId = filters.directorId?.takeIf { it.isNotBlank() }
         val platformProviderIds = filters.platform.providerIds
@@ -656,10 +658,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
                         if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
                         if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
-                        if (selectedGenre != AdvancedSearchFilters.GenreFilter.ALL) {
-                            val genreId = selectedGenre.movieId ?: return@mapNotNull null
-                            if (genreId !in multi.genresIds) return@mapNotNull null
-                        }
+                        if (selectedGenres.isNotEmpty() && selectedGenres.none { it.movieId in multi.genresIds }) return@mapNotNull null
                         if (restrictToActor && multi.id.toString() !in actorMovieIds) return@mapNotNull null
                         if (restrictToDirector && multi.id.toString() !in directorMovieIds) return@mapNotNull null
                         if (constrainedMovieIds != null && multi.id.toString() !in constrainedMovieIds) return@mapNotNull null
@@ -681,10 +680,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
                         if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
                         if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
-                        if (selectedGenre != AdvancedSearchFilters.GenreFilter.ALL) {
-                            val genreId = selectedGenre.tvId ?: return@mapNotNull null
-                            if (genreId !in multi.genresIds) return@mapNotNull null
-                        }
+                        if (selectedGenres.isNotEmpty() && selectedGenres.none { it.tvId in multi.genresIds }) return@mapNotNull null
                         if (restrictToActor && multi.id.toString() !in actorTvIds) return@mapNotNull null
                         if (restrictToDirector && multi.id.toString() !in directorTvIds) return@mapNotNull null
                         if (constrainedTvIds != null && multi.id.toString() !in constrainedTvIds) return@mapNotNull null
@@ -721,11 +717,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 params["with_watch_providers"] = it
             }
 
-            val genreIds = buildList {
-                if (cartoonOnly) add(16)
-                selectedGenre.movieId?.let { add(it) }
-            }.distinct()
-            if (genreIds.isNotEmpty()) params["with_genres"] = genreIds.joinToString(",")
+            val genreIds = selectedGenres.mapNotNull { it.movieId }.distinct()
+            if (cartoonOnly) params["with_genres"] = "16"
+            else if (genreIds.isNotEmpty()) params["with_genres"] = genreIds.joinToString("|")
 
             filters.year?.let { params["primary_release_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.gte"] = it }
@@ -748,11 +742,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 params["with_watch_providers"] = it
             }
 
-            val genreIds = buildList {
-                if (cartoonOnly) add(16)
-                selectedGenre.tvId?.let { add(it) }
-            }.distinct()
-            if (genreIds.isNotEmpty()) params["with_genres"] = genreIds.joinToString(",")
+            val genreIds = selectedGenres.mapNotNull { it.tvId }.distinct()
+            if (cartoonOnly) params["with_genres"] = "16"
+            else if (genreIds.isNotEmpty()) params["with_genres"] = genreIds.joinToString("|")
 
             filters.year?.let { params["first_air_date_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["first_air_date.gte"] = it }
