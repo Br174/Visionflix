@@ -38,6 +38,22 @@ class Lab164SearchMatchPolicyTest {
         assertFalse(Lab164SearchMatchPolicy.canLoadLocalMore(false, true, 15))
     }
 
+    @Test fun filteredCatalogScansTwoBoundedWindowsAfterAnEmptyFirstWindow() {
+        assertEquals((1..4).toList(), Lab164SearchMatchPolicy.catalogPages(1).toList())
+        assertEquals((5..8).toList(), Lab164SearchMatchPolicy.catalogPages(2).toList())
+        assertTrue(Lab164SearchMatchPolicy.catalogPages(3).isEmpty())
+    }
+
+    @Test fun providerGenresMatchItalianAndEnglishNamesWithoutFalsePositives() {
+        val comedy = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.COMEDY
+        val romance = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.ROMANCE
+        assertTrue(Lab164SearchMatchPolicy.localGenreMatches("Comedy", comedy))
+        assertTrue(Lab164SearchMatchPolicy.localGenreMatches("Commedia", comedy))
+        assertTrue(Lab164SearchMatchPolicy.localGenreMatches("Romance", romance))
+        assertFalse(Lab164SearchMatchPolicy.localGenreMatches("Horror", comedy))
+        assertFalse(Lab164SearchMatchPolicy.localGenreMatches("", comedy))
+    }
+
     @Test fun globalFilteredCanCrossSparsePagesButHasFiniteBound() {
         assertTrue(Lab164SearchMatchPolicy.canLoadGlobalMore(5, 3, true))
         assertFalse(Lab164SearchMatchPolicy.canLoadGlobalMore(5, 4, true))
