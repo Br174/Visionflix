@@ -967,6 +967,13 @@ class SearchTvFragment : Fragment() {
                             KeyEvent.KEYCODE_DPAD_UP -> edit.requestFocus()
                             KeyEvent.KEYCODE_DPAD_DOWN ->
                                 parent.rootView.findViewById<View>(nextId())?.requestFocus() == true
+                            KeyEvent.KEYCODE_DPAD_RIGHT ->
+                                position == (parent.adapter?.itemCount ?: 0) - 1 &&
+                                    !Lab159DrawerFocusPolicy.mayExit(
+                                        Lab159DrawerFocusPolicy.Border.RIGHT)
+                            KeyEvent.KEYCODE_DPAD_LEFT ->
+                                position == 0 && parent.rootView
+                                    .findViewById<View>(R.id.nav_main)?.requestFocus() == true
                             else -> false
                         }
                     }
