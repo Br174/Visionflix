@@ -16,6 +16,7 @@ import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.databinding.FragmentTvShowTvBinding
 import com.streamflixreborn.streamflix.models.TvShow
+import com.streamflixreborn.streamflix.utils.DirectorCredits
 import com.streamflixreborn.streamflix.utils.CacheUtils
 import com.streamflixreborn.streamflix.utils.LoggingUtils
 import com.streamflixreborn.streamflix.utils.loadTvShowBanner
@@ -123,6 +124,8 @@ class TvShowTvFragment : Fragment() {
             transition(DrawableTransitionOptions.withCrossFade())
         }
 
+        val verifiedDirectors = tvShow.directors.filter { DirectorCredits.directorPersonId(it.id) != null }
+        val unifiedCast = DirectorCredits.castFirst(verifiedDirectors, tvShow.cast)
         appAdapter.submitList(listOfNotNull(
             tvShow.apply { itemType = AppAdapter.Type.TV_SHOW_TV },
 
@@ -130,12 +133,12 @@ class TvShowTvFragment : Fragment() {
                 ?.copy()
                 ?.apply { itemType = AppAdapter.Type.TV_SHOW_SEASONS_TV },
 
-            tvShow.takeIf { it.directors.isNotEmpty() }
+            tvShow.takeIf { verifiedDirectors.isEmpty() && it.directors.isNotEmpty() }
                 ?.copy()
                 ?.apply { itemType = AppAdapter.Type.TV_SHOW_DIRECTORS_TV },
 
-            tvShow.takeIf { it.cast.isNotEmpty() }
-                ?.copy()
+            tvShow.takeIf { unifiedCast.isNotEmpty() }
+                ?.copy(cast = unifiedCast)
                 ?.apply { itemType = AppAdapter.Type.TV_SHOW_CAST_TV },
 
             tvShow.takeIf { it.recommendations.isNotEmpty() }
