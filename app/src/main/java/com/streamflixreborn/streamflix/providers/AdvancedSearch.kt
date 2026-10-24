@@ -6,6 +6,7 @@ data class AdvancedSearchFilters(
     val type: ContentType = ContentType.ALL,
     val italian: ItalianFilter = ItalianFilter.ALL,
     val genre: GenreFilter = GenreFilter.ALL,
+    val genres: Set<GenreFilter> = emptySet(), // OR across selected genres; AND with the other filters
     val year: Int? = null,
     val dateFrom: String? = null,
     val dateTo: String? = null,
@@ -56,10 +57,15 @@ data class AdvancedSearchFilters(
         WESTERN("Western", 37, 37),
     }
 
+    val effectiveGenres: Set<GenreFilter>
+        get() = genres.filterNot { it == GenreFilter.ALL }.toSet()
+            .ifEmpty { if (genre == GenreFilter.ALL) emptySet() else setOf(genre) }
+
     val isActive: Boolean
         get() = type != ContentType.ALL ||
             italian != ItalianFilter.ALL ||
             genre != GenreFilter.ALL ||
+            genres.isNotEmpty() ||
             year != null ||
             !dateFrom.isNullOrBlank() ||
             !dateTo.isNullOrBlank() ||
