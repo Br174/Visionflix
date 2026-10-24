@@ -436,7 +436,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
 
         val metadataMatches = try {
-            sharedMetadata ?: searchTmdbAdvanced(TmdbProvider(provider.language), query, filters, page)
+            sharedMetadata ?: searchTmdbAdvanced(TmdbProvider(provider.language), query, filters, page, candidateSelection = true)
         } catch (error: retrofit2.HttpException) {
             if (error.code() == 401 || error.code() == 403) {
                 throw IllegalStateException(
@@ -487,9 +487,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 }
             }.awaitAll().flatten().distinctBy { it.searchIdentityKey() }
         }
-        val firstBatch = findVerified(metadataMatches.take(candidateLimit))
+        val effectiveLimit = Lab165FastDiscoveryPolicy.candidateLimit(
+            candidateLimit, query, filters.actorId, filters.directorId, page
+        )
+        val firstBatch = findVerified(metadataMatches.take(effectiveLimit))
         val verified = if (firstBatch.isEmpty()) {
-            (firstBatch + findVerified(metadataMatches.drop(candidateLimit).take(candidateLimit)))
+            (firstBatch + findVerified(metadataMatches.drop(effectiveLimit).take(effectiveLimit)))
                 .distinctBy { it.searchIdentityKey() }
         } else firstBatch
         val accepted = applyProviderFilters(verified, filters, trustMetadata = true)
@@ -690,6 +693,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         query: String,
         filters: AdvancedSearchFilters,
         page: Int,
+        candidateSelection: Boolean = false,
     ): List<AppAdapter.Item> = coroutineScope {
         val availableGenres = filters.effectiveGenres
         val includeMovies = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
@@ -722,13 +726,19 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 )
             }
         }
-        val movieSort = when (filters.sort) {
+        // First locate titles that providers are likely to carry. Keep the
+        // requested chronological/vote sort for rendering and later pages.
+        // Actor/director filmography paths must never be rerouted.
+        val discoverySort = Lab165FastDiscoveryPolicy.metadataSort(
+            filters.sort, query, actorId, directorId, page, candidateSelection
+        )
+        val movieSort = when (discoverySort) {
             AdvancedSearchFilters.SortFilter.DATE -> "primary_release_date.desc"
             AdvancedSearchFilters.SortFilter.OLDEST -> "primary_release_date.asc"
             AdvancedSearchFilters.SortFilter.VOTE -> "vote_average.desc"
             AdvancedSearchFilters.SortFilter.POPULARITY -> "popularity.desc"
         }
-        val tvSort = when (filters.sort) {
+        val tvSort = when (discoverySort) {
             AdvancedSearchFilters.SortFilter.DATE -> "first_air_date.desc"
             AdvancedSearchFilters.SortFilter.OLDEST -> "first_air_date.asc"
             AdvancedSearchFilters.SortFilter.VOTE -> "vote_average.desc"
@@ -997,7 +1007,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
         val combined = (movieItems + tvItems)
             .distinctBy { it.searchIdentityKey() }
-        when (filters.sort) {
+        // Candidate lookups need popularity-first order; UI sorts accepted
+        // provider titles separately. TMDb-only views still use requested sort.
+        when (discoverySort) {
             AdvancedSearchFilters.SortFilter.OLDEST -> combined.sortedBy {
                 when (it) {
                     is Movie -> it.released?.timeInMillis ?: Long.MAX_VALUE
@@ -1141,7 +1153,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 if (Lab164SearchMatchPolicy.providerFirstYearQuery(query, advancedFilters))
                     searchTmdbYearCandidates(query, advancedFilters, currentLanguage)
                 else
-                    searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
+                    searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1,
+                        candidateSelection = true)
             } catch (cancel: kotlinx.coroutines.CancellationException) {
                 throw cancel
             } catch (error: Exception) {
@@ -1293,7 +1306,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                     !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
             )
             val metadata = if (needsMetadata && tmdbConfigured()) {
-                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, nextPage)
+                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, nextPage,
+                    candidateSelection = true)
             } else null
             // Result positions remain in target order; distinct mirrors can share the same display name.
             val updated = currentTargets.mapIndexed { index, target ->
