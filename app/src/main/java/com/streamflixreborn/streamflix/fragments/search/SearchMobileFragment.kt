@@ -207,6 +207,7 @@ class SearchMobileFragment : Fragment() {
             binding.spGenre,
             binding.spSort,
             binding.spPlatform,
+            binding.spCountry,
         )
 
         binding.spGenre.setOnLongClickListener { showMultiGenrePicker(); true }
@@ -221,6 +222,7 @@ class SearchMobileFragment : Fragment() {
                 binding.spGenre,
                 binding.spSort,
                 binding.spPlatform,
+                binding.spCountry,
             )
             selectedGenres.clear()
             clearActorField()
@@ -371,6 +373,9 @@ class SearchMobileFragment : Fragment() {
                         .getOrElse(binding.spSort.selectedItemPosition) { com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.SortFilter.POPULARITY },
                     platform = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.PlatformFilter.values()
                         .getOrElse(binding.spPlatform.selectedItemPosition) { com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.PlatformFilter.ALL },
+                    country = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.CountryFilter.entries
+                        .getOrElse(binding.spCountry.selectedItemPosition) { com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.CountryFilter.ALL },
+                    genres = selectedGenres.toSet(),
                     actorId = viewModel.selectedActorId,
                     actorName = binding.etActorSearch.text?.toString().orEmpty().trim(),
                     directorId = viewModel.selectedDirectorId,
@@ -419,6 +424,9 @@ class SearchMobileFragment : Fragment() {
         binding.spGenre.setSelection(saved.genre.ordinal.coerceAtMost(binding.spGenre.count - 1), false)
         binding.spSort.setSelection(saved.sort.ordinal.coerceAtMost(binding.spSort.count - 1), false)
         binding.spPlatform.setSelection(saved.platform.ordinal.coerceAtMost(binding.spPlatform.count - 1), false)
+        binding.spCountry.setSelection(saved.country.ordinal.coerceAtMost(binding.spCountry.count - 1), false)
+        selectedGenres.clear()
+        selectedGenres.addAll(saved.genres)
 
         suppressActorTextChange = true
         binding.etActorSearch.setText(saved.actorName)
