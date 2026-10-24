@@ -16,6 +16,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceScreen
+import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
 import com.streamflixreborn.streamflix.utils.SourcePreferences
 import java.util.Collections
 import java.util.WeakHashMap
@@ -23,6 +24,7 @@ import java.util.WeakHashMap
 object SourceSettingsInjector {
     private const val CATEGORY_KEY = "visionflix_source_manager_category"
     private const val IPTV_KEY = "visionflix_source_manager_iptv"
+    private const val WEB_KEY = "visionflix_source_manager_web"
 
     private val installedViews = Collections.newSetFromMap(WeakHashMap<View, Boolean>())
 
@@ -75,14 +77,43 @@ object SourceSettingsInjector {
         }
 
         preferenceScreen.addPreference(category)
-        category.addPreference(SourceListPreference(context).apply {
-            key = IPTV_KEY
-            order = 0
-        })
+        category.addPreference(
+            SourceListPreference(
+                context = context,
+                sourceType = SourcePreferences.SourceType.IPTV,
+                preferenceTitle = "Le mie liste IPTV",
+                helpText = "Incolla l'indirizzo HTTP/HTTPS di una playlist M3U o M3U8 che sei autorizzato a usare. Le liste vengono lette nell'ordine mostrato e i canali vengono uniti automaticamente.",
+                inputHint = "https://.../playlist.m3u",
+                itemLabel = "lista",
+            ).apply {
+                key = IPTV_KEY
+                order = 0
+            }
+        )
+        category.addPreference(
+            SourceListPreference(
+                context = context,
+                sourceType = SourcePreferences.SourceType.WEB,
+                preferenceTitle = "Fonti Web / Pastebin",
+                helpText = "Aggiungi un Pastebin o un file HTTP/HTTPS con provider Web. Può contenere URL semplici oppure righe nome|url|lingua|motore|logo|on.",
+                inputHint = "https://pastebin.com/...",
+                itemLabel = "fonte",
+            ).apply {
+                key = WEB_KEY
+                order = 1
+            }
+        )
     }
 }
 
-private class SourceListPreference(context: Context) : Preference(context) {
+private class SourceListPreference(
+    context: Context,
+    private val sourceType: SourcePreferences.SourceType,
+    preferenceTitle: String,
+    private val helpText: String,
+    private val inputHint: String,
+    private val itemLabel: String,
+) : Preference(context) {
 
     private val density = context.resources.displayMetrics.density
     private fun dp(value: Int): Int = (value * density).toInt()
@@ -90,7 +121,7 @@ private class SourceListPreference(context: Context) : Preference(context) {
     init {
         isPersistent = false
         isIconSpaceReserved = false
-        title = "Le mie liste IPTV"
+        title = preferenceTitle
         refreshSummary()
         setOnPreferenceClickListener {
             showManagerDialog()
@@ -99,11 +130,17 @@ private class SourceListPreference(context: Context) : Preference(context) {
     }
 
     private fun refreshSummary() {
-        val values = SourcePreferences.get(context, SourcePreferences.SourceType.IPTV)
+        val values = SourcePreferences.get(context, sourceType)
         summary = when {
-            values.isEmpty() -> "Nessuna lista configurata. Tocca per aggiungerne una."
-            values.size == 1 -> "1 lista configurata. Tocca per gestirla."
-            else -> "${values.size} liste configurate. Tocca per gestirle."
+            values.isEmpty() -> "Nessuna $itemLabel configurata. Tocca per aggiungerne una."
+            values.size == 1 -> "1 $itemLabel configurata. Tocca per gestirla."
+            else -> "${values.size} ${itemLabel}s configurate. Tocca per gestirle."
+        }
+    }
+
+    private fun notifySourcesChanged() {
+        if (sourceType == SourcePreferences.SourceType.WEB) {
+            ProviderEndpointRegistry.invalidateRemoteCache()
         }
     }
 
@@ -113,18 +150,17 @@ private class SourceListPreference(context: Context) : Preference(context) {
             setPadding(dp(18), dp(10), dp(18), dp(6))
         }
 
-        val help = TextView(context).apply {
-            text = "Incolla l'indirizzo HTTP/HTTPS di una playlist M3U o M3U8 che sei autorizzato a usare. Le liste vengono lette nell'ordine mostrato e i canali vengono uniti automaticamente."
+        outer.addView(TextView(context).apply {
+            text = helpText
             setPadding(0, 0, 0, dp(10))
-        }
-        outer.addView(help)
+        })
 
         val addRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val input = EditText(context).apply {
-            hint = "https://.../playlist.m3u"
+            hint = inputHint
             isSingleLine = true
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
@@ -136,31 +172,29 @@ private class SourceListPreference(context: Context) : Preference(context) {
         addRow.addView(addButton)
         outer.addView(addRow)
 
-        val separator = TextView(context).apply {
-            text = "Liste salvate"
+        outer.addView(TextView(context).apply {
+            text = "Sorgenti salvate"
             setTypeface(typeface, Typeface.BOLD)
             setPadding(0, dp(14), 0, dp(6))
-        }
-        outer.addView(separator)
+        })
 
         val listContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
-        val scroll = ScrollView(context).apply {
+        outer.addView(ScrollView(context).apply {
             addView(listContainer)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(280),
             )
-        }
-        outer.addView(scroll)
+        })
 
         fun redraw() {
             listContainer.removeAllViews()
-            val values = SourcePreferences.get(context, SourcePreferences.SourceType.IPTV)
+            val values = SourcePreferences.get(context, sourceType)
             if (values.isEmpty()) {
                 listContainer.addView(TextView(context).apply {
-                    text = "Nessuna lista configurata"
+                    text = "Nessuna sorgente configurata"
                     setPadding(0, dp(12), 0, dp(12))
                 })
             } else {
@@ -170,22 +204,21 @@ private class SourceListPreference(context: Context) : Preference(context) {
                         gravity = Gravity.CENTER_VERTICAL
                         setPadding(0, dp(4), 0, dp(4))
                     }
-                    val label = TextView(context).apply {
+                    row.addView(TextView(context).apply {
                         text = "${index + 1}. $value"
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                         setPadding(0, 0, dp(8), 0)
-                    }
-                    val remove = Button(context).apply {
+                    })
+                    row.addView(Button(context).apply {
                         text = "Elimina"
                         isAllCaps = false
                         setOnClickListener {
-                            SourcePreferences.remove(context, SourcePreferences.SourceType.IPTV, value)
+                            SourcePreferences.remove(context, sourceType, value)
+                            notifySourcesChanged()
                             redraw()
                             refreshSummary()
                         }
-                    }
-                    row.addView(label)
-                    row.addView(remove)
+                    })
                     listContainer.addView(row)
                 }
             }
@@ -205,14 +238,15 @@ private class SourceListPreference(context: Context) : Preference(context) {
                 Toast.makeText(context, "Inserisci un indirizzo http:// o https:// valido", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val added = SourcePreferences.add(context, SourcePreferences.SourceType.IPTV, value)
+            val added = SourcePreferences.add(context, sourceType, value)
             if (!added) {
-                Toast.makeText(context, "Lista già presente", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Sorgente già presente", Toast.LENGTH_SHORT).show()
             } else {
+                notifySourcesChanged()
                 input.setText("")
                 redraw()
                 refreshSummary()
-                Toast.makeText(context, "Lista IPTV aggiunta", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Sorgente aggiunta", Toast.LENGTH_SHORT).show()
             }
         }
 
