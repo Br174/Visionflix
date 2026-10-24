@@ -64,7 +64,8 @@ jobs:
           Verlezza Vision TV LAB150 (test only), version 1.7.408, versionCode 337.
           Public GitHub prerelease containing ONLY the verified TV APK.
           Source LAB: https://github.com/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN_ID
-          Source commit: $ORIGINAL_SOURCE_SHA
+          Verified Android APK source commit: $ORIGINAL_SOURCE_SHA
+          The release tag is anchored to main for GitHub workflow-file permission compliance; this DOES NOT change main. The APK comes exclusively from verified LAB150 Actions run.
           APK SHA-256: $TV_SHA256
           Signing certificate SHA-256: ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6
           Not validated on a physical TV for live provider functionality.
@@ -72,7 +73,7 @@ jobs:
           Do not overwrite old-cert installs without prior data backup.
           EOF
           gh release create "$RELEASE_TAG" "$RUNNER_TEMP/lab150/$TV_ASSET" \
-            --repo "$GITHUB_REPOSITORY" --target "$ORIGINAL_SOURCE_SHA" \
+            --repo "$GITHUB_REPOSITORY" --target main \
             --title "Verlezza Vision TV LAB150 - 1.7.408 test" \
             --notes-file "$RUNNER_TEMP/lab150/NOTES.md" \
             --prerelease --latest=false
