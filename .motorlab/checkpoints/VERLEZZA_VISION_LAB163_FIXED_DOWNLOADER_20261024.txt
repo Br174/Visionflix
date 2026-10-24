@@ -1,0 +1,22 @@
+MOTORLAB VERLEZZA VISION LAB163 FIXED DOWNLOADER CHECKPOINT
+DATE=2026-10-24
+CORE_PIN=2026.10.22-r38
+OPERATION_ID=VV-LAB163-PERMANENT-DOWNLOADER-20261024
+SOURCE_BRANCH=lab/visionflix-lab163-permanent-downloader-20261024
+BASE_BRANCH=lab/visionflix-lab162-adaptive-logo-20261024
+BASE_VERIFIED_RUN=40115843300
+GOAL=One fixed AFTVnews Downloader code reusable across newer LAB Android TV APK versions
+ROOT_CAUSE=AFTVnews numeric code destinations are immutable; each per-run GitHub prerelease has changing URL
+ARCHITECTURE=Fixed public GitHub test-only prerelease channel + immutable per-run LAB releases
+PERMANENT_URL=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-current/Verlezza-Vision-TV.apk
+CURRENT_TEST_RUN=https://github.com/Br174/Visionflix/actions/runs/40118107891
+MONOTONIC_VERSION_GUARD=YES
+SIGNATURE_PACKAGE_AND_HASH_GUARDS=YES
+SEPARATE_GITHUB_ACTIONS_JOB_WITH_GLOBAL_SINGLE_WRITER=YES
+STAGED_ASSET_AND_LAST_GOOD_RESTORE_ON_CUTOVER_FAILURE=YES
+OLD_CODES_UNTOUCHED=3875230,4768904,3938567
+MAIN_MADRE_PRODUCTION=UNTOUCHED
+ADDITIONAL_PAID_SERVICES=NONE
+EXTERNAL_MANUAL_HINGE=AFTVnews requires one-time numeric code creation for PERMANENT_URL; not possible to fabricate a numeric code
+STATUS_AT_CHECKPOINT=CI_RUNNING_STABLE_URL_NOT_YET_VERIFIED
+NEXT=Verify GitHub run; immutable source release and release visionflix-lab-current. If first verified promotion succeeds, run a second isolated upgrade to test stability of URL and checksum. Only then ask user to create one code at go.aftvnews.com; no per-build creation afterward.
