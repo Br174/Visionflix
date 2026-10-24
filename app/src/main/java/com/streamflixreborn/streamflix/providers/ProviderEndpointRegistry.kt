@@ -92,7 +92,7 @@ object ProviderEndpointRegistry {
     fun saveManualEndpoint(providerName: String, rawUrl: String): Boolean {
         val url = normalizeUrl(rawUrl) ?: return false
         return runCatching {
-            prefs().edit().putString(key("manual", providerName), url).commit()
+            prefs().edit().remove(key("selected", providerName)).putString(key("manual", providerName), url).commit()
         }.getOrDefault(false)
     }
 
