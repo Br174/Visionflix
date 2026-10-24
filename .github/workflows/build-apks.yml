@@ -73,6 +73,16 @@ jobs:
           if [ "$UAB_STAGE" = "LAB" ]; then
             # LAB version is monotonic without relying on the public release API.
             APP_VERSION_CODE=$((186 + GITHUB_RUN_NUMBER))
+            # LAB158 on the user's TV must upgrade the installed 1.7.472
+            # (code 401 under this workflow's name = code + 71 convention).
+            # LAB-only guard: never let this signed test APK be a downgrade.
+            if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab158-director-first-filmography-20261024' ] \
+              && [ "$APP_VERSION_CODE" -le 401 ]; then
+              APP_VERSION_CODE=402
+            fi
+            if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab158-director-first-filmography-20261024' ]; then
+              test "$APP_VERSION_CODE" -gt 401
+            fi
           else
             LATEST_TAG="$(curl --fail --silent --show-error --retry 4 --retry-all-errors --retry-delay 2 --location \
               'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
