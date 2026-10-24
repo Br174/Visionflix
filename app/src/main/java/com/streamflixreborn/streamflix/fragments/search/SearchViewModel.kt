@@ -12,7 +12,6 @@ import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
 import com.streamflixreborn.streamflix.providers.TmdbProvider
-import com.streamflixreborn.streamflix.providers.WebSourceFallback
 import com.streamflixreborn.streamflix.utils.ParentalControlUtils
 import com.streamflixreborn.streamflix.utils.TMDb3
 import com.streamflixreborn.streamflix.utils.TMDb3.original
@@ -245,40 +244,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val provider = UserPreferences.currentProvider!!
             usingWebFallback = false
 
-            val primaryResult = runCatching {
-                if (provider is TmdbProvider && (filters.isActive || query.isNotBlank())) {
-                    searchTmdbAdvanced(provider, query, filters, targetPage)
-                } else {
-                    provider.search(query, targetPage)
-                }
-            }
-
-            var results = primaryResult.getOrElse { error ->
-                if (query.isNotBlank() && provider !is IptvProvider && !filters.isActive) {
-                    Log.w("SearchViewModel", "Primary search failed, trying web fallback: ${error.message}")
-                    val fallback = WebSourceFallback.searchFallback(query, provider.name)
-                    if (fallback.isNotEmpty()) {
-                        usingWebFallback = true
-                        fallback
-                    } else {
-                        throw error
-                    }
-                } else {
-                    throw error
-                }
-            }
-
-            if (
-                results.isEmpty() &&
-                query.isNotBlank() &&
-                provider !is IptvProvider &&
-                !filters.isActive
-            ) {
-                val fallback = WebSourceFallback.searchFallback(query, provider.name)
-                if (fallback.isNotEmpty()) {
-                    results = fallback
-                    usingWebFallback = true
-                }
+            val results = if (provider is TmdbProvider && (filters.isActive || query.isNotBlank())) {
+                searchTmdbAdvanced(provider, query, filters, targetPage)
+            } else {
+                applyProviderFilters(provider.search(query, targetPage), filters)
             }
 
             this@SearchViewModel.query = query
@@ -293,6 +262,66 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         } catch (e: Exception) {
             Log.e("SearchViewModel", "executeSearch: ", e)
             _state.emit(State.FailedSearching(e))
+        }
+    }
+
+    private fun applyProviderFilters(
+        results: List<AppAdapter.Item>,
+        filters: AdvancedSearchFilters,
+    ): List<AppAdapter.Item> {
+        val filtered = results.filter { item ->
+            val typeOk = when (filters.type) {
+                AdvancedSearchFilters.ContentType.ALL -> true
+                AdvancedSearchFilters.ContentType.MOVIE -> item is Movie
+                AdvancedSearchFilters.ContentType.TV -> item is TvShow
+                AdvancedSearchFilters.ContentType.CARTOON -> {
+                    val genres = when (item) {
+                        is Movie -> item.genres
+                        is TvShow -> item.genres
+                        else -> emptyList()
+                    }
+                    genres.any { it.name.contains("anim", ignoreCase = true) }
+                }
+            }
+            if (!typeOk) return@filter false
+
+            val date = when (item) {
+                is Movie -> item.released?.format("yyyy-MM-dd")
+                is TvShow -> item.released?.format("yyyy-MM-dd")
+                else -> null
+            }
+            if (!matchesRequestedYear(date, filters)) return@filter false
+
+            if (filters.genre != AdvancedSearchFilters.GenreFilter.ALL) {
+                val genres = when (item) {
+                    is Movie -> item.genres
+                    is TvShow -> item.genres
+                    else -> emptyList()
+                }
+                if (genres.isNotEmpty() && genres.none {
+                        it.name.equals(filters.genre.label, ignoreCase = true) ||
+                            it.name.contains(filters.genre.label, ignoreCase = true)
+                    }) return@filter false
+            }
+            true
+        }
+
+        return when (filters.sort) {
+            AdvancedSearchFilters.SortFilter.DATE -> filtered.sortedByDescending {
+                when (it) {
+                    is Movie -> it.released
+                    is TvShow -> it.released
+                    else -> null
+                }
+            }
+            AdvancedSearchFilters.SortFilter.VOTE -> filtered.sortedByDescending {
+                when (it) {
+                    is Movie -> it.rating ?: 0.0
+                    is TvShow -> it.rating ?: 0.0
+                    else -> 0.0
+                }
+            }
+            AdvancedSearchFilters.SortFilter.POPULARITY -> filtered
         }
     }
 
@@ -311,7 +340,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 val results = if (provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank())) {
                     searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
                 } else {
-                    provider.search(query, nextPage)
+                    applyProviderFilters(provider.search(query, nextPage), advancedFilters)
                 }
 
                 val filtered = ParentalControlUtils.filterItems(results)
