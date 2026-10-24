@@ -142,8 +142,16 @@ class ProviderViewHolder(
                         val owner = context.toActivity() as? LifecycleOwner
                         val scope = owner?.lifecycleScope ?: CoroutineScope(Dispatchers.Main)
                         scope.launch {
-                            val result = ProviderEndpointRegistry.refreshOne(item.provider)
-                            Toast.makeText(context, "${result.providerName}: ${result.message}", Toast.LENGTH_LONG).show()
+                            val result = runCatching {
+                                ProviderEndpointRegistry.refreshOne(item.provider, requestedEndpoint = item.endpointOverride)
+                            }.getOrElse { error ->
+                                ProviderEndpointRegistry.RefreshResult(item.provider.name, false, error.message ?: "Errore sconosciuto")
+                            }
+                            android.app.AlertDialog.Builder(context)
+                                .setTitle("Verifica ${item.name}")
+                                .setMessage("${if (result.success) "Funzionante" else "Non funzionante"}: ${result.message}")
+                                .setPositiveButton("Chiudi", null)
+                                .show()
                         }
                         true
                     }
@@ -152,9 +160,25 @@ class ProviderViewHolder(
                         val owner = context.toActivity() as? LifecycleOwner
                         val scope = owner?.lifecycleScope ?: CoroutineScope(Dispatchers.Main)
                         scope.launch {
-                            val results = ProviderEndpointRegistry.refreshAll(EngineProvider.providers.keys)
-                            val valid = results.count { it.success }
-                            Toast.makeText(context, "Provider verificati: $valid/${results.size}. Gli altri richiedono controllo.", Toast.LENGTH_LONG).show()
+                            val results = runCatching { ProviderEndpointRegistry.refreshAll(EngineProvider.providers.keys) }
+                                .getOrElse { error ->
+                                    android.app.AlertDialog.Builder(context)
+                                        .setTitle("Aggiornamento non completato")
+                                        .setMessage(error.message ?: "Errore durante la verifica")
+                                        .setPositiveButton("Chiudi", null).show()
+                                    emptyList()
+                                }
+                            if (results.isNotEmpty()) {
+                                val valid = results.count { it.success }
+                                val details = results.joinToString("\n") { r ->
+                                    "${if (r.success) "✓" else "✗"} ${r.providerName}: ${r.message}"
+                                }
+                                android.app.AlertDialog.Builder(context)
+                                    .setTitle("Provider verificati: $valid/${results.size}")
+                                    .setMessage(details)
+                                    .setPositiveButton("Chiudi", null)
+                                    .show()
+                            }
                         }
                         true
                     }
