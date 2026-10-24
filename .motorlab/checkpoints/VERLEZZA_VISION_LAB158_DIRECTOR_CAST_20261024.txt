@@ -27,3 +27,14 @@ NEXT_STEPS=Read official GitHub Actions LAB158 run; inspect tests/compile/signat
 DO_NOT_PROMOTE_MADRE=true
 DO_NOT_MUTATE_MAIN=true
 DO_NOT_MUTATE_PRODUCTION=true
+
+UPDATE_20261024_INSTALLED_TV=Verlezza Vision 1.7.472 confirmed by user, equivalent to versionCode 401 under build-apks.yml APP_VERSION_NAME=1.7.(APP_VERSION_CODE+71)
+UPDATE_20261024_OLD_DOWNLOADER=4768904 points to LAB149 1.7.406 / versionCode 335; Android TV installation fails "App non installata" (screenshot evidence from user)
+UPDATE_20261024_CAUSE=attempted app downgrade is confirmed by version metadata; APK signing mismatch may also exist, not verified on user's installed TV
+UPDATE_20261024_FIX=LAB158 workflow Resolve safe Android version enforces APP_VERSION_CODE >=402 (versionName >=1.7.473) for this branch only
+UPDATE_20261024_VERIFIED_GITHUB_WORKFLOW_COMMIT=e95a7a5a3f49688d8646dc4c5d3b54aec8572f6e
+UPDATE_20261024_BUILD_TRIGGER_COMMIT=81b2f7f04532d759d6e4612c45a5f7a932173118
+UPDATE_20261024_TESTS=9 JUnit tests added, test/run outputs not verified
+UPDATE_20261024_APK_AND_NEW_DOWNLOADER_CODE=NOT_VERIFIED_OR_AVAILABLE
+UPDATE_20261024_NEXT=confirm Actions success, signing identity compatible with installed APK, build versionCode>401, actual TV APK/ZIP and immutable prerelease, then issue new verified numeric Downloader code
+UPDATE_20261024_DATA_SAFETY=do not uninstall existing app or clear data; preserve main/MADRE/production
