@@ -34,7 +34,9 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import java.util.Locale
 
 sealed class State {
@@ -317,7 +319,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
                 filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
                 filters.effectiveGenres.isNotEmpty() ||
-                filters.type == AdvancedSearchFilters.ContentType.CARTOON
+                filters.type == AdvancedSearchFilters.ContentType.CARTOON ||
+                // Date ranges should discover relevant titles across decades, not only first catalog pages.
+                (tmdbConfigured() && (filters.year != null ||
+                    !filters.dateFrom.isNullOrBlank() || !filters.dateTo.isNullOrBlank()))
 
         val directResults = when {
             query.isNotBlank() -> searchProviderWithRecovery(provider, query, page)
@@ -355,17 +360,22 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 .filter { itemMatchesMetadata(it, metadataKeys) }
         }
 
+        // No more than three simultaneous requests to a single provider engine.
+        val providerGate = Semaphore(3)
         val discovered = metadataMatches
             .take(candidateLimit)
             .map { candidate ->
                 async(Dispatchers.IO) {
-                    val title = when (candidate) {
-                        is Movie -> candidate.title
-                        is TvShow -> candidate.title
-                        else -> ""
+                    providerGate.withPermit {
+                        val title = when (candidate) {
+                            is Movie -> candidate.title
+                            is TvShow -> candidate.title
+                            else -> ""
+                        }
+                        if (title.isBlank()) emptyList()
+                        else runCatching { searchProviderWithRecovery(provider, title, 1) }
+                            .getOrDefault(emptyList())
                     }
-                    if (title.isBlank()) emptyList()
-                    else runCatching { provider.search(title, 1) }.getOrDefault(emptyList())
                 }
             }
             .awaitAll()
@@ -377,34 +387,26 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     }
 
     private fun filterMatchKey(item: AppAdapter.Item): String? {
-        val title = when (item) {
-            is Movie -> item.title
-            is TvShow -> item.title
+        // Type is part of the identity: a TV title must never inherit a movie-only genre.
+        val (type, title, year) = when (item) {
+            is Movie -> Triple("movie", item.title, item.released?.get(java.util.Calendar.YEAR))
+            is TvShow -> Triple("tv", item.title, item.released?.get(java.util.Calendar.YEAR))
             else -> return null
         }
-        val year = when (item) {
-            is Movie -> item.released?.get(java.util.Calendar.YEAR)
-            is TvShow -> item.released?.get(java.util.Calendar.YEAR)
-            else -> null
-        }
-        return "${normalizeFilterTitle(title)}|${year ?: ""}"
+        return "${type}|${normalizeFilterTitle(title)}|${year ?: ""}"
     }
 
     private fun itemMatchesMetadata(
         item: AppAdapter.Item,
         metadataKeys: Set<String>,
     ): Boolean {
-        val exact = filterMatchKey(item) ?: return false
-        if (exact in metadataKeys) return true
-
-        val title = when (item) {
-            is Movie -> item.title
-            is TvShow -> item.title
-            else -> return false
-        }
-        val normalizedTitle = normalizeFilterTitle(title)
-        return metadataKeys.any { key ->
-            key.substringBefore('|') == normalizedTitle
+        val key = filterMatchKey(item) ?: return false
+        if (key in metadataKeys) return true
+        val itemTypeAndTitle = key.substringBeforeLast('|')
+        val itemYear = key.substringAfterLast('|')
+        return metadataKeys.any { meta ->
+            meta.substringBeforeLast('|') == itemTypeAndTitle &&
+                (itemYear.isBlank() || meta.substringAfterLast('|').isBlank())
         }
     }
 
@@ -507,7 +509,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         query.isBlank() -> browseProvider(provider, nextPage)
                         else -> searchProviderWithRecovery(provider, query, nextPage)
                     }
-                    if (results.isEmpty()) break
+                    if (results.isEmpty() && !advancedFilters.isActive && query.isBlank()) break
                     newUniqueResults = ParentalControlUtils.filterItems(results)
                         .filterNot { it.searchIdentityKey() in existingKeys }
                 }
@@ -942,7 +944,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             advancedFilters.type == AdvancedSearchFilters.ContentType.CARTOON ||
             advancedFilters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
             !advancedFilters.actorId.isNullOrBlank() ||
-            !advancedFilters.directorId.isNullOrBlank()
+            !advancedFilters.directorId.isNullOrBlank() ||
+            (tmdbConfigured() && (advancedFilters.year != null ||
+                !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
         )
         val globalMetadata = if (needsGlobalMetadata) {
             if (!tmdbConfigured()) {
@@ -1001,7 +1005,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                         filters.isActive ->
                                             searchProviderAdvanced(
                                                 provider, query, advancedFilters, 1,
-                                                sharedMetadata = globalMetadata, candidateLimit = 12,
+                                                sharedMetadata = globalMetadata, candidateLimit = 24,
                                             )
                                         query.isBlank() -> browseProvider(provider, 1)
                                         else -> searchProviderWithRecovery(provider, query, 1)
