@@ -644,6 +644,7 @@ class SearchTvFragment : Fragment() {
         val platform = platformSelector ?: return
         val actor = actorEdit ?: return
         val director = directorEdit ?: return
+        val country = countrySelector ?: return
         val reset = btnResetFilters ?: return
         val apply = btnApplyFilters ?: return
 
@@ -672,12 +673,15 @@ class SearchTvFragment : Fragment() {
         platform.setNextFocus(left = sort.viewId, right = director.id, up = to.viewId, down = apply.id)
         director.nextFocusLeftId = platform.viewId
         director.nextFocusUpId = actor.id
-        director.nextFocusDownId = apply.id
+        director.nextFocusDownId = country.viewId
 
-        reset.nextFocusUpId = sort.viewId
+        // LAB152: country filter was visually present but absent from the TV D-pad graph.
+        // Give it explicit up/down links and route both adjacent controls through it.
+        country.setNextFocus(up = director.id, down = apply.id)
+        reset.nextFocusUpId = country.viewId
         reset.nextFocusRightId = apply.id
         reset.nextFocusDownId = vgvSearch.id
-        apply.nextFocusUpId = director.id
+        apply.nextFocusUpId = country.viewId
         apply.nextFocusLeftId = reset.id
         apply.nextFocusDownId = vgvSearch.id
         vgvSearch.nextFocusUpId = filterFocusSentinel?.id ?: apply.id
