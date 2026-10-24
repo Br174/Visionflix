@@ -34,11 +34,12 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-object AnimeSaturnProvider : Provider {
+object AnimeSaturnProvider : EndpointManagedProvider {
     override val name = "AnimeSaturn"
-    override val baseUrl = "https://www.animesaturn.net"
+    override val builtInBaseUrl = "https://www.animesaturn.net"
+    override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
 
-    override val logo = "https://www.animesaturn.net/assets/img/saturn.png"
+    override val logo: String get() = "$baseUrl/assets/img/saturn.png"
     override val language = "it"
 
     private const val USER_AGENT = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -114,7 +115,22 @@ object AnimeSaturnProvider : Provider {
         suspend fun getEpisodes(@Body body: okhttp3.RequestBody): okhttp3.ResponseBody
     }
 
-    private val service = AnimeSaturnService.build(baseUrl)
+    private var serviceUrl: String? = null
+    private var serviceCache: AnimeSaturnService? = null
+    private val service: AnimeSaturnService
+        get() {
+            val currentUrl = baseUrl
+            if (serviceCache == null || serviceUrl != currentUrl) {
+                serviceUrl = currentUrl
+                serviceCache = AnimeSaturnService.build(currentUrl)
+            }
+            return serviceCache!!
+        }
+
+    override fun onEndpointSelectionChanged() {
+        serviceUrl = null
+        serviceCache = null
+    }
 
     private val kitsuService by lazy {
         val client = OkHttpClient.Builder()
