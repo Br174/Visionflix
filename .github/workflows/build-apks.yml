@@ -184,6 +184,22 @@ jobs:
           ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --tests '*Lab152GlobalCatalogTest' --tests '*Lab153NavigationTest' --stacktrace
           echo "[LAB153_TESTS=PASS] Native poster-row shortcuts, source priority, catalog and filters"
 
+      - name: LAB154 TV remote, country, catalog and sorting regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab154-compact-header-grid-fast-filters-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --tests '*Lab152GlobalCatalogTest' --tests '*Lab153NavigationTest' --tests '*Lab154SearchPacingTest' --stacktrace
+          echo "[LAB154_TESTS=PASS] Fast first filtered results, progressive coverage and preserved poster navigation"
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
