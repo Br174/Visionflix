@@ -31,6 +31,7 @@ class ProvidersTvFragment : Fragment() {
     private val viewModel by viewModels<ProvidersViewModel>()
 
     private val appAdapter = AppAdapter()
+    private val pastebinAdapter = AppAdapter()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -56,7 +57,6 @@ class ProvidersTvFragment : Fragment() {
                     }
                     is ProvidersViewModel.State.SuccessLoading -> {
                         displayProviders(state.items)
-                        binding.rvProviders.visibility = View.VISIBLE
                         binding.isLoading.root.visibility = View.GONE
                     }
                     is ProvidersViewModel.State.FailedLoading -> {
@@ -72,6 +72,9 @@ class ProvidersTvFragment : Fragment() {
                                 viewModel.getProviders()
                             }
                             binding.rvProviders.visibility = View.GONE
+                            binding.rvProvidersPastebin.visibility = View.GONE
+                            binding.tvProviderOriginalsLabel.visibility = View.GONE
+                            binding.tvProviderPastebinLabel.visibility = View.GONE
                         }
                     }
                 }
@@ -158,23 +161,40 @@ class ProvidersTvFragment : Fragment() {
             )
         }
 
-        binding.rvProviders.apply {
-            adapter = appAdapter.apply {
+        fun setupRow(view: RecyclerView, adapter: AppAdapter) {
+            view.adapter = adapter.apply {
                 stateRestorationPolicy = RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
             }
-            addItemDecoration(
+            view.addItemDecoration(
                 SpacingItemDecoration(
                     requireContext().resources.getDimension(R.dimen.providers_spacing).toInt()
                 )
             )
         }
+        setupRow(binding.rvProviders, appAdapter)
+        setupRow(binding.rvProvidersPastebin, pastebinAdapter)
     }
 
     private fun displayProviders(items: List<AppAdapter.Item>) {
-        appAdapter.submitList(items.onEach { item ->
-            if (item is ModelProvider) item.itemType = AppAdapter.Type.PROVIDER_TV_ITEM
-        })
+        val providers = items.filterIsInstance<ModelProvider>()
+        val originals = providers
+            .filter { it.origin == ModelProvider.Origin.ORIGINAL }
+            .onEach { it.itemType = AppAdapter.Type.PROVIDER_TV_ITEM }
+        val pastebin = providers
+            .filter { it.origin == ModelProvider.Origin.PASTEBIN }
+            .onEach { it.itemType = AppAdapter.Type.PROVIDER_TV_ITEM }
 
-        binding.rvProviders.requestFocus()
+        appAdapter.submitList(originals)
+        pastebinAdapter.submitList(pastebin)
+
+        binding.tvProviderOriginalsLabel.visibility = if (originals.isEmpty()) View.GONE else View.VISIBLE
+        binding.rvProviders.visibility = if (originals.isEmpty()) View.GONE else View.VISIBLE
+        binding.tvProviderPastebinLabel.visibility = if (pastebin.isEmpty()) View.GONE else View.VISIBLE
+        binding.rvProvidersPastebin.visibility = if (pastebin.isEmpty()) View.GONE else View.VISIBLE
+
+        when {
+            originals.isNotEmpty() -> binding.rvProviders.requestFocus()
+            pastebin.isNotEmpty() -> binding.rvProvidersPastebin.requestFocus()
+        }
     }
 }
