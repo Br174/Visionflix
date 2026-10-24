@@ -65,3 +65,25 @@ FOLLOWUP_CERT_SHA256=ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9
 FOLLOWUP_STATUS=SIGNED_BUILD_VERIFIED_REAL_PROVIDER_FILTERS_NOT_YET_DEVICE_VERIFIED
 FOLLOWUP_LIMITATION=Country/original-language/platform/actor/director require user configured valid TMDb key; cannot claim fully functional without it; local genre relies on provider-provided genre labels
 FOLLOWUP_PROTECTED=main,MADRE,production,player,providers,UI_layout
+
+
+FOLLOWUP_20261024_2_USER_REPORT=Text search with all filters removed returns results; applying Year filter led to app termination on TV.
+FOLLOWUP_20261024_2_USER_TMDB_CREDENTIAL=User confirms personal TMDb key present in app settings; no credential disclosed, altered, exported or removed.
+FOLLOWUP_20261024_2_CAUSE_NOT_FULLY_PROVEN=No on-device logcat; app close could occur while opening year selector or after tapping Apply. Do not claim crash definitively fixed until real TV test.
+FOLLOWUP_20261024_2_PATCH=Provider-first when typed search plus year/date range; single-page TMDb validation fallback, prevent broad TMDb query fan-out; shared global year metadata; accommodate series last episode year; accept personal TMDb v3 key and v4 bearer token; candidate titles linked against verified metadata and repeated once if first batch sparse.
+FOLLOWUP_20261024_2_SOURCE_SHA=4871dce66bb25f7fba8225e7e84951da514be9d1
+FOLLOWUP_20261024_2_BUILD_RUN=40127548660
+FOLLOWUP_20261024_2_CI=SUCCESS
+FOLLOWUP_20261024_2_FIXED_LAB_DOWNLOADER=SUCCESS
+FOLLOWUP_20261024_2_VERSION=1.7.535
+FOLLOWUP_20261024_2_VERSION_CODE=464
+FOLLOWUP_20261024_2_RELEASE=https://github.com/Br174/Visionflix/releases/tag/visionflix-lab-ci-40127548660
+FOLLOWUP_20261024_2_APK_TV=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-ci-40127548660/Verlezza-Vision-TV.apk
+FOLLOWUP_20261024_2_APK_MOBILE=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-ci-40127548660/Verlezza-Vision-Mobile.apk
+FOLLOWUP_20261024_2_ZIP=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-ci-40127548660/Verlezza-Vision-LAB.zip
+FOLLOWUP_20261024_2_TV_SHA256=2c567f9b49e91f9cf3724b6fad2cef71cc69fe6bc2b775d5490b7cce484ede48
+FOLLOWUP_20261024_2_MOBILE_SHA256=5c938186d0b5b90f3af234113c0d2866234ae7c5680720e217173fba3b28d81e
+FOLLOWUP_20261024_2_ZIP_SHA256=d345f62c0fab654ddebe8bb50dc3ead32be88d5eaba49087f7332c90aa36ec21
+FOLLOWUP_20261024_2_CERT_SHA256=ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6
+FOLLOWUP_20261024_2_MAIN_SHA=c142c9544cb2d25536faa9534ca80d58339e65d4
+FOLLOWUP_20261024_2_NEXT_DEVICE_TEST=Select text-only known-good, same query with single year, blank text with single year separately, genre combinations, global on/off; ask if crash occurs on selector click or after Apply.
