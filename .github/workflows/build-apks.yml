@@ -12,6 +12,7 @@ on:
       - '.motorlab/**'
       - 'MOTORLAB_PROJECT_HOOK.txt'
       - '.github/workflows/build-apks.yml'
+      - '.github/workflows/publish-tv-lab149.yml'
       - '.github/signing/**'
   workflow_dispatch:
 
