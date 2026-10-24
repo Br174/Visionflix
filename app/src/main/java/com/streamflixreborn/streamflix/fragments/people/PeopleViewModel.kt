@@ -9,6 +9,7 @@ import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.DirectorCredits
+import com.streamflixreborn.streamflix.providers.TmdbProvider
 import com.streamflixreborn.streamflix.utils.TMDb3
 import com.streamflixreborn.streamflix.utils.TMDb3.w500
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +126,18 @@ class PeopleViewModel(private val id: String, database: AppDatabase) : ViewModel
                 _state.emit(State.SuccessLoading(director, false))
                 return@launch
             }
+            // TMDb actors reached through a director's film must remain
+            // addressable even if the current streaming provider has other IDs.
+            val tmdbActorId = DirectorCredits.actorPersonId(id)
+            if (tmdbActorId != null) {
+                val actor = TmdbProvider(UserPreferences.currentProvider?.language ?: "it")
+                    .getPeople(tmdbActorId.toString(), 1)
+                _state.emit(State.SuccessLoading(actor.copy(
+                    id = id,
+                    filmography = DirectorCredits.preserveCatalogFilmography(actor.filmography),
+                ), false))
+                return@launch
+            }
             val people = UserPreferences.currentProvider!!.getPeople(id)
 
             page = 1
@@ -138,7 +151,7 @@ class PeopleViewModel(private val id: String, database: AppDatabase) : ViewModel
 
     fun loadMorePeopleFilmography() = viewModelScope.launch(Dispatchers.IO) {
         // Director credits arrive as a complete, deduplicated list.
-        if (DirectorCredits.directorPersonId(id) != null) return@launch
+        if (DirectorCredits.directorPersonId(id) != null || DirectorCredits.actorPersonId(id) != null) return@launch
         val currentState = _state.value
         if (currentState is State.SuccessLoading) {
             _state.emit(State.LoadingMore)
