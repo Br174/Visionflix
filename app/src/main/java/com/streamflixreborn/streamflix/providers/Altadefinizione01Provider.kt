@@ -29,10 +29,11 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Header
 
-object Altadefinizione01Provider : Provider {
+object Altadefinizione01Provider : EndpointManagedProvider {
 
     override val name: String = "Altadefinizione01"
-    override val baseUrl: String = "https://altadefinizione-01.fun"
+    override val builtInBaseUrl: String = "https://altadefinizione-01.fun"
+    override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
     override val logo: String get() = "$baseUrl/templates/altadefinizione01/images/logo.png"
     override val language: String = "it"
 
@@ -116,7 +117,22 @@ object Altadefinizione01Provider : Provider {
         ): okhttp3.ResponseBody
     }
 
-    private val service = Altadefinizione01Service.build(baseUrl)
+    private var serviceUrl: String? = null
+    private var serviceCache: Altadefinizione01Service? = null
+    private val service: Altadefinizione01Service
+        get() {
+            val currentUrl = baseUrl
+            if (serviceCache == null || serviceUrl != currentUrl) {
+                serviceUrl = currentUrl
+                serviceCache = Altadefinizione01Service.build(currentUrl)
+            }
+            return serviceCache!!
+        }
+
+    override fun onEndpointSelectionChanged() {
+        serviceUrl = null
+        serviceCache = null
+    }
 
     
 
