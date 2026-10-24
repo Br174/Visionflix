@@ -33,6 +33,7 @@ tv_sha="$(sha256sum "$workdir/Verlezza-Vision-TV.apk" | awk '{print $1}')"
 mobile_sha="$(sha256sum "$workdir/Verlezza-Vision-Mobile.apk" | awk '{print $1}')"
 assert_sha_from_manifest="$(awk '/Verlezza-Vision-TV.apk/ {print $1; exit}' "$workdir/SHA256SUMS.txt")"
 [[ "$tv_sha" == "$assert_sha_from_manifest" ]] || { echo "::error::APK sha mismatch"; exit 67; }
+cp "$workdir/Verlezza-Vision-TV.apk" "$workdir/$asset"
 
 notes="$workdir/NOTES.md"
 cat > "$notes" <<EOF
@@ -62,10 +63,10 @@ if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
     if gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' | grep -Fxq "$asset"; then
         gh release download "$tag" --repo "$repo" --pattern "$asset" --dir "$workdir/previous" 2>/dev/null || true
     fi
-    if ! gh release upload "$tag" "$workdir/Verlezza-Vision-TV.apk#$asset" \
+    if ! gh release upload "$tag" "$workdir/$asset" \
         --repo "$repo" --clobber; then
         if [[ -s "$workdir/previous/$asset" ]]; then
-            gh release upload "$tag" "$workdir/previous/$asset#$asset" --repo "$repo" --clobber || true
+            gh release upload "$tag" "$workdir/previous/$asset" --repo "$repo" --clobber || true
         fi
         echo "::error::LAB download slot update failed; previous archived release not modified"
         exit 68
