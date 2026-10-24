@@ -12,6 +12,7 @@ import com.streamflixreborn.streamflix.utils.CustomTabHelper
 import com.streamflixreborn.streamflix.utils.EpisodeManager
 import com.streamflixreborn.streamflix.utils.OpenSubtitles
 import com.streamflixreborn.streamflix.utils.UserPreferences
+import com.streamflixreborn.streamflix.utils.AudioLanguageGuard
 import com.streamflixreborn.streamflix.utils.format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -155,6 +156,8 @@ class PlayerViewModel(
                 provider.getVideo(server)
             }
             if (video.source.isEmpty()) throw Exception("No source found")
+
+            AudioLanguageGuard.requireCompatibleAudio(video, provider.language)
 
             val currentProviderLang = provider.language
             val hasDefaultAlready = video.subtitles.any { it.default }
