@@ -3,8 +3,11 @@ package com.streamflixreborn.streamflix.providers
 import android.content.Context
 import com.streamflixreborn.streamflix.BuildConfig
 import com.streamflixreborn.streamflix.StreamFlixApp
+import com.streamflixreborn.streamflix.models.Movie
+import com.streamflixreborn.streamflix.models.Video
 import com.streamflixreborn.streamflix.utils.SourcePreferences
 import java.net.URI
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -246,6 +249,7 @@ object ProviderEndpointRegistry {
         provider: Provider,
         refreshRegistry: Boolean = true,
         requestedEndpoint: String? = null,
+        verifyServer: Boolean = false,
     ): RefreshResult = withContext(Dispatchers.IO) {
         val managed = provider as? EndpointManagedProvider
         val originalSelection = selectedOverride(provider.name)
@@ -283,8 +287,10 @@ object ProviderEndpointRegistry {
                     runCatching { provider.getTvShows(1).isNotEmpty() }.getOrDefault(false)
             } == true
         }.getOrDefault(false)
-        if (functional) {
-            RefreshResult(provider.name, true, "Ricerca di prova riuscita")
+        if (functional && verifyServer) {
+            inspectOneFilmServer(provider)
+        } else if (functional) {
+            RefreshResult(provider.name, true, "Catalogo OK, server non verificati")
         } else {
             RefreshResult(provider.name, false, "Sito raggiungibile ma ricerca non verificata: nessun risultato o timeout")
         }
@@ -304,7 +310,7 @@ object ProviderEndpointRegistry {
         val normalized = normalizeUrl(url) ?: return RefreshResult(
             provider.name, false, "Inserisci un indirizzo http/https valido"
         )
-        val checked = refreshOne(provider, refreshRegistry = false, requestedEndpoint = normalized)
+        val checked = refreshOne(provider, refreshRegistry = false, requestedEndpoint = normalized, verifyServer = true)
         if (!checked.success) return checked
         if (!saveManualEndpoint(provider.name, normalized)) return RefreshResult(
             provider.name, false, "Impossibile salvare il link manuale"
