@@ -27,6 +27,11 @@ class Lab164SearchMatchPolicyTest {
         assertFalse(Lab164SearchMatchPolicy.matchesMetadata("movie|other|", setOf("movie|filmtest|2017")))
     }
 
+    @Test fun malformedKeysAndUnknownTypesNeverPassMetadataValidation() {
+        assertFalse(Lab164SearchMatchPolicy.matchesMetadata("unknown|test|2023", setOf("unknown|test|2023")))
+        assertFalse(Lab164SearchMatchPolicy.matchesMetadata("movie||2023", setOf("movie|test|2023")))
+    }
+
     @Test fun localFilteredEmptyPageDoesNotTerminatePrematurely() {
         assertTrue(Lab164SearchMatchPolicy.canLoadLocalMore(false, true, 2))
         assertFalse(Lab164SearchMatchPolicy.canLoadLocalMore(false, false, 2))
