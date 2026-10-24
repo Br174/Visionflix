@@ -522,7 +522,7 @@ object ProviderEndpointRegistry {
 
     private fun normalizeUrl(raw: String): String? {
         val value = raw.trim()
-        if (!value.startsWith("http://") && !value.startsWith("https://")) return null
+        if (!AdaptiveSourceRules.isPublicHttpUrl(value)) return null
         return runCatching {
             val uri = URI(value)
             if (uri.host.isNullOrBlank()) null else value.trimEnd('/')
