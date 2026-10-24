@@ -448,12 +448,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     ): Boolean {
         val key = filterMatchKey(item) ?: return false
         if (key in metadataKeys) return true
-        val itemTypeAndTitle = key.substringBeforeLast('|')
-        val itemYear = key.substringAfterLast('|')
-        return metadataKeys.any { meta ->
-            meta.substringBeforeLast('|') == itemTypeAndTitle &&
-                (itemYear.isBlank() || meta.substringAfterLast('|').isBlank())
-        }
+        return Lab164SearchMatchPolicy.matchesMetadata(key, metadataKeys)
     }
 
     private fun normalizeFilterTitle(value: String): String =
@@ -488,7 +483,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 is TvShow -> item.released?.format("yyyy-MM-dd")
                 else -> null
             }
-            if (!matchesYearFilter(date, filters)) return@filter false
+            // TMDb has already verified the filter; a provider's localized year can differ.
+            if (!trustMetadata && !matchesYearFilter(date, filters)) return@filter false
 
             if (filters.effectiveGenres.isNotEmpty() && !trustMetadata) {
                 val genres = when (item) {
@@ -552,7 +548,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 var attempts = 0
                 // A partially filtered page may be empty while later provider pages contain matches.
                 // Bounded skips prevent infinite retries and preserve provider rate limits.
-                while (attempts < 3 && newUniqueResults.isEmpty()) {
+                while (attempts < (if (advancedFilters.isActive) 4 else 3) && newUniqueResults.isEmpty()) {
                     nextPage++
                     attempts++
                     val results = when {
@@ -570,7 +566,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 _state.emit(
                     State.SuccessSearching(
                         results = currentState.results + newUniqueResults,
-                        hasMore = newUniqueResults.isNotEmpty(),
+                        hasMore = Lab164SearchMatchPolicy.canLoadLocalMore(
+                            newUniqueResults.isNotEmpty(), advancedFilters.isActive, nextPage),
                     )
                 )
             } catch (e: Exception) {
@@ -1079,6 +1076,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                 (provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
 
                                 val result = try {
+                                    // Await metadata before acquiring one of the limited provider permits.
+                                    // Otherwise slow TMDb blocks unrelated fast provider results.
+                                    val sharedFilteredMetadata =
+                                        if (advancedFilters.isActive && provider !is TmdbProvider)
+                                            metadataTask?.await()
+                                        else null
                                     val found = globalProviderGate.withPermit {
                                         when {
                                             provider is TmdbProvider && advancedFilters.isActive ->
@@ -1086,7 +1089,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                             advancedFilters.isActive ->
                                                 searchProviderAdvanced(
                                                     provider, query, advancedFilters, 1,
-                                                    sharedMetadata = metadataTask?.await(),
+                                                    sharedMetadata = sharedFilteredMetadata,
                                                     candidateLimit = Lab154SearchPacing.candidateLimit(
                                                         firstPage = true,
                                                         originatingProvider = provider.name == UserPreferences.currentProvider?.name),
@@ -1255,7 +1258,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             // If all sources produced nothing, stop automatic paging to avoid endless calls.
             globalEmptyPages = if (addedCount == 0) globalEmptyPages + 1 else 0
             _state.emit(globalWallState(updated,
-                hasMore = nextPage < 15 && globalEmptyPages < 2))
+                hasMore = Lab164SearchMatchPolicy.canLoadGlobalMore(
+                    nextPage, globalEmptyPages, advancedFilters.isActive)))
         } catch (e: Exception) {
             Log.e("SearchViewModel", "loadMoreGlobal", e)
             _state.emit(existing.copy(hasMore = false))
