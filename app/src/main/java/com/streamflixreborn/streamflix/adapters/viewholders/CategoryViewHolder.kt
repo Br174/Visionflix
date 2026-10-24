@@ -32,6 +32,7 @@ import com.streamflixreborn.streamflix.utils.toActivity
 import java.util.Locale
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.ProviderSelection
 import com.streamflixreborn.streamflix.database.AppDatabase
 
 class CategoryViewHolder(
@@ -204,15 +205,9 @@ class CategoryViewHolder(
         val selected = category.list.getOrNull(category.selectedIndex) as? Show ?: return
 
         fun checkProviderAndRun(show: Show, action: () -> Unit) {
-            val providerName = when(show){
-                is Movie -> show.providerName
-                is TvShow -> show.providerName
-            }
-
-            if (!providerName.isNullOrBlank() && providerName != UserPreferences.currentProvider?.name) {
-                Provider.providers.keys.find { it.name == providerName }?.let {
-                    UserPreferences.currentProvider = it
-                }
+            when (show) {
+                is Movie -> ProviderSelection.select(show.providerName, show.providerEndpoint)
+                is TvShow -> ProviderSelection.select(show.providerName, show.providerEndpoint)
             }
             action()
         }
