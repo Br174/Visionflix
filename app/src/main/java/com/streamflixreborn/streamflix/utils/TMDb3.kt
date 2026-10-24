@@ -945,18 +945,21 @@ object TMDb3 {
 
         companion object {
             fun build(): ApiService {
-                val apiKey = UserPreferences.tmdbApiKey.ifEmpty { BuildConfig.TMDB_API_KEY }
+                val credentials = Lab164TmdbCredentialRouting.resolve(
+                    UserPreferences.tmdbApiKey, BuildConfig.TMDB_API_KEY
+                )
 
                 val client = OkHttpClient.Builder().addInterceptor { chain ->
                     val original = chain.request()
-
                     val requestBuilder = original.newBuilder()
-                        .url(
-                            original.url.newBuilder()
-                                .addQueryParameter("api_key", apiKey)
-                                .build()
-                        )
-
+                    when (credentials) {
+                        is Lab164TmdbCredentialRouting.Credential.V3 ->
+                            requestBuilder.url(original.url.newBuilder()
+                                .addQueryParameter("api_key", credentials.key).build())
+                        is Lab164TmdbCredentialRouting.Credential.V4 ->
+                            requestBuilder.header("Authorization", "Bearer ${credentials.token}")
+                        Lab164TmdbCredentialRouting.Credential.Missing -> Unit
+                    }
                     chain.proceed(requestBuilder.build())
                 }.build()
 
