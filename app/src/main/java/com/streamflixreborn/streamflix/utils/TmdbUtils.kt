@@ -51,6 +51,7 @@ object TmdbUtils {
                 banner = details.backdropPath?.original,
                 imdbId = details.externalIds?.imdbId,
                 genres = details.genres.map { Genre(it.id.toString(), it.name) },
+                directors = DirectorCredits.directorTiles(details.credits?.crew),
                 cast = details.credits?.cast?.map { People(it.id.toString(), it.name, it.profilePath?.w500) } ?: listOf(),
             )
         } catch (_: Exception) { null }
@@ -183,6 +184,7 @@ object TmdbUtils {
                 banner = details.backdropPath?.original,
                 imdbId = details.externalIds?.imdbId,
                 genres = details.genres.map { Genre(it.id.toString(), it.name) },
+                directors = DirectorCredits.directorTiles(details.credits?.crew),
                 cast = details.credits?.cast?.map { People(it.id.toString(), it.name, it.profilePath?.w500) } ?: listOf(),
             )
         } catch (_: Exception) { null }
