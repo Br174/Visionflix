@@ -1,0 +1,2 @@
+Visionflix LAB build trigger after repository visibility changed to public.
+Application source unchanged by this file.
