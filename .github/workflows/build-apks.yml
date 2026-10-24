@@ -437,6 +437,36 @@ jobs:
             --tests '*Lab161AdaptivePlaybackTest' --stacktrace
           echo '[LAB164_TESTS=PASS] speed and filtered coverage with TV and player regressions'
 
+      - name: LAB165 fast country/year sort discovery and protected Matrioska regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab165-filter-sort-fast-discovery-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab165FastDiscoveryPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab164TmdbCredentialRoutingTest' \
+            --tests '*Lab150AdvancedFiltersTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*Lab153NavigationTest' \
+            --tests '*Lab155SearchSafetyTest' \
+            --tests '*Lab156UnifiedSortTest' \
+            --tests '*Lab157FocusPolicyTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*DirectorCreditsTest' \
+            --tests '*Lab161AdaptivePlaybackTest' --stacktrace
+          echo '[LAB165_TESTS=PASS] popularity-first availability, requested display sort, director/actor/Cineblog protection'
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
