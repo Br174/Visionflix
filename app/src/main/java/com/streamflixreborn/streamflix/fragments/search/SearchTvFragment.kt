@@ -732,10 +732,17 @@ class SearchTvFragment : Fragment() {
                 isFocusable = true
                 isClickable = true
                 // Free arrow glyph: touch/focus hit target but NO visible surrounding button.
-                setOnClickListener { setFilterPanelExpanded(!filterPanelExpanded, true) }
+                setOnClickListener {
+                    val opening = !filterPanelExpanded
+                    setFilterPanelExpanded(opening, true)
+                    if (!opening && appAdapter.itemCount > 0) {
+                        vgvSearch.post { if (isAdded && !filterPanelExpanded) vgvSearch.requestFocus() }
+                    }
+                }
                 setOnKeyListener { _, keyCode, event ->
-                    if (event.action == KeyEvent.ACTION_DOWN &&
-                        keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    if (event.action != KeyEvent.ACTION_DOWN) false
+                    else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) true
+                    else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                         restoreRowJumpPosition()
                     } else false
                 }
@@ -776,44 +783,88 @@ class SearchTvFragment : Fragment() {
         val country = countrySelector ?: return
         val reset = btnResetFilters ?: return
         val apply = btnApplyFilters ?: return
+        val all = quickAll ?: return
+        val film = quickFilm ?: return
+        val series = quickSeries ?: return
+        val sort = quickDate ?: return
+        val arrow = dropdownArrow ?: return
 
-        etSearch.nextFocusRightId = btnSearchClear.id
-        etSearch.nextFocusDownId = llGlobalSearch.id
-        btnSearchClear.nextFocusLeftId = etSearch.id
-        btnSearchClear.nextFocusRightId = btnSearchVoice.id
-        btnSearchClear.nextFocusDownId = llGlobalSearch.id
-        btnSearchVoice.nextFocusLeftId = btnSearchClear.id
-        btnSearchVoice.nextFocusDownId = llGlobalSearch.id
-        llGlobalSearch.nextFocusUpId = etSearch.id
+        // LAB159: one complete, bidirectional focus graph. The body and the
+        // bottom lip are part of the SAME drawer, not separate focus islands.
+        // Left exits into the native sidebar; up and right are sealed borders.
+        val sidebar = R.id.nav_main
         llGlobalSearch.nextFocusDownId = type.viewId
+        llGlobalSearch.nextFocusUpId = llGlobalSearch.id
+        llGlobalSearch.nextFocusRightId = llGlobalSearch.id
+        llGlobalSearch.nextFocusLeftId = sidebar
+        llGlobalSearch.setOnKeyListener { _, code, event ->
+            event.action == KeyEvent.ACTION_DOWN && filterPanelExpanded &&
+                (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_RIGHT)
+        }
 
-        type.setNextFocus(right = italian.viewId, up = llGlobalSearch.id, down = from.viewId)
-        italian.setNextFocus(left = type.viewId, right = year.viewId, up = llGlobalSearch.id, down = to.viewId)
-        year.setNextFocus(left = italian.viewId, right = genre.viewId, up = llGlobalSearch.id, down = actor.id)
-        genre.setNextFocus(left = year.viewId, up = llGlobalSearch.id, down = actor.id)
+        type.setNextFocus(left = sidebar, right = italian.viewId,
+            up = llGlobalSearch.id, down = from.viewId)
+        italian.setNextFocus(left = type.viewId, right = year.viewId,
+            up = llGlobalSearch.id, down = to.viewId)
+        year.setNextFocus(left = italian.viewId, right = genre.viewId,
+            up = llGlobalSearch.id, down = actor.id)
+        genre.setNextFocus(left = year.viewId, right = genre.viewId,
+            up = llGlobalSearch.id, down = actor.id)
 
-        from.setNextFocus(right = to.viewId, up = type.viewId, down = platform.viewId)
-        to.setNextFocus(left = from.viewId, right = actor.id, up = italian.viewId, down = platform.viewId)
+        from.setNextFocus(left = sidebar, right = to.viewId,
+            up = type.viewId, down = platform.viewId)
+        to.setNextFocus(left = from.viewId, right = actor.id,
+            up = italian.viewId, down = director.id)
         actor.nextFocusLeftId = to.viewId
+        actor.nextFocusRightId = actor.id
         actor.nextFocusUpId = year.viewId
         actor.nextFocusDownId = platform.viewId
 
-        platform.setNextFocus(right = director.id, up = from.viewId, down = country.viewId)
+        platform.setNextFocus(left = sidebar, right = director.id,
+            up = from.viewId, down = country.viewId)
         director.nextFocusLeftId = platform.viewId
+        director.nextFocusRightId = director.id
         director.nextFocusUpId = actor.id
-        director.nextFocusDownId = country.viewId
+        director.nextFocusDownId = apply.id
 
-        country.setNextFocus(right = reset.id, up = platform.viewId, down = vgvSearch.id)
+        country.setNextFocus(left = sidebar, right = reset.id,
+            up = platform.viewId, down = etSearch.id)
         reset.nextFocusUpId = director.id
         reset.nextFocusLeftId = country.viewId
         reset.nextFocusRightId = apply.id
-        reset.nextFocusDownId = vgvSearch.id
+        reset.nextFocusDownId = all.id
         apply.nextFocusUpId = director.id
         apply.nextFocusLeftId = reset.id
-        apply.nextFocusDownId = vgvSearch.id
-        vgvSearch.nextFocusUpId = dropdownArrow?.id ?: apply.id
-        dropdownArrow?.nextFocusDownId = vgvSearch.id
-        dropdownArrow?.nextFocusLeftId = quickDate?.id ?: etSearch.id
+        apply.nextFocusRightId = apply.id
+        apply.nextFocusDownId = sort.id
+
+        // The pinned lower row must be fully traversable before the poster wall.
+        etSearch.nextFocusLeftId = sidebar
+        etSearch.nextFocusRightId = btnSearchClear.id
+        etSearch.nextFocusUpId = country.viewId
+        etSearch.nextFocusDownId = vgvSearch.id
+        btnSearchClear.nextFocusLeftId = etSearch.id
+        btnSearchClear.nextFocusRightId = btnSearchVoice.id
+        btnSearchClear.nextFocusUpId = reset.id
+        btnSearchClear.nextFocusDownId = vgvSearch.id
+        btnSearchVoice.nextFocusLeftId = btnSearchClear.id
+        btnSearchVoice.nextFocusRightId = all.id
+        btnSearchVoice.nextFocusUpId = reset.id
+        btnSearchVoice.nextFocusDownId = vgvSearch.id
+
+        val bottom = listOf(all, film, series, sort, arrow)
+        bottom.forEachIndexed { index, view ->
+            view.nextFocusLeftId = if (index == 0) btnSearchVoice.id else bottom[index - 1].id
+            view.nextFocusRightId = if (index == bottom.lastIndex) view.id else bottom[index + 1].id
+            view.nextFocusDownId = vgvSearch.id
+            view.nextFocusUpId = if (index <= 1) reset.id else apply.id
+        }
+        // Only pressing OK on the arrow may collapse the drawer, never RIGHT.
+        apply.setOnKeyListener { _, code, event ->
+            event.action == KeyEvent.ACTION_DOWN && filterPanelExpanded &&
+                code == KeyEvent.KEYCODE_DPAD_RIGHT
+        }
+        vgvSearch.nextFocusUpId = arrow.id
     }
 
     private fun setupActorTextSearch() {
@@ -1931,6 +1982,12 @@ class SearchTvFragment : Fragment() {
                     return@setOnKeyListener true
                 }
                 when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_RIGHT ->
+                        // A self-target marks the last item of a row: never
+                        // escape the drawer to the right.
+                        focusView.nextFocusRightId == focusView.id
+                    KeyEvent.KEYCODE_DPAD_UP ->
+                        focusView.nextFocusUpId == focusView.id
                     KeyEvent.KEYCODE_DPAD_CENTER,
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_NUMPAD_ENTER -> {
