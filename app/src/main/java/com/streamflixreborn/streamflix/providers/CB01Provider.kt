@@ -32,10 +32,11 @@ import okhttp3.ResponseBody
 import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 
-object CB01Provider : Provider {
+object CB01Provider : EndpointManagedProvider {
 
     override val name = "CB01"
-    override val baseUrl = "https://cb01official.uno"
+    override val builtInBaseUrl = "https://cb01official.uno"
+    override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
     override val logo: String get() = "$baseUrl/apple-icon-180x180px.png"
     override val language = "it"
 
@@ -96,7 +97,22 @@ object CB01Provider : Provider {
         }
     }
 
-    private val service = CB01Service.build(baseUrl)
+    private var serviceUrl: String? = null
+    private var serviceCache: CB01Service? = null
+    private val service: CB01Service
+        get() {
+            val currentUrl = baseUrl
+            if (serviceCache == null || serviceUrl != currentUrl) {
+                serviceUrl = currentUrl
+                serviceCache = CB01Service.build(currentUrl)
+            }
+            return serviceCache!!
+        }
+
+    override fun onEndpointSelectionChanged() {
+        serviceUrl = null
+        serviceCache = null
+    }
 
     private interface StayService {
         @FormUrlEncoded
