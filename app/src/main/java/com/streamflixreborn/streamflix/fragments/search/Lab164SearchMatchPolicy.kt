@@ -12,11 +12,11 @@ internal object Lab164SearchMatchPolicy {
      * Never merge unrelated remakes separated by decades or cross movie/TV boundaries.
      */
     fun matchesMetadata(itemKey: String, metadataKeys: Set<String>): Boolean {
-        if (itemKey in metadataKeys) return true
         val kind = itemKey.substringBefore('|')
         val title = itemKey.substringAfter('|', "").substringBeforeLast('|', "")
         val year = itemKey.substringAfterLast('|').toIntOrNull()
         if (title.isBlank() || kind !in setOf("movie", "tv")) return false
+        if (itemKey in metadataKeys) return true
         return metadataKeys.any { key ->
             val candidateKind = key.substringBefore('|')
             val candidateTitle = key.substringAfter('|', "").substringBeforeLast('|', "")
