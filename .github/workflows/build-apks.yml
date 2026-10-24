@@ -12,6 +12,7 @@ on:
       - '.motorlab/**'
       - 'MOTORLAB_PROJECT_HOOK.txt'
       - '.github/workflows/build-apks.yml'
+      - '.github/signing/**'
   workflow_dispatch:
 
 permissions:
@@ -53,57 +54,54 @@ jobs:
         with:
           cache-cleanup: on-success
 
-      - name: Force next globally installable app version
+      - name: Resolve safe Android version
         shell: bash
         run: |
           set -euo pipefail
-          LATEST_TAG="$(curl --fail --silent --show-error --location \
-            'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
-          LATEST_CODE="${LATEST_TAG##*-}"
-          case "$LATEST_CODE" in
-            ''|*[!0-9]*)
-              echo "::error::Impossibile ricavare il versionCode dall'ultima release pubblica: $LATEST_TAG"
-              exit 1
-              ;;
-          esac
-          APP_VERSION_CODE=$((LATEST_CODE + 1))
+          if [ "$UAB_STAGE" = "LAB" ]; then
+            # LAB version is monotonic without relying on the public release API.
+            APP_VERSION_CODE=$((186 + GITHUB_RUN_NUMBER))
+          else
+            LATEST_TAG="$(curl --fail --silent --show-error --retry 4 --retry-all-errors --retry-delay 2 --location \
+              'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+            LATEST_CODE="${LATEST_TAG##*-}"
+            case "$LATEST_CODE" in
+              ''|*[!0-9]*) echo "::error::Versione pubblica non valida: $LATEST_TAG"; exit 1 ;;
+            esac
+            APP_VERSION_CODE=$((LATEST_CODE + 1))
+          fi
           APP_VERSION_NAME="1.7.$((APP_VERSION_CODE + 71))"
           echo "APP_VERSION_CODE=$APP_VERSION_CODE" >> "$GITHUB_ENV"
           echo "APP_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
-          echo "Versione di test/promozione: $APP_VERSION_NAME (build $APP_VERSION_CODE)."
+          echo "Build $APP_VERSION_CODE ($APP_VERSION_NAME) - stage $UAB_STAGE"
 
-      - name: Restore stable debug signing key
-        id: signing_cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: visionflix-debug-keystore-v1
-          fail-on-cache-miss: false
-
-      - name: Pin signing identity
+      - name: Restore permanent signing identity (fail closed)
         shell: bash
+        env:
+          VISIONFLIX_SIGNING_SECRET: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.android"
-
-          if [ -f "$HOME/.android/debug.keystore" ]; then
-            keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
-            echo "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der" | sha256sum --check -
-            echo "VISIONFLIX_SIGNING_MODE=stable" >> "$GITHUB_ENV"
-            echo "stable" > /tmp/signing-mode.txt
-          elif [ "$UAB_STAGE" = "LAB" ]; then
-            echo "::warning::Firma stabile non disponibile: genero una firma temporanea SOLO per compilazione/test LAB. APK non promuovibile e non distribuibile come aggiornamento."
-            keytool -genkeypair               -keystore "$HOME/.android/debug.keystore"               -storepass android               -alias androiddebugkey               -keypass android               -dname "CN=Visionflix LAB Temporary,O=MotorLab,C=IT"               -keyalg RSA               -keysize 2048               -validity 365               -noprompt
-            echo "VISIONFLIX_SIGNING_MODE=lab-ephemeral" >> "$GITHUB_ENV"
-            echo "lab-ephemeral" > /tmp/signing-mode.txt
-          else
-            echo "::error::Firma stabile Visionflix assente. CANDIDATA/MADRE non possono usare una chiave temporanea."
-            exit 1
+          if [ -z "${VISIONFLIX_SIGNING_SECRET:-}" ]; then
+            echo "::error::Manca VISIONFLIX_SIGNING_V1_PASSWORD. Nessun APK viene compilato o firmato."
+            exit 72
           fi
-
-          echo "VISIONFLIX_SIGNING_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
-          echo "[UAB_PROGRESS=45] Firma e controlli preliminari verificati"
+          umask 077
+          KEY_DIR="$RUNNER_TEMP/visionflix-signing"
+          mkdir -p "$KEY_DIR"
+          base64 --decode .github/signing/Visionflix_Signing_Key_V1.p12.enc.b64 > "$KEY_DIR/key.p12.enc"
+          echo "fb15a0054401ca7b8f925977a51e0585965ef5edfb4cca3d00a3d92550526799  $KEY_DIR/key.p12.enc" | sha256sum --check -
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 250000 \
+            -in "$KEY_DIR/key.p12.enc" -out "$KEY_DIR/visionflix-v1.p12" \
+            -pass env:VISIONFLIX_SIGNING_SECRET
+          keytool -exportcert -storetype PKCS12 -keystore "$KEY_DIR/visionflix-v1.p12" \
+            -storepass "$VISIONFLIX_SIGNING_SECRET" -alias visionflix-v1 \
+            -file "$KEY_DIR/signing-cert.der" >/dev/null
+          echo "ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6  $KEY_DIR/signing-cert.der" | sha256sum --check -
+          echo "VISIONFLIX_SIGNING_KEYSTORE=$KEY_DIR/visionflix-v1.p12" >> "$GITHUB_ENV"
+          echo "VISIONFLIX_SIGNING_MODE=permanent-v1" >> "$GITHUB_ENV"
+          printf "permanent-v1\n" > /tmp/signing-mode.txt
+          echo "[UAB_PROGRESS=45] Identita firma V1 permanente verificata; nessuna cache o fallback effimero"
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
@@ -112,6 +110,8 @@ jobs:
         run: echo "[UAB_PROGRESS=60] Cache Gradle e toolchain pronte"
 
       - name: Build Android mobile debug APK
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
         run: |
           cat > local.properties <<'EOF'
           APP_LAYOUT=mobile
@@ -123,6 +123,8 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/Verlezza-Vision-Mobile.apk
 
       - name: Build Android TV debug APK
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
         run: |
           cat > local.properties <<'EOF'
           APP_LAYOUT=tv
@@ -142,14 +144,11 @@ jobs:
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk | tee /tmp/signature-info.txt
           VV_CERTIFICATES="$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/signature-info.txt | sort -u)"
-          if [ "${VISIONFLIX_SIGNING_MODE:-}" = "stable" ]; then
-            test "$VV_CERTIFICATES" = "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e"
-          elif [ "$UAB_STAGE" = "LAB" ] && [ "${VISIONFLIX_SIGNING_MODE:-}" = "lab-ephemeral" ]; then
-            echo "::warning::Verifica firma stabile saltata esclusivamente per build LAB temporanea."
-          else
-            echo "::error::Modalità firma non valida per questo stage: ${VISIONFLIX_SIGNING_MODE:-unset}"
-            exit 1
-          fi
+          test "${VV_CERTIFICATES}" = "ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Verlezza-Vision-Mobile.apk | tee /tmp/mobile-signature-info.txt
+          MOBILE_CERTIFICATES="$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/mobile-signature-info.txt | sort -u)"
+          test "$MOBILE_CERTIFICATES" = "$VV_CERTIFICATES"
+          test "${VISIONFLIX_SIGNING_MODE:-}" = "permanent-v1"
           "$BUILD_TOOLS/aapt" dump badging /tmp/Visionflix_BV_TV.apk > /tmp/apk-info.txt
           grep -F "package: name='com.br174.visionflix.tv.debug'" /tmp/apk-info.txt
           grep -F "com.streamflixreborn.streamflix.activities.main.MainTvActivity" /tmp/apk-info.txt
@@ -168,6 +167,7 @@ jobs:
             /tmp/SHA256SUMS.txt
             /tmp/apk-info.txt
             /tmp/signature-info.txt
+            /tmp/mobile-signature-info.txt
             /tmp/signing-mode.txt
           if-no-files-found: error
           retention-days: 14
