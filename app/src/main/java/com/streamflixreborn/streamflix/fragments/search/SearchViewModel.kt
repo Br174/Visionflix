@@ -290,13 +290,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             provider.search(text, page)
         } catch (error: retrofit2.HttpException) {
             Log.w("SearchViewModel", "Provider=${provider.name}, search HTTP=${error.code()}, page=$page")
-            if (error.code() == 451) {
+            if (Lab155SearchSafety.isRestricted(error.code())) {
                 throw IllegalStateException(
-                    "Il provider ${provider.name} non consente questa ricerca (HTTP 451). " +
-                        "Cerca resta aperta: prova un altro provider.", error
+                    Lab155SearchSafety.explainRestrictedProvider(provider.name), error
                 )
             }
-            if (error.code() != 404 || provider !is EndpointManagedProvider) throw error
+            if (!Lab155SearchSafety.canRefreshMissingEndpoint(
+                    error.code(), provider is EndpointManagedProvider)) throw error
             val recovery = ProviderEndpointRegistry.refreshOne(provider)
             if (!recovery.success) throw IllegalStateException(
                 "${provider.name}: HTTP 404, aggiornamento non riuscito (${recovery.message})", error
