@@ -852,8 +852,8 @@ class SearchTvFragment : Fragment() {
             }
             panel.addView(
                 actorSuggestionsGrid,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(118)).apply {
-                    topMargin = dp(8)
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(148)).apply {
+                    topMargin = dp(4)
                 },
             )
         } catch (error: Throwable) {
@@ -917,7 +917,7 @@ class SearchTvFragment : Fragment() {
             }
             panel.addView(
                 directorSuggestionsGrid,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(84)).apply { topMargin = dp(4) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(148)).apply { topMargin = dp(4) },
             )
         } catch (error: Throwable) {
             Log.w(TAG, "Horizontal director grid unavailable, using fallback", error)
