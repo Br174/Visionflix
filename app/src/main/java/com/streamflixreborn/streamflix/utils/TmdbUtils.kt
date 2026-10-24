@@ -52,7 +52,7 @@ object TmdbUtils {
                 imdbId = details.externalIds?.imdbId,
                 genres = details.genres.map { Genre(it.id.toString(), it.name) },
                 directors = DirectorCredits.directorTiles(details.credits?.crew),
-                cast = details.credits?.cast?.map { People(it.id.toString(), it.name, it.profilePath?.w500) } ?: listOf(),
+                cast = details.credits?.cast?.map { People(DirectorCredits.actorIdentity(it.id), it.name, it.profilePath?.w500) } ?: listOf(),
             )
         } catch (_: Exception) { null }
     }
@@ -96,7 +96,8 @@ object TmdbUtils {
                     )
                 },
                 genres = details.genres.map { Genre(it.id.toString(), it.name) },
-                cast = details.credits?.cast?.map { People(it.id.toString(), it.name, it.profilePath?.w500) } ?: listOf(),
+                directors = DirectorCredits.directorTiles(details.credits?.crew),
+                cast = details.credits?.cast?.map { People(DirectorCredits.actorIdentity(it.id), it.name, it.profilePath?.w500) } ?: listOf(),
             )
         } catch (_: Exception) { null }
     }
@@ -185,7 +186,7 @@ object TmdbUtils {
                 imdbId = details.externalIds?.imdbId,
                 genres = details.genres.map { Genre(it.id.toString(), it.name) },
                 directors = DirectorCredits.directorTiles(details.credits?.crew),
-                cast = details.credits?.cast?.map { People(it.id.toString(), it.name, it.profilePath?.w500) } ?: listOf(),
+                cast = details.credits?.cast?.map { People(DirectorCredits.actorIdentity(it.id), it.name, it.profilePath?.w500) } ?: listOf(),
             )
         } catch (_: Exception) { null }
     }
@@ -246,7 +247,8 @@ object TmdbUtils {
                     )
                 },
                 genres = details.genres.map { Genre(it.id.toString(), it.name) },
-                cast = details.credits?.cast?.map { People(it.id.toString(), it.name, it.profilePath?.w500) } ?: listOf(),
+                directors = DirectorCredits.directorTiles(details.credits?.crew),
+                cast = details.credits?.cast?.map { People(DirectorCredits.actorIdentity(it.id), it.name, it.profilePath?.w500) } ?: listOf(),
             )
         } catch (_: Exception) { null }
     }
