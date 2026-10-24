@@ -1,0 +1,24 @@
+MOTORLAB OPERATION CHECKPOINT
+PROJECT=Br174/Visionflix
+OPERATION=LAB162 ADAPTIVE CINEMA LOCAL BRAND LOGO
+DATE=2026-10-24
+CORE_RELEASE=2026.10.22-r38
+BASE_VERIFIED_LAB=lab/visionflix-lab161-adaptive-coverage-20261024
+BASE_VERIFIED_RUN=40111668023
+BASE_VERIFIED_CODE=454
+LAB_BRANCH=lab/visionflix-lab162-adaptive-logo-20261024
+IMPLEMENTATION_SHA=e0e247f30c87c3a58d708014cdc6590a245579a9
+LATEST_TEST_SOURCE_SHA=e846870cd3ab25f7abb763b7d4eba29679f99b03
+SCOPE=New local blue/teal cinema-play vector drawable for AdaptiveCinema provider instead of TMDb logo. ProviderViewHolder loads local icon explicitly. Existing providers/search/player and all other UI remain untouched.
+ASSET=app/src/main/res/drawable/ic_adaptive_cinema_logo.xml
+TEST=app/src/test/java/com/streamflixreborn/streamflix/providers/Lab162AdaptiveLogoTest.kt
+BUILD_WORKFLOW=.github/workflows/build-apks.yml
+VERSION_GUARD=LAB162_CODE_GREATER_THAN_454
+CI_RETRY_RUN=https://github.com/Br174/Visionflix/actions/runs/40115843300
+CI_PREVIOUS_RUN=40115310254 cancelled_on_followup_test_commit
+CI_STATUS_AT_CHECKPOINT=in_progress_no_job_steps_reported
+SIGNED_APK_STATUS=NOT_YET_VERIFIED
+ZIP_STATUS=NOT_YET_VERIFIED
+RELEASE_URL=NONE_VERIFIED
+MAIN_MADRE_PRODUCTION=UNTOUCHED
+NEXT=Check run 40115843300 status, tests, Android signature, Mobile/TV APKs, ZIP and matching prerelease assets; do not announce APK URLs until verified. If failed inspect logs and fix LAB only. Keep LAB161 LAST_GOOD.
