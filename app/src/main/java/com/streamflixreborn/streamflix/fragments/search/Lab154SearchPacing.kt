@@ -17,5 +17,5 @@ internal object Lab154SearchPacing {
         }
     }
     fun candidateLimit(firstPage: Boolean, originatingProvider: Boolean): Int =
-        if (!firstPage) 24 else if (originatingProvider) 16 else 8
+        if (!firstPage) 32 else if (originatingProvider) 24 else 12
 }
