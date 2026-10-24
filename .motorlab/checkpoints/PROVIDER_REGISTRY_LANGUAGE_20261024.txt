@@ -71,3 +71,26 @@ PUBLIC BUILD UNBLOCK 2026-10-24
 - Repository visibility: public (verified through GitHub connector).
 - Public hosted-runner path requested to resume LAB build at zero additional cost.
 - Trigger commit contains checkpoint metadata only; application source remains unchanged from prior LAB checkpoint.
+
+
+LAB BUILD VERIFIED AFTER PUBLIC REPOSITORY SWITCH
+- Repository visibility verified: public.
+- Public GitHub-hosted runner successfully assigned.
+- Authoritative successful LAB run: 40048720479.
+- Successful application-source SHA: f90d8625f64f1324f97b66fd59a205719ab403ee.
+- Version built: 1.7.257 (versionCode 186).
+- Mobile assembleDebug: SUCCESS.
+- TV assembleDebug: SUCCESS.
+- TV package verified: com.br174.visionflix.tv.debug.
+- TV launcher verified: com.streamflixreborn.streamflix.activities.main.MainTvActivity.
+- App label verified: Verlezza Vision.
+- Temporary LAB artifact: Verlezza-Vision-LAB-147, artifact id 12542686176.
+- Artifact digest: sha256:b33aae8371304c70af7f9bf0ea3fd534962c13f8cfe61a67d590541f6078d82e.
+- No MADRE/Downloader publication occurred from this LAB run.
+- IMPORTANT RELEASE BLOCKER: historical signing cache visionflix-debug-keystore-v1 is no longer available to Actions.
+- Historical stable certificate remains 55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e.
+- LAB build used explicit temporary test-only signing mode lab-ephemeral; temporary certificate MUST NOT be promoted or published as an update.
+- CANDIDATA/MADRE remain fail-closed when stable signing key is unavailable.
+- Old signed APKs do not contain the private signing key and cannot be used to recreate it.
+- Next safe step: attempt recovery of the historical keystore from GitHub Actions Caches UI or an external backup. If unavailable, a new permanent signing identity requires an explicit one-time reinstall/migration decision.
+- main/MADRE remain untouched by the feature implementation.
