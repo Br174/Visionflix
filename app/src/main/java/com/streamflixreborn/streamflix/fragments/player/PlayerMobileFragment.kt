@@ -1536,10 +1536,19 @@ class PlayerMobileFragment : Fragment() {
                 )
 
                 val lang = UserPreferences.currentProvider?.language?.substringBefore("-")
-                if (lang == "es") {
-                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                        .setPreferredAudioLanguage("spa")
-                        .build()
+                val preferredAudioLanguage = when (lang) {
+                    "it" -> "ita"
+                    "fr" -> "fra"
+                    "de" -> "deu"
+                    "es" -> "spa"
+                    "en" -> "eng"
+                    else -> lang
+                }
+                if (!preferredAudioLanguage.isNullOrBlank()) {
+                    player.trackSelectionParameters =
+                        player.trackSelectionParameters.buildUpon()
+                            .setPreferredAudioLanguage(preferredAudioLanguage)
+                            .build()
                 }
 
                 mediaSession = MediaSession.Builder(requireContext(), player)
