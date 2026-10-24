@@ -38,7 +38,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.jsoup.Jsoup
 
-class StreamingCommunityProvider(private val _language: String? = null) : Provider {
+class StreamingCommunityProvider(private val _language: String? = null) : EndpointManagedProvider {
 
     private val mutex = Mutex()
     private val totalCounts = mutableMapOf<String, Int>()
@@ -54,7 +54,9 @@ class StreamingCommunityProvider(private val _language: String? = null) : Provid
 
     private val DEFAULT_DOMAIN: String = "streamingunity.cc"
     private val BLOCKED_DOMAINS = setOf("streamingcommunityz.green", "streamingunity.club", "streamingunity.bike", "streamingcommunityz.buzz")
-    override val baseUrl = DEFAULT_DOMAIN
+    override val builtInBaseUrl: String = "https://streamingunity.cc"
+    override val baseUrl: String
+        get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
     private var _domain: String? = null
     private var domain: String
         get() {
@@ -99,6 +101,18 @@ class StreamingCommunityProvider(private val _language: String? = null) : Provid
         _serviceLanguage = null
         _serviceDomain = null
         version = ""
+    }
+
+    override fun onEndpointSelectionChanged() {
+        if (language == "it") {
+            val managed = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
+            val host = runCatching { java.net.URI(managed).host }.getOrNull()
+            if (!host.isNullOrBlank()) {
+                _domain = host
+                UserPreferences.streamingcommunityDomain = host
+            }
+        }
+        invalidateService()
     }
 
     private suspend fun getService(): StreamingCommunityService {
