@@ -1,0 +1,21 @@
+MotorLab LAB153 · Verlezza Vision · 2026-10-24
+STATE=LAB_IN_PROGRESS
+LAB_BRANCH=lab/visionflix-lab153-sticky-filter-fast-global-20261024
+BASE=lab/visionflix-lab152-global-wall-provider-links-20261024
+HEAD_APP=0102f80e32c23156a329c6141a7facf3b77607f8
+PR_DRAFT=https://github.com/Br174/Visionflix/pull/5
+CI_PENDING=https://github.com/Br174/Visionflix/actions/runs/40077341054
+
+USER_APPROVED_UI:
+Persistent dropdown bottom lip inside existing filter panel, exactly six controls ordered:
+Cerca, Tutti, Film, Serie, Nuovi/Vecchi, borderless arrow.
+Existing TV advanced controls retained.
+Global search starts with home provider; metadata/background pages, bounded progressive prefetch, chronological sorting, dedup and preferred source.
+Film/Serie labels shown on grid metadata.
+Maintain exact movie card return after detail.
+
+ADDED_ROW_JUMP:
+At the far right of EACH visible grid row show an icon-only up-arrow. First rightward navigation gets focus to this arrow. Press OK on the row arrow to move focus to header dropdown arrow WITHOUT opening it. Press OK on header arrow opens filters. Down from header arrow resumes the source poster row even hundreds of posters below; no reset to first item on applying filters.
+Implementation: SearchTvFragment + fragment_search_tv_safe.xml overlay rail, SearchRowShortcut helper, Lab153NavigationTest seven pure tests, workflow LAB153 regression step.
+Status: code committed; GitHub Action pending; APK/ZIP not verified; real TV remote test pending. Never report build pass until verified.
+Do NOT merge into main or production. Preserve signing family and old releases. No additional cost.
