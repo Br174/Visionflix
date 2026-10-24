@@ -65,3 +65,9 @@ PROTECTED
 - main/MADRE/production unchanged.
 - No public Downloader asset changed.
 - No APK produced from this LAB yet.
+
+
+PUBLIC BUILD UNBLOCK 2026-10-24
+- Repository visibility: public (verified through GitHub connector).
+- Public hosted-runner path requested to resume LAB build at zero additional cost.
+- Trigger commit contains checkpoint metadata only; application source remains unchanged from prior LAB checkpoint.
