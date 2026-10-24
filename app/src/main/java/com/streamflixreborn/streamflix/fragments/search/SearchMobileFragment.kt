@@ -347,7 +347,7 @@ class SearchMobileFragment : Fragment() {
                 requireContext(),
                 SavedSearchFilterState(
                     query = binding.etSearch.text?.toString().orEmpty(),
-                    globalSearch = binding.swGlobalSearch.isChecked,
+                    globalSearch = false,
                     type = when (binding.spContentType.selectedItemPosition) {
                         1 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.MOVIE
                         2 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.TV
@@ -382,7 +382,7 @@ class SearchMobileFragment : Fragment() {
         if (_binding == null || !isAdded) return
         val saved = SearchFilterPersistence.load(requireContext())
         binding.etSearch.setText(saved.query)
-        binding.swGlobalSearch.isChecked = saved.globalSearch
+        binding.swGlobalSearch.isChecked = false
         binding.spContentType.setSelection(
             when (saved.type) {
                 com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.MOVIE -> 1
