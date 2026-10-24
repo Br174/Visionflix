@@ -83,6 +83,12 @@ object ProviderEndpointRegistry {
         }
     }
 
+    fun invalidateRemoteCache() {
+        runCatching {
+            prefs().edit().putLong(KEY_REFRESH_AT, 0L).apply()
+        }
+    }
+
     fun cachedRemoteEntries(language: String? = null): List<RemoteEntry> {
         val raw = runCatching { prefs().getString(KEY_REMOTE, null) }.getOrNull() ?: return emptyList()
         return runCatching {
@@ -205,8 +211,9 @@ object ProviderEndpointRegistry {
     }
 
     private fun readRemoteSource(source: String): List<String> {
+        val fetchSource = normalizeSourceUrl(source)
         val request = Request.Builder()
-            .url(source)
+            .url(fetchSource)
             .header("User-Agent", "Mozilla/5.0 (Android) VerlezzaVision/1.0")
             .build()
 
@@ -313,6 +320,19 @@ object ProviderEndpointRegistry {
                 alive to finalUrl
             }
         }.getOrDefault(false to null)
+    }
+
+    private fun normalizeSourceUrl(raw: String): String {
+        val value = raw.trim()
+        return runCatching {
+            val uri = URI(value)
+            if (uri.host.equals("pastebin.com", ignoreCase = true) && !uri.path.startsWith("/raw/")) {
+                val id = uri.path.trim('/').substringBefore('/')
+                if (id.isNotBlank()) "https://pastebin.com/raw/$id" else value
+            } else {
+                value
+            }
+        }.getOrDefault(value)
     }
 
     private fun normalizeUrl(raw: String): String? {
