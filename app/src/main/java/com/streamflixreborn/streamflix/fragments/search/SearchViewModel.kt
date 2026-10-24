@@ -1019,7 +1019,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         // Discover metadata concurrently rather than blocking the local provider's
         // immediate text results. All displayed items still pass their filters.
         var metadataLookupError: Exception? = null
-        val metadataTask = if (needsGlobalMetadata) async {
+        val metadataTask: kotlinx.coroutines.Deferred<List<AppAdapter.Item>>? = if (needsGlobalMetadata) async {
             // An HTTP 451 / blocked metadata endpoint is NOT an unhandled
             // child-coroutine failure. Keep the app-level Cerca screen alive.
             try {
@@ -1029,7 +1029,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             } catch (error: Exception) {
                 metadataLookupError = error
                 Log.w("SearchViewModel", "LAB155 filtered metadata unavailable, continuing safely", error)
-                emptyList()
+                emptyList<AppAdapter.Item>()
             }
         } else null
 
