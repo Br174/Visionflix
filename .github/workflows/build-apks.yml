@@ -103,6 +103,11 @@ jobs:
               if [ "$APP_VERSION_CODE" -le 454 ]; then APP_VERSION_CODE=455; fi
               test "$APP_VERSION_CODE" -gt 454
             fi
+            # LAB163 permanent downloader is an install-in-place update over LAB162 456.
+            if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab163-permanent-downloader-20261024' ]; then
+              if [ "$APP_VERSION_CODE" -le 456 ]; then APP_VERSION_CODE=457; fi
+              test "$APP_VERSION_CODE" -gt 456
+            fi
           else
             LATEST_TAG="$(curl --fail --silent --show-error --retry 4 --retry-all-errors --retry-delay 2 --location \
               'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
@@ -618,3 +623,52 @@ jobs:
       - name: Progress 100% - complete
         shell: bash
         run: echo "[UAB_PROGRESS=100] Visionflix UAB-CORE-V1 completato per stage $UAB_STAGE"
+
+  # Independent last stage: only after signed APK build and immutable LAB prerelease.
+  # Cross-branch one-writer lock prevents races between LAB versions.
+  publish_fixed_lab_downloader:
+    name: Update fixed LAB Downloader link (no main or MADRE changes)
+    needs: build
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/lab/visionflix-') }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: visionflix-lab-fixed-downloader-channel
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout verified LAB branch
+        uses: actions/checkout@v4
+
+      - name: Check signed opt-in and script syntax
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt ]; then
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          grep -Fxq 'AUTO_UPDATE_FIXED_LAB_URL=true' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
+          grep -Fxq 'PROMOTE_MAIN_MADRE_PRODUCTION=false' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
+          grep -Fxq 'PROTECTED_OLD_CODES=3875230,4768904,3938567' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
+          grep -Fxq 'AUTO_PUBLISH_VERIFIED_LAB=true' .motorlab/LAB_AUTOPUBLISH_POLICY.txt
+          bash -n .github/scripts/publish-fixed-lab-downloader.sh
+          echo 'enabled=true' >> "$GITHUB_OUTPUT"
+
+      - name: Download THIS build's verified APKs and checksums
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: Verlezza-Vision-LAB-${{ github.run_number }}
+          path: ${{ runner.temp }}/lab-channel-input
+
+      - name: Promote newer signed LAB APK to unchanged public URL
+        if: steps.gate.outputs.enabled == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_DIR: ${{ runner.temp }}/lab-channel-input
+        run: bash .github/scripts/publish-fixed-lab-downloader.sh
+
