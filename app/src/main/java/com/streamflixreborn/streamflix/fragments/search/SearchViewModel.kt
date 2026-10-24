@@ -384,7 +384,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                     "Configurala nelle Impostazioni, non usare la chiave 'dummy'."
             )
         }
-        val metadataEnabled = needsTmdbMetadata && hasMetadata
+        val lightweightYearQuery = Lab164SearchMatchPolicy.providerFirstYearQuery(query, filters)
+        val metadataEnabled = needsTmdbMetadata && hasMetadata && !lightweightYearQuery
 
         suspend fun browseFilteredCatalog(): List<AppAdapter.Item> {
             if (page > 1) return Lab154SearchPacing.providerPages(page)
@@ -406,7 +407,26 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
         if (!metadataEnabled) {
             val local = applyProviderFilters(directResults, filters)
-            if (needsTmdbMetadata && local.isEmpty()) {
+            if (lightweightYearQuery && local.isEmpty() && directResults.isNotEmpty() && hasMetadata) {
+                // A source can omit release year even when its title is available.
+                // Verify only the already retrieved provider results against a
+                // single small TMDb text search, never a large multi-page discover.
+                val metadata = sharedMetadata ?: try {
+                    searchTmdbYearCandidates(query, filters, provider.language)
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    Log.w("SearchViewModel", "Limited TMDb year verification unavailable", error)
+                    emptyList()
+                }
+                val keys = metadata.mapNotNull(::filterMatchKey).toSet()
+                if (keys.isNotEmpty()) {
+                    return@coroutineScope applyProviderFilters(
+                        directResults, filters.copy(year=null,dateFrom=null,dateTo=null),
+                        trustMetadata=true
+                    ).filter { itemMatchesMetadata(it, keys) }
+                }
+            }
+            if (needsTmdbMetadata && local.isEmpty() && !lightweightYearQuery) {
                 throw IllegalStateException(
                     "Non ci sono generi verificabili nei risultati del provider. " +
                         "Per questi filtri serve la chiave TMDb gratuita nelle Impostazioni."
@@ -628,6 +648,41 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private fun normalizeFilters(filters: AdvancedSearchFilters): AdvancedSearchFilters {
         val hasRange = !filters.dateFrom.isNullOrBlank() || !filters.dateTo.isNullOrBlank()
         return if (hasRange) filters.copy(year = null) else filters
+    }
+
+    /**
+     * Bounded validation for a typed title + date/year. No Discover fan-out:
+     * limit requests to the first TMDb text page and do not launch per-provider
+     * copies when a shared global metadata result is already present.
+     */
+    private suspend fun searchTmdbYearCandidates(
+        query: String,
+        filters: AdvancedSearchFilters,
+        language: String,
+    ): List<AppAdapter.Item> {
+        if (query.isBlank()) return emptyList()
+        return TMDb3.Search.multi(query=query, page=1, language=language).results
+            .mapNotNull { result ->
+                when (result) {
+                    is TMDb3.Movie -> {
+                        if (filters.type == AdvancedSearchFilters.ContentType.TV ||
+                            !matchesYearFilter(result.releaseDate, filters)) null
+                        else Movie(
+                            id=result.id.toString(), title=result.title,
+                            released=result.releaseDate
+                        ) as AppAdapter.Item
+                    }
+                    is TMDb3.Tv -> {
+                        if (filters.type == AdvancedSearchFilters.ContentType.MOVIE ||
+                            !matchesYearFilter(result.firstAirDate, filters)) null
+                        else TvShow(
+                            id=result.id.toString(), title=result.name,
+                            released=result.firstAirDate
+                        ) as AppAdapter.Item
+                    }
+                    else -> null
+                }
+            }
     }
 
     private suspend fun searchTmdbAdvanced(
@@ -1083,7 +1138,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             // An HTTP 451 / blocked metadata endpoint is NOT an unhandled
             // child-coroutine failure. Keep the app-level Cerca screen alive.
             try {
-                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
+                if (Lab164SearchMatchPolicy.providerFirstYearQuery(query, advancedFilters))
+                    searchTmdbYearCandidates(query, advancedFilters, currentLanguage)
+                else
+                    searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
             } catch (cancel: kotlinx.coroutines.CancellationException) {
                 throw cancel
             } catch (error: Exception) {
