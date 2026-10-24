@@ -81,6 +81,19 @@ class DirectorCreditsTest {
         assertEquals(listOf(3, 2), result.mapNotNull { DirectorCredits.directedMovieId(it.id) })
     }
 
+    @Test fun conflictingSourceDirectorNamesCannotBeMislabeled() {
+        val source = listOf(People("provider-9", "Vero regista"))
+        val unrelated = DirectorCredits.directorTiles(
+            listOf(crew(13, "Director", "Altro regista"))
+        )
+        assertTrue(DirectorCredits.reconcileWithSource(source, unrelated).isEmpty())
+        assertEquals("Vero regista",
+            DirectorCredits.reconcileWithSource(source,
+                DirectorCredits.directorTiles(listOf(crew(14, "Director", "Vero regista")))
+            ).single().name)
+        assertEquals(unrelated, DirectorCredits.reconcileWithSource(emptyList(), unrelated))
+    }
+
     @Test fun malformedAndUnverifiedIdsAreRejected() {
         assertNull(DirectorCredits.directorPersonId("director-abc"))
         assertNull(DirectorCredits.directorPersonId("tmdb-director:0"))
