@@ -3,6 +3,7 @@ package com.streamflixreborn.streamflix.adapters.viewholders
 import android.content.Intent
 import android.graphics.drawable.PictureDrawable
 import android.view.View
+import android.widget.Toast
 import android.widget.ImageView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewbinding.ViewBinding
@@ -40,6 +41,10 @@ class ProviderViewHolder(
     private fun displayMobileItem(binding: ItemProviderMobileBinding) {
         binding.root.apply {
             setOnClickListener {
+                if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointHealthy) {
+                    Toast.makeText(context, "Provider Pastebin non disponibile", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
                 if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointOverride.isNullOrBlank()) {
                     ProviderEndpointRegistry.selectRemote(provider.provider.name, provider.endpointOverride)
                 } else {
@@ -77,6 +82,10 @@ class ProviderViewHolder(
     private fun displayTvItem(binding: ItemProviderTvBinding) {
         binding.root.apply {
             setOnClickListener {
+                if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointHealthy) {
+                    Toast.makeText(context, "Provider Pastebin non disponibile", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
                 if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointOverride.isNullOrBlank()) {
                     ProviderEndpointRegistry.selectRemote(provider.provider.name, provider.endpointOverride)
                 } else {
