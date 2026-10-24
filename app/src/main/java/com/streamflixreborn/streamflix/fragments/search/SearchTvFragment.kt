@@ -1190,8 +1190,7 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun stabilizeStandardResultGrid(query: String, advanced: Boolean) {
-        currentGridColumns = if (query.isBlank() && !advanced) 5 else 6
-        vgvSearch.setNumColumns(currentGridColumns)
+        ensureGridColumns(if (query.isBlank() && !advanced) 5 else 6)
     }
 
     private fun updateGlobalSwitch() {
@@ -1323,6 +1322,7 @@ class SearchTvFragment : Fragment() {
             ?: 0
         rowJumpResumePosition = preferredPosition
         rowJumpResumeLayout = null
+        afterFilterReturnPending = true
         pendingFocusFirstResult = false
         returnPosterId = null
         setFilterPanelExpanded(false, true)
@@ -1354,10 +1354,16 @@ class SearchTvFragment : Fragment() {
         return dropdownArrow?.requestFocus() ?: llGlobalSearch.requestFocus()
     }
 
+    private fun ensureGridColumns(requested: Int) {
+        val columns = requested.coerceIn(5, 6)
+        if (columns == currentGridColumns) return
+        currentGridColumns = columns
+        vgvSearch.setNumColumns(columns)
+    }
+
     private fun displaySearch(list: List<AppAdapter.Item>, hasMore: Boolean) {
         val vm = searchViewModel ?: return
-        currentGridColumns = if (vm.query.isEmpty() && !vm.advancedFilters.isActive) 5 else 6
-        vgvSearch.setNumColumns(currentGridColumns)
+        ensureGridColumns(if (vm.query.isEmpty() && !vm.advancedFilters.isActive) 5 else 6)
         appAdapter.submitList(list.onEach { item ->
             when (item) {
                 is Genre -> item.itemType = AppAdapter.Type.GENRE_GRID_TV_ITEM
@@ -1375,6 +1381,10 @@ class SearchTvFragment : Fragment() {
         searchHeader.post {
             updateGridTopPadding()
             restorePosterIfNeeded()
+            if (afterFilterReturnPending && appAdapter.items.isNotEmpty()) {
+                afterFilterReturnPending = false
+                restoreRowJumpPosition()
+            }
             refreshRowJumpArrows()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
         }
@@ -1384,8 +1394,7 @@ class SearchTvFragment : Fragment() {
         // LAB152: same native TV poster grid as the single-provider search.
         // No per-provider headers, just one deduplicated wall.
         val vm = searchViewModel ?: return
-        currentGridColumns = 6
-        vgvSearch.setNumColumns(currentGridColumns)
+        ensureGridColumns(6)
         appAdapter.submitList(posters.onEach { item ->
             when (item) {
                 is Movie -> item.itemType = AppAdapter.Type.MOVIE_GRID_TV_ITEM
@@ -1398,6 +1407,11 @@ class SearchTvFragment : Fragment() {
         searchHeader.post {
             updateGridTopPadding()
             restorePosterIfNeeded()
+            if (afterFilterReturnPending && appAdapter.items.isNotEmpty()) {
+                afterFilterReturnPending = false
+                restoreRowJumpPosition()
+            }
+            refreshRowJumpArrows()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
         }
     }
@@ -1413,7 +1427,7 @@ class SearchTvFragment : Fragment() {
         val row = SearchRowShortcut.rowOf(position, currentGridColumns)
         if (row < 0) return false
         // The arrow stays hidden until pressing RIGHT from the last card.
-        refreshRowJumpArrows()
+        updateVisibleRowJumpArrows()
         val arrow = rowJumpArrows[row] ?: return false
         rememberRowJump(row)
         arrow.visibility = View.VISIBLE
