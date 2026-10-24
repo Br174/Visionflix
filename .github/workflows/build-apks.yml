@@ -410,6 +410,8 @@ jobs:
 
       - name: LAB164 speed, filtered coverage and existing behavior regression tests
         if: github.ref == 'refs/heads/lab/visionflix-lab164-search-speed-filter-recovery-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
