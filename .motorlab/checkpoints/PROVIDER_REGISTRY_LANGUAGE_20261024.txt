@@ -47,11 +47,15 @@ BUILD_EVIDENCE
 - Job: 120725995757
 - jobs.steps=null, logs_url=null.
 - Previous explicit rerun of run 40045231539 produced the same zero-step result.
+- Watchdog rerun of latest run 40045451532, attempt 2, also failed before any workflow step.
+- Attempt 2 job: 120729369653; jobs.steps=null, logs_url=null.
+- GitHub public status reported Actions operational at the time of this check.
+- Most compatible remaining causes are repository/account hosted-runner availability or private-repository Actions quota/billing limits; the connector cannot read the owner's billing counter.
 - Therefore Kotlin/Gradle compilation has NOT executed and source is NOT build-verified.
 - Do not promote to main/CANDIDATA/MADRE until a real runner executes compile/build tests.
 
 NEXT_SAFE_STEP
-1. Re-run LAB build when GitHub hosted runner becomes available.
+1. Resolve/confirm private-repository GitHub-hosted runner availability or included Actions quota, then re-run LAB build.
 2. If compile errors appear, fix only LAB and rerun.
 3. Test Mobile and TV provider sections, search scope, Pastebin endpoint switching, auto-heal and language audio behavior.
 4. Only after successful build/tests create clean production candidate from BASE_MAIN.
