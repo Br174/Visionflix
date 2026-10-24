@@ -113,6 +113,27 @@ class DirectorCreditsTest {
         assertEquals(emptyList<People>(), DirectorCredits.directorTiles(null))
     }
 
+    @Test fun nestedTmdbFilmActorFilmAndSeriesKeepTheirCatalogIdentity() {
+        val actorId = DirectorCredits.actorIdentity(135)
+        assertEquals(135, DirectorCredits.actorPersonId(actorId))
+        assertNull(DirectorCredits.actorPersonId("135"))
+        assertNull(DirectorCredits.actorPersonId("tmdb-actor:0"))
+        assertNull(DirectorCredits.actorPersonId("tmdb-actor:abc"))
+
+        val source = listOf(
+            com.streamflixreborn.streamflix.models.Movie(id = "902", title = "Film da attore"),
+            com.streamflixreborn.streamflix.models.TvShow(id = "903", title = "Serie da attore"),
+        )
+        val routed = DirectorCredits.preserveCatalogFilmography(source)
+        assertEquals(listOf("tmdb-movie:902", "tmdb-tv:903"),
+            routed.map { it.id })
+        assertEquals(902, DirectorCredits.catalogMovieId(routed[0].id))
+        assertEquals(903, DirectorCredits.catalogTvId(routed[1].id))
+        assertEquals(listOf("902", "903"), source.map { it.id })
+        assertNull(DirectorCredits.catalogMovieId("tmdb-movie:oops"))
+        assertNull(DirectorCredits.catalogTvId("903"))
+    }
+
     @Test fun malformedAndUnverifiedIdsAreRejected() {
         assertNull(DirectorCredits.directorPersonId("director-abc"))
         assertNull(DirectorCredits.directorPersonId("tmdb-director:0"))
