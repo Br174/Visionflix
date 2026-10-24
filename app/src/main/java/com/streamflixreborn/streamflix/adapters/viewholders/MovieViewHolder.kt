@@ -86,6 +86,7 @@ import com.streamflixreborn.streamflix.utils.toActivity
 import java.util.Locale
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.ProviderSelection
 import android.view.KeyEvent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -179,11 +180,7 @@ class MovieViewHolder(
     }
 
     private fun checkProviderAndRun(action: () -> Unit) {
-        if (!movie.providerName.isNullOrBlank() && movie.providerName != UserPreferences.currentProvider?.name) {
-            Provider.providers.keys.find { it.name == movie.providerName }?.let {
-                UserPreferences.currentProvider = it
-            }
-        }
+        ProviderSelection.select(movie.providerName, movie.providerEndpoint)
         action()
     }
 
