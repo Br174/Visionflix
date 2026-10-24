@@ -9,7 +9,6 @@ import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.models.Video
 import com.streamflixreborn.streamflix.utils.SourcePreferences
-import java.net.URI
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -32,22 +31,15 @@ object AdaptiveCinemaProvider : EndpointManagedProvider {
     override val builtInBaseUrl = SourcePreferences.DEFAULT_WEB_SOURCE
     override val baseUrl: String
         get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
-    override val logo: String = "https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long-1b5c50d0c1ce5b910374c408d5bc5fdd2f9f5e9be7fc5a76c54c4e812da9f5b.svg"
+    override val logo: String = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Tmdb.new.logo.svg/1280px-Tmdb.new.logo.svg.png"
 
     private const val MAX_SOURCES = 6
     private const val MAX_CARDS = 24
     private const val FETCH_TIMEOUT = 5_000
     private const val UA = "Mozilla/5.0 (Android; Verlezza Vision) AppleWebKit/537.36"
 
-    private fun publicUrl(raw: String): Boolean {
-        val u = runCatching { URI(raw) }.getOrNull() ?: return false
-        val host = u.host?.lowercase()?.removePrefix("www.") ?: return false
-        if (u.scheme !in listOf("https", "http") || u.userInfo != null) return false
-        if (host == "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false
-        if (host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) return false
-        if (host.contains(":")) return false
-        return true
-    }
+    private fun publicUrl(raw: String): Boolean = AdaptiveSourceRules.isPublicHttpUrl(raw)
+
 
     private suspend fun activeSites(): List<String> {
         val entries = ProviderEndpointRegistry.refreshIfNeeded(Provider.providers.keys)
@@ -68,7 +60,7 @@ object AdaptiveCinemaProvider : EndpointManagedProvider {
         withTimeoutOrNull(FETCH_TIMEOUT.toLong() + 1_000L) {
             runCatching {
                 Jsoup.connect(url).userAgent(UA).timeout(FETCH_TIMEOUT)
-                    .followRedirects(true).maxBodySize(512 * 1024).get()
+                    .followRedirects(false).maxBodySize(512 * 1024).get()
             }.getOrNull()?.takeIf { publicUrl(it.location()) }
         }
     }
@@ -80,7 +72,7 @@ object AdaptiveCinemaProvider : EndpointManagedProvider {
             val title = a.attr("title").ifBlank { a.text() }.trim()
             val url = a.absUrl("href")
             if (title.length !in 3..140 || !publicUrl(url)) return@mapNotNull null
-            if (URI(url).host != URI(doc.location()).host) return@mapNotNull null
+            if (!AdaptiveSourceRules.matchesSameHost(doc.location(), url)) return@mapNotNull null
             val poster = element.selectFirst("img")?.let { img ->
                 img.absUrl("data-src").ifBlank { img.absUrl("src") }
             }
