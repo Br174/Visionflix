@@ -6,6 +6,7 @@ import android.widget.Spinner
 import com.streamflixreborn.streamflix.BuildConfig
 import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
+import com.streamflixreborn.streamflix.providers.TmdbProvider
 import com.streamflixreborn.streamflix.utils.UserPreferences
 
 internal object AdvancedSearchUi {
@@ -89,7 +90,10 @@ internal object AdvancedSearchUi {
             platform = platform?.let { AdvancedSearchFilters.PlatformFilter.values().getOrElse(it.selectedItemPosition) { AdvancedSearchFilters.PlatformFilter.ALL } } ?: AdvancedSearchFilters.PlatformFilter.ALL,
         )
 
-        if (filters.isActive && !hasUsableTmdbKey()) {
+        val needsTmdb = UserPreferences.currentProvider is TmdbProvider ||
+            filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
+            filters.platform != AdvancedSearchFilters.PlatformFilter.ALL
+        if (needsTmdb && !hasUsableTmdbKey()) {
             throw IllegalArgumentException(
                 "Per usare i filtri inserisci una chiave TMDb valida in Impostazioni → Contenuti → Chiave API TMDb"
             )
@@ -149,7 +153,7 @@ internal object AdvancedSearchUi {
         ?.let { years[it - 1] }
 
     private fun hasUsableTmdbKey(): Boolean {
-        if (UserPreferences.tmdbApiKey.isNotBlank()) return true
+        if (UserPreferences.tmdbApiKey.isNotBlank() && !UserPreferences.tmdbApiKey.equals("dummy", ignoreCase = true)) return true
         val embedded = BuildConfig.TMDB_API_KEY.trim()
         return embedded.isNotBlank() && !embedded.equals("dummy", ignoreCase = true)
     }
