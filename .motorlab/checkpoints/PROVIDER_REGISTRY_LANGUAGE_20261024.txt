@@ -1,0 +1,63 @@
+MOTORLAB CHECKPOINT — VERLEZZA VISION PROVIDER REGISTRY / LANGUAGE
+DATE=2026-10-24
+STATUS=LAB_IMPLEMENTED_BUILD_BLOCKED_EXTERNALLY
+MOTORLAB_RELEASE=2026.10.22-r38
+BASE_MAIN=c142c9544cb2d25536faa9534ca80d58339e65d4
+LAB_BRANCH=lab/provider-registry-language-20261024
+LAB_HEAD=0e2028639a5513a9152bfbfeac5fa451f2bdae69
+MAIN_UNCHANGED=true
+
+IMPLEMENTED
+- Provider originali and Provider Pastebin separated; TV uses two real rows.
+- Pastebin/Web remote registry with legacy plain-URL input plus structured name|url|language|engine|logo|on and JSON.
+- Non-raw pastebin.com links normalized to /raw/.
+- Remote entries map only to supported engines; unsupported URLs are not presented as functional providers.
+- Italian endpoint-managed engines: StreamingCommunity, CB01, Altadefinizione01, GuardaFlix, GuardaSerie, AnimeWorld, AnimeUnity, AnimeSaturn.
+- Remote health probe, endpoint cache, LAST_GOOD, rollback chain and serialized refresh mutex.
+- Automatic refresh at application startup and periodic refresh with WorkManager.
+- Pluto TV It and Vavoo It retain their native remote-source behavior.
+- Single-provider search no longer invokes hidden multi-provider WebSourceFallback.
+- Global search includes original and healthy Pastebin providers for the current language.
+- Remote search results retain exact provider endpoint when opened.
+- Global-search mode is no longer persisted between search sessions.
+- Advanced filters use TMDb as metadata verification while final results remain from the selected provider.
+- Language boundary is preserved across original providers, Pastebin providers and fallback.
+- HLS master playlists with explicit audio tracks are rejected when target-language audio is absent.
+- Player prefers current section audio language (IT/FR/DE/ES/EN).
+- Old Italiano search filter relabeled as original-language filter; it is separate from required playback audio language.
+- Web/Pastebin sources can be added/removed from Settings.
+
+PASTEBIN_DEFAULT
+URL=https://pastebin.com/raw/KgQ4jTy6
+CURRENT_LINES=14
+LEGACY_MAPPABLE_WITH_CURRENT_ITALIAN_ENGINES=9
+CURRENT_UNSUPPORTED_LEGACY_URLS=5
+
+STATIC_FIXES_COMPLETED
+- Fixed stale matchesRequestedYear reference to matchesYearFilter.
+- Removed obsolete URI-dependent fallback parser after registry unification.
+- Fixed endpoint health URL default-port handling.
+- Preserved AnimeWorld stable logo.
+- Added registry refresh mutex.
+
+BUILD_EVIDENCE
+- Workflow: UAB-CORE Visionflix Mobile and TV adapter
+- Latest source run: 40045451532 on LAB_HEAD
+- Result: failure before any workflow step.
+- Job: 120725995757
+- jobs.steps=null, logs_url=null.
+- Previous explicit rerun of run 40045231539 produced the same zero-step result.
+- Therefore Kotlin/Gradle compilation has NOT executed and source is NOT build-verified.
+- Do not promote to main/CANDIDATA/MADRE until a real runner executes compile/build tests.
+
+NEXT_SAFE_STEP
+1. Re-run LAB build when GitHub hosted runner becomes available.
+2. If compile errors appear, fix only LAB and rerun.
+3. Test Mobile and TV provider sections, search scope, Pastebin endpoint switching, auto-heal and language audio behavior.
+4. Only after successful build/tests create clean production candidate from BASE_MAIN.
+5. Preserve normal TV signing/package/launcher/version checks and Downloader 3875230 publication rules.
+
+PROTECTED
+- main/MADRE/production unchanged.
+- No public Downloader asset changed.
+- No APK produced from this LAB yet.
