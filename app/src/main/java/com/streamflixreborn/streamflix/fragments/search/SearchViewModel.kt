@@ -987,7 +987,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 displayName = target.displayName,
             )
         }.toMutableList()
-        _state.emit(globalWallState(mutableResults.toList()))
+        _state.emit(globalWallState(mutableResults.toList(), hasMore = false))
 
         val stateComparator = compareBy<ProviderResult> { providerResult ->
             when (val state = providerResult.state) {
@@ -1065,7 +1065,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                     // Batch UI updates for a fluid poster wall instead of rebuilding
                                     // RecyclerView on every individual provider completion.
                                     if (completedTargets == 1 || completedTargets % 3 == 0 || completedTargets == targets.size) {
-                                        _state.emit(globalWallState(mutableResults.toList()))
+                                        _state.emit(globalWallState(mutableResults.toList(), hasMore = completedTargets == targets.size))
                                     }
                                 }
                             }
@@ -1102,9 +1102,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val metadata = if (needsMetadata && tmdbConfigured()) {
                 searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, nextPage)
             } else null
-            val latest = existing.providerResults.associateBy { it.displayName }
-            val updated = currentTargets.map { target ->
-                latest[target.displayName] ?: ProviderResult(target.provider, ProviderResult.State.Loading, target.displayName)
+            // Result positions remain in target order; distinct mirrors can share the same display name.
+            val updated = currentTargets.mapIndexed { index, target ->
+                existing.providerResults.getOrNull(index)
+                    ?: ProviderResult(target.provider, ProviderResult.State.Loading, target.displayName)
             }.toMutableList()
             val gate = Semaphore(3)
             val mergeMutex = Mutex()
