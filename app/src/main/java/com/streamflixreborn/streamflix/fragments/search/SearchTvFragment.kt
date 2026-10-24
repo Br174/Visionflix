@@ -1012,12 +1012,6 @@ class SearchTvFragment : Fragment() {
         if (filters.isActive) {
             isGlobalSearchChecked = false
             updateGlobalSwitch()
-            if (UserPreferences.currentProvider !is TmdbProvider) {
-                val language = UserPreferences.currentProvider?.language
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "it"
-                UserPreferences.currentProvider = TmdbProvider(language)
-            }
             stabilizeStandardResultGrid(query, advanced = true)
             vm.searchAdvanced(query, filters)
             collapseFiltersAndFocusResults()
