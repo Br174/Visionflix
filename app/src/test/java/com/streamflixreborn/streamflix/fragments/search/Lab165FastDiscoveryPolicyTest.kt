@@ -39,6 +39,14 @@ class Lab165FastDiscoveryPolicyTest {
         assertEquals(24, Lab165FastDiscoveryPolicy.candidateLimit(24, "francia", null, null, 1))
     }
 
+    @Test fun everyDirectorAndActorSortKeepsOriginalCandidateSelection() {
+        for (sort in SortFilter.entries) {
+            assertEquals(sort, select(sort, director = "42"))
+            assertEquals(sort, select(sort, actor = "24"))
+            assertEquals(sort, select(sort, actor = "24", director = "42"))
+        }
+    }
+
     @Test fun noTextFirstPageLimitsFanOutButDoesNotDropSecondPageOrPeople() {
         assertEquals(12, Lab165FastDiscoveryPolicy.candidateLimit(24, "", null, null, 1))
         assertEquals(12, Lab165FastDiscoveryPolicy.candidateLimit(12, "", null, null, 1))
