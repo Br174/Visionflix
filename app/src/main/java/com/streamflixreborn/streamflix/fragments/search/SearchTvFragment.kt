@@ -864,6 +864,26 @@ class SearchTvFragment : Fragment() {
             event.action == KeyEvent.ACTION_DOWN && filterPanelExpanded &&
                 code == KeyEvent.KEYCODE_DPAD_RIGHT
         }
+        // Editable person fields keep their suggestions on DOWN, but never
+        // leak to the poster wall on RIGHT and remain reachable in reverse.
+        actor.setOnKeyListener { _, code, event ->
+            if (event.action != KeyEvent.ACTION_DOWN || !filterPanelExpanded) false
+            else when (code) {
+                KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                KeyEvent.KEYCODE_DPAD_LEFT -> to.requestFocus()
+                KeyEvent.KEYCODE_DPAD_DOWN -> focusPersonCircle(actorSuggestionsGrid)
+                else -> false
+            }
+        }
+        director.setOnKeyListener { _, code, event ->
+            if (event.action != KeyEvent.ACTION_DOWN || !filterPanelExpanded) false
+            else when (code) {
+                KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                KeyEvent.KEYCODE_DPAD_LEFT -> platform.requestFocus()
+                KeyEvent.KEYCODE_DPAD_DOWN -> focusPersonCircle(directorSuggestionsGrid)
+                else -> false
+            }
+        }
         vgvSearch.nextFocusUpId = arrow.id
     }
 
