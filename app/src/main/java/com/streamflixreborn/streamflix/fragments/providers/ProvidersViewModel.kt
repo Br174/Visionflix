@@ -90,7 +90,7 @@ class ProvidersViewModel : ViewModel() {
                     val engine = Provider.providers.keys.firstOrNull { it.name == entry.engineName }
                         ?: return@mapNotNull null
                     ModelProvider(
-                        name = entry.displayName,
+                        name = if (entry.healthy) entry.displayName else "${entry.displayName} · non disponibile",
                         logo = entry.logo ?: engine.logo,
                         language = entry.language,
                         provider = engine,
