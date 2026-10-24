@@ -1760,10 +1760,18 @@ class PlayerTvFragment : Fragment() {
                     )
 
                     val lang = UserPreferences.currentProvider?.language?.substringBefore("-")
-                    if (lang == "es") {
+                    val preferredAudioLanguage = when (lang) {
+                        "it" -> "ita"
+                        "fr" -> "fra"
+                        "de" -> "deu"
+                        "es" -> "spa"
+                        "en" -> "eng"
+                        else -> lang
+                    }
+                    if (!preferredAudioLanguage.isNullOrBlank()) {
                         player.trackSelectionParameters =
                             player.trackSelectionParameters.buildUpon()
-                                .setPreferredAudioLanguage("spa")
+                                .setPreferredAudioLanguage(preferredAudioLanguage)
                                 .build()
                     }
 
