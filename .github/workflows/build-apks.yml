@@ -115,6 +115,21 @@ jobs:
       - name: Progress 60% - cache and toolchain ready
         run: echo "[UAB_PROGRESS=60] Cache Gradle e toolchain pronte"
 
+      - name: LAB150 filter matrix unit tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab150-recovery-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --stacktrace
+          echo "[LAB150_TESTS=PASS] Genre combinations, title-free filters and criteria matrix"
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
