@@ -2,6 +2,8 @@ package com.streamflixreborn.streamflix.utils
 
 import android.graphics.drawable.Drawable
 import android.widget.ImageView
+import android.os.SystemClock
+import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
 import com.bumptech.glide.load.DataSource
@@ -20,6 +22,17 @@ import java.util.concurrent.ConcurrentHashMap
 private object ArtworkRepairCoordinator {
     private val repairScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlightRepairs = ConcurrentHashMap.newKeySet<String>()
+    private val recentRepairs = ConcurrentHashMap<String, Long>()
+    private const val MIN_REPAIR_INTERVAL_MS = 5 * 60 * 1000L
+
+    private fun allowRepair(key: String): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val last = recentRepairs[key]
+        if (last != null && now - last < MIN_REPAIR_INTERVAL_MS) return false
+        if (recentRepairs.size > 4096) recentRepairs.clear()
+        recentRepairs[key] = now
+        return true
+    }
 
     fun shouldRepair(url: String?, error: GlideException?): Boolean {
         return ArtworkRepair.shouldRepair(url, error)
@@ -32,8 +45,16 @@ private object ArtworkRepairCoordinator {
         onUpdated: (Movie) -> Unit,
     ) {
         val provider = UserPreferences.currentProvider ?: return
+        // The global wall combines engines: never repair a foreign item with the current provider.
+        if (movie.providerName != null && movie.providerName != provider.name) return
+        if (movie.providerEndpoint != null &&
+            movie.providerEndpoint != ProviderEndpointRegistry.selectedOverride(provider.name)) return
         val repairKey = "${provider.name}|movie|${movie.id}|$staleUrl"
         if (!inFlightRepairs.add(repairKey)) return
+        if (!allowRepair(repairKey)) {
+            inFlightRepairs.remove(repairKey)
+            return
+        }
 
         repairScope.launch {
             try {
@@ -63,8 +84,15 @@ private object ArtworkRepairCoordinator {
         onUpdated: (TvShow) -> Unit,
     ) {
         val provider = UserPreferences.currentProvider ?: return
+        if (tvShow.providerName != null && tvShow.providerName != provider.name) return
+        if (tvShow.providerEndpoint != null &&
+            tvShow.providerEndpoint != ProviderEndpointRegistry.selectedOverride(provider.name)) return
         val repairKey = "${provider.name}|tv|${tvShow.id}|$staleUrl"
         if (!inFlightRepairs.add(repairKey)) return
+        if (!allowRepair(repairKey)) {
+            inFlightRepairs.remove(repairKey)
+            return
+        }
 
         repairScope.launch {
             try {
