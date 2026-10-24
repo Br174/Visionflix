@@ -11,6 +11,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -51,6 +53,8 @@ object ProviderEndpointRegistry {
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
+
+    private val refreshMutex = Mutex()
 
     private fun prefs() = StreamFlixApp.instance.getSharedPreferences(
         BuildConfig.APPLICATION_ID + PREFS_SUFFIX,
@@ -121,7 +125,8 @@ object ProviderEndpointRegistry {
     suspend fun refreshIfNeeded(
         providers: Collection<Provider>,
         force: Boolean = false,
-    ): List<RemoteEntry> = withContext(Dispatchers.IO) {
+    ): List<RemoteEntry> = refreshMutex.withLock {
+        withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val lastRefresh = runCatching { prefs().getLong(KEY_REFRESH_AT, 0L) }.getOrDefault(0L)
         if (!force && now - lastRefresh < REFRESH_TTL_MS) {
@@ -157,6 +162,7 @@ object ProviderEndpointRegistry {
         refreshManagedEndpoints(providers, checked)
         runCatching { prefs().edit().putLong(KEY_REFRESH_AT, now).apply() }
         checked.filter { it.enabled }
+        }
     }
 
     private suspend fun refreshManagedEndpoints(
