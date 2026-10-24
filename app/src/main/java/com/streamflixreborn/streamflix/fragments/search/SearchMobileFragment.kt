@@ -126,7 +126,7 @@ class SearchMobileFragment : Fragment() {
                         binding.isLoading.root.visibility = View.GONE
                     }
                     is State.SuccessGlobalSearching -> {
-                        displayGlobalSearch(state.providerResults)
+                        displayGlobalSearch(state.catalog.posters, state.hasMore)
                         binding.isLoading.root.visibility = View.GONE
                     }
                     is State.FailedSearching -> {
@@ -673,43 +673,16 @@ class SearchMobileFragment : Fragment() {
         }
     }
 
-    private fun displayGlobalSearch(providerResults: List<ProviderResult>) {
-        val allItems = mutableListOf<AppAdapter.Item>()
-
-        providerResults.forEach { providerResult ->
-            val headerTitle = when (val state = providerResult.state) {
-                is ProviderResult.State.Loading ->
-                    "${providerResult.displayName} - ${getString(R.string.searching)}"
-                is ProviderResult.State.Error ->
-                    "${providerResult.displayName} - ${getString(R.string.search_error)}"
-                is ProviderResult.State.Success -> {
-                    val count = state.results.size
-                    val resultText = if (count == 1) {
-                        getString(R.string.result)
-                    } else {
-                        getString(R.string.results)
-                    }
-                    "${providerResult.displayName} - $count $resultText"
-                }
+    private fun displayGlobalSearch(posters: List<AppAdapter.Item>, hasMore: Boolean) {
+        // LAB152: a single native mobile poster wall, without provider names or duplicate cards.
+        appAdapter.submitList(posters.onEach { item ->
+            when (item) {
+                is Movie -> item.itemType = AppAdapter.Type.MOVIE_GRID_MOBILE_ITEM
+                is TvShow -> item.itemType = AppAdapter.Type.TV_SHOW_GRID_MOBILE_ITEM
             }
-
-            allItems.add(
-                Category(name = headerTitle, list = emptyList()).apply {
-                    itemType = AppAdapter.Type.CATEGORY_MOBILE_ITEM
-                }
-            )
-
-            if (providerResult.state is ProviderResult.State.Success) {
-                allItems.addAll(providerResult.state.results.onEach {
-                    when (it) {
-                        is Movie -> it.itemType = AppAdapter.Type.MOVIE_GRID_MOBILE_ITEM
-                        is TvShow -> it.itemType = AppAdapter.Type.TV_SHOW_GRID_MOBILE_ITEM
-                    }
-                })
-            }
-        }
-
-        appAdapter.submitList(allItems)
-        appAdapter.setOnLoadMoreListener(null)
+        })
+        if (hasMore) appAdapter.setOnLoadMoreListener { viewModel.loadMoreGlobal() }
+        else appAdapter.setOnLoadMoreListener(null)
     }
+
 }
