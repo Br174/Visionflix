@@ -12,6 +12,8 @@ import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.databinding.ItemProviderMobileBinding
 import com.streamflixreborn.streamflix.databinding.ItemProviderTvBinding
 import com.streamflixreborn.streamflix.models.Provider
+import com.streamflixreborn.streamflix.providers.EndpointManagedProvider
+import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.toActivity
 import java.util.Locale
@@ -38,6 +40,12 @@ class ProviderViewHolder(
     private fun displayMobileItem(binding: ItemProviderMobileBinding) {
         binding.root.apply {
             setOnClickListener {
+                if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointOverride.isNullOrBlank()) {
+                    ProviderEndpointRegistry.selectRemote(provider.provider.name, provider.endpointOverride)
+                } else {
+                    ProviderEndpointRegistry.selectOriginal(provider.provider.name)
+                }
+                (provider.provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
                 UserPreferences.currentProvider = provider.provider
                 context.toActivity()?.apply {
                     startActivity(
@@ -69,6 +77,12 @@ class ProviderViewHolder(
     private fun displayTvItem(binding: ItemProviderTvBinding) {
         binding.root.apply {
             setOnClickListener {
+                if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointOverride.isNullOrBlank()) {
+                    ProviderEndpointRegistry.selectRemote(provider.provider.name, provider.endpointOverride)
+                } else {
+                    ProviderEndpointRegistry.selectOriginal(provider.provider.name)
+                }
+                (provider.provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
                 UserPreferences.currentProvider = provider.provider
                 context.toActivity()?.apply {
                     startActivity(
