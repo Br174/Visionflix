@@ -1625,11 +1625,13 @@ class SearchTvFragment : Fragment() {
             if (byIdentity >= 0) byIdentity else requested, appAdapter.items.size)
         vgvSearch.setNumColumns(currentGridColumns.coerceAtLeast(5))
         // Never restore a stale row while the user is already on a poster.
-        if (vgvSearch.hasFocus()) return false
+        if (!Lab157FocusPolicy.canRestoreSelection(
+                vgvSearch.hasFocus(), position, appAdapter.items.size)) return false
         vgvSearch.setSelectedPosition(position)
         vgvSearch.post {
-            if (!isAdded || vgvSearch.hasFocus() ||
-                vgvSearch.selectedPosition != position) return@post
+            if (!Lab157FocusPolicy.canCompleteDeferredFocus(
+                    isAdded, vgvSearch.hasFocus(), position,
+                    vgvSearch.selectedPosition)) return@post
             vgvSearch.requestFocus()
             refreshRowJumpArrows()
         }
@@ -1717,7 +1719,9 @@ class SearchTvFragment : Fragment() {
         vgvSearch.setSelectedPosition(index)
         vgvSearch.post {
             if (!isAdded) return@post
-            if (!vgvSearch.hasFocus() && vgvSearch.selectedPosition == index) {
+            if (Lab157FocusPolicy.canCompleteDeferredFocus(
+                    isAdded, vgvSearch.hasFocus(), index,
+                    vgvSearch.selectedPosition)) {
                 vgvSearch.requestFocus()
             }
             returnPosterId = null
