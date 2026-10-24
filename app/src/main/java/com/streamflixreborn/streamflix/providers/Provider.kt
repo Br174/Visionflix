@@ -24,6 +24,11 @@ interface ProviderConfigUrl {
 
 interface IptvProvider : Provider
 
+interface EndpointManagedProvider : Provider {
+    val builtInBaseUrl: String
+    fun onEndpointSelectionChanged() = Unit
+}
+
 interface Provider {
 
     val baseUrl: String
