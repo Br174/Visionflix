@@ -101,7 +101,7 @@ class MovieViewModel(id: String, private val database: AppDatabase) : ViewModel(
         _state.emit(State.Loading)
 
         try {
-            val tmdbDirectedId = DirectorCredits.directedMovieId(id)
+            val tmdbDirectedId = DirectorCredits.directedMovieId(id) ?: DirectorCredits.catalogMovieId(id)
             if (tmdbDirectedId != null) {
                 // A director's catalogue is TMDb metadata, independent of the
                 // active streaming provider. Do not alter the selected provider.
