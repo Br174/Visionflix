@@ -43,6 +43,11 @@ jobs:
           echo "stage=$UAB_STAGE" >> "$GITHUB_OUTPUT"
           echo "[UAB_PROGRESS=15] Stage=$UAB_STAGE; pubblicazione permanente consentita solo a MADRE"
 
+      - name: Run LAB signing policy regression checks
+        if: steps.stage.outputs.stage == 'LAB'
+        shell: bash
+        run: bash .github/scripts/check-visionflix-signing-lab.sh
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
