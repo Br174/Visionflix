@@ -18,6 +18,7 @@ import com.streamflixreborn.streamflix.fragments.tv_show.TvShowMobileFragmentDir
 import com.streamflixreborn.streamflix.fragments.tv_show.TvShowTvFragment
 import com.streamflixreborn.streamflix.fragments.tv_show.TvShowTvFragmentDirections
 import com.streamflixreborn.streamflix.models.People
+import com.streamflixreborn.streamflix.utils.DirectorCredits
 import com.streamflixreborn.streamflix.utils.getCurrentFragment
 import com.streamflixreborn.streamflix.utils.toActivity
 
@@ -79,7 +80,9 @@ class PeopleViewHolder(
                 .into(this)
         }
 
-        binding.tvPeopleName.text = people.name
+        binding.tvPeopleName.text = if (DirectorCredits.directorPersonId(people.id) != null) {
+            "Regista\n${people.name}"
+        } else people.name
     }
 
     private fun displayTvItem(
@@ -130,6 +133,8 @@ class PeopleViewHolder(
                 .into(this)
         }
 
-        binding.tvPeopleName.text = people.name
+        binding.tvPeopleName.text = if (DirectorCredits.directorPersonId(people.id) != null) {
+            "Regista\n${people.name}"
+        } else people.name
     }
 }
