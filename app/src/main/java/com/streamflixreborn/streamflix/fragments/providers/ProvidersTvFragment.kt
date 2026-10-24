@@ -55,7 +55,7 @@ class ProvidersTvFragment : Fragment() {
                         gIsLoadingRetry.visibility = View.GONE
                     }
                     is ProvidersViewModel.State.SuccessLoading -> {
-                        displayProviders(state.providers)
+                        displayProviders(state.items)
                         binding.rvProviders.visibility = View.VISIBLE
                         binding.isLoading.root.visibility = View.GONE
                     }
@@ -170,9 +170,9 @@ class ProvidersTvFragment : Fragment() {
         }
     }
 
-    private fun displayProviders(providers: List<ModelProvider>) {
-        appAdapter.submitList(providers.onEach {
-            it.itemType = AppAdapter.Type.PROVIDER_TV_ITEM
+    private fun displayProviders(items: List<AppAdapter.Item>) {
+        appAdapter.submitList(items.onEach { item ->
+            if (item is ModelProvider) item.itemType = AppAdapter.Type.PROVIDER_TV_ITEM
         })
 
         binding.rvProviders.requestFocus()
