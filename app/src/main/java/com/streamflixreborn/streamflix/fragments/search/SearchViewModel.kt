@@ -319,9 +319,18 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 filters.effectiveGenres.isNotEmpty() ||
                 filters.type == AdvancedSearchFilters.ContentType.CARTOON
 
-        val directResults = if (query.isNotBlank()) {
-            searchProviderWithRecovery(provider, query, page)
-        } else browseProvider(provider, page)
+        val directResults = when {
+            query.isNotBlank() -> searchProviderWithRecovery(provider, query, page)
+            needsTmdbMetadata -> emptyList() // TMDb title discovery below drives this filter-only search.
+            else -> {
+                // Scan several real provider catalog pages before applying local year/type filters.
+                // Each explicit load-more advances by the same bounded page window.
+                val startPage = (page - 1) * 3 + 1
+                (startPage until startPage + 3).flatMap { sourcePage ->
+                    browseProvider(provider, sourcePage)
+                }.distinctBy { it.searchIdentityKey() }
+            }
+        }
 
         if (!needsTmdbMetadata) return@coroutineScope applyProviderFilters(directResults, filters)
         if (!tmdbConfigured()) {
