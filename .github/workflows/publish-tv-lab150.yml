@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 15
     if: github.repository == 'Br174/Visionflix' && github.ref == 'refs/heads/lab/visionflix-lab150-recovery-20261024'
     env:
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.PUBLISH_TOKEN || github.token }}
       ORIGINAL_RUN_ID: '40055175514'
       ORIGINAL_SOURCE_SHA: d6e5606922be1bba75332814b20760a796803bcb
       ARTIFACT_NAME: Verlezza-Vision-LAB-151
