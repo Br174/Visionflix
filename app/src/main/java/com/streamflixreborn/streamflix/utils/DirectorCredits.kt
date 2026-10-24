@@ -2,6 +2,8 @@ package com.streamflixreborn.streamflix.utils
 
 import com.streamflixreborn.streamflix.models.Movie
 import com.streamflixreborn.streamflix.models.People
+import com.streamflixreborn.streamflix.utils.TMDb3.w500
+import com.streamflixreborn.streamflix.utils.TMDb3.original
 
 /**
  * One canonical director role for the poster row and person filmography.
@@ -39,7 +41,9 @@ internal object DirectorCredits {
         if (verified.isEmpty()) return actors
         val directorIds = verified.mapNotNull { directorPersonId(it.id) }.toSet()
         // Preserve the actors' original billing order; avoid dual-role duplicates.
-        return verified + actors.filterNot { it.id.toIntOrNull() in directorIds }
+        return verified + actors.filterNot { actor ->
+            actor.id.toIntOrNull()?.let(directorIds::contains) == true
+        }
     }
 
     fun directedMovies(credits: List<TMDb3.Person.Credit.Movie>?): List<Movie> =
