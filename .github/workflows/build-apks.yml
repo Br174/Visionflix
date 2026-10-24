@@ -83,6 +83,12 @@ jobs:
             if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab158-director-first-filmography-20261024' ]; then
               test "$APP_VERSION_CODE" -gt 401
             fi
+            # The user may already have LAB158 1.7.494 (code 423) installed.
+            # LAB159 must always be a genuine in-place upgrade.
+            if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab159-dpad-matryoshka-20261024' ]; then
+              if [ "$APP_VERSION_CODE" -le 423 ]; then APP_VERSION_CODE=424; fi
+              test "$APP_VERSION_CODE" -gt 423
+            fi
           else
             LATEST_TAG="$(curl --fail --silent --show-error --retry 4 --retry-all-errors --retry-delay 2 --location \
               'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
@@ -273,6 +279,28 @@ jobs:
           EOF
           ./gradlew :app:testDebugUnitTest --tests '*Lab153NavigationTest' --tests '*Lab155SearchSafetyTest' --tests '*Lab156UnifiedSortTest' --tests '*Lab157FocusPolicyTest' --tests '*DirectorCreditsTest' --stacktrace
           echo "[LAB158_TESTS=PASS] Director-role credits, cast order, no duplicates, focus and search regressions"
+
+      - name: LAB159 focus navigation and nested Matrioska regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab159-dpad-matryoshka-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab153NavigationTest' \
+            --tests '*Lab155SearchSafetyTest' \
+            --tests '*Lab156UnifiedSortTest' \
+            --tests '*Lab157FocusPolicyTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*DirectorCreditsTest' --stacktrace
+          echo "[LAB159_TESTS=PASS] TV D-pad boundaries, arrow, director/actor nested metadata, regressions"
 
       - name: Build Android mobile debug APK
         env:
