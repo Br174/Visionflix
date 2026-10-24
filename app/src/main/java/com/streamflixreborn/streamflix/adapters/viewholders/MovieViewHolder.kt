@@ -530,7 +530,7 @@ class MovieViewHolder(
 
         binding.ivMoviePoster.loadMoviePoster(movie) {
             centerCrop()
-            transition(DrawableTransitionOptions.withCrossFade())
+            dontAnimate()
         }
         bindRibbons(binding.ivMovieFavoriteRibbon, binding.ivMovieWatchedRibbon)
 
@@ -604,7 +604,7 @@ class MovieViewHolder(
         binding.ivMoviePoster.loadMoviePoster(movie) {
             fallback(R.drawable.glide_fallback_cover)
             centerCrop()
-            transition(DrawableTransitionOptions.withCrossFade())
+            dontAnimate()
         }
         bindRibbons(binding.ivMovieFavoriteRibbon, binding.ivMovieWatchedRibbon)
         binding.pbMovieProgress.apply {
