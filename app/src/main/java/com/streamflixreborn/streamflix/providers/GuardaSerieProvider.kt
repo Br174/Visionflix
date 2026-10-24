@@ -38,11 +38,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-object GuardaSerieProvider : Provider {
+object GuardaSerieProvider : EndpointManagedProvider {
 
     override val name = "GuardaSerie"
-    override val baseUrl = "https://guardoserie.study"
-    override val logo: String = "$baseUrl/wp-content/uploads/2026/06/Guardoserie1.png"
+    override val builtInBaseUrl = "https://guardoserie.study"
+    override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
+    override val logo: String get() = "$baseUrl/wp-content/uploads/2026/06/Guardoserie1.png"
     override val language = "it"
 
     private const val USER_AGENT = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -119,7 +120,22 @@ object GuardaSerieProvider : Provider {
         suspend fun search(@Path("page") page: Int, @Query(value = "s", encoded = true) query: String): Document
     }
 
-    private val service = GuardaSerieService.build(baseUrl)
+    private var serviceUrl: String? = null
+    private var serviceCache: GuardaSerieService? = null
+    private val service: GuardaSerieService
+        get() {
+            val currentUrl = baseUrl
+            if (serviceCache == null || serviceUrl != currentUrl) {
+                serviceUrl = currentUrl
+                serviceCache = GuardaSerieService.build(currentUrl)
+            }
+            return serviceCache!!
+        }
+
+    override fun onEndpointSelectionChanged() {
+        serviceUrl = null
+        serviceCache = null
+    }
 
     private class CloudflareChallengeException(val url: String) : Exception("Cloudflare challenge detected for $url")
 
