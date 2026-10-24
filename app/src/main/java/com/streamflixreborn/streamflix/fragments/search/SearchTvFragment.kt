@@ -349,7 +349,7 @@ class SearchTvFragment : Fragment() {
                                 is State.SuccessGlobalSearching -> {
                                     pbSearch.visibility = View.GONE
                                     appAdapter.isLoading = false
-                                    displayGlobalSearch(state.providerResults)
+                                    displayGlobalSearch(state.catalog.posters, state.hasMore)
                                 }
                                 is State.FailedSearching -> {
                                     pbSearch.visibility = View.GONE
@@ -1241,33 +1241,20 @@ class SearchTvFragment : Fragment() {
         }
     }
 
-    private fun displayGlobalSearch(providerResults: List<ProviderResult>) {
-        val categories = providerResults.map { providerResult ->
-            val title = when (val providerState = providerResult.state) {
-                is ProviderResult.State.Loading ->
-                    "${providerResult.displayName} - ${getString(R.string.searching)}"
-                is ProviderResult.State.Error ->
-                    "${providerResult.displayName} - ${getString(R.string.search_error)}"
-                is ProviderResult.State.Success -> {
-                    val count = providerState.results.size
-                    val word = if (count == 1) getString(R.string.result) else getString(R.string.results)
-                    "${providerResult.displayName} - $count $word"
-                }
+    private fun displayGlobalSearch(posters: List<AppAdapter.Item>, hasMore: Boolean) {
+        // LAB152: same native TV poster grid as the single-provider search.
+        // No per-provider headers, just one deduplicated wall.
+        val vm = searchViewModel ?: return
+        currentGridColumns = 6
+        vgvSearch.setNumColumns(currentGridColumns)
+        appAdapter.submitList(posters.onEach { item ->
+            when (item) {
+                is Movie -> item.itemType = AppAdapter.Type.MOVIE_GRID_TV_ITEM
+                is TvShow -> item.itemType = AppAdapter.Type.TV_SHOW_GRID_TV_ITEM
             }
-            val items = (providerResult.state as? ProviderResult.State.Success)?.results?.onEach {
-                when (it) {
-                    is Movie -> it.itemType = AppAdapter.Type.MOVIE_TV_ITEM
-                    is TvShow -> it.itemType = AppAdapter.Type.TV_SHOW_TV_ITEM
-                }
-            } ?: emptyList()
-            Category(name = title, list = items).apply {
-                itemType = AppAdapter.Type.CATEGORY_TV_ITEM
-            }
-        }
-        currentGridColumns = 1
-        vgvSearch.setNumColumns(1)
-        appAdapter.submitList(categories)
-        appAdapter.setOnLoadMoreListener(null)
+        })
+        if (hasMore) appAdapter.setOnLoadMoreListener { vm.loadMoreGlobal() }
+        else appAdapter.setOnLoadMoreListener(null)
         searchHeader.post {
             updateGridTopPadding()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
