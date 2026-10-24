@@ -13,6 +13,7 @@ on:
       - 'MOTORLAB_PROJECT_HOOK.txt'
       - '.github/workflows/build-apks.yml'
       - '.github/workflows/publish-tv-lab149.yml'
+      - '.github/workflows/publish-tv-lab150.yml'
       - '.github/signing/**'
   workflow_dispatch:
 
@@ -192,6 +193,57 @@ jobs:
             /tmp/signing-mode.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish authorized LAB prerelease automatically
+        if: steps.stage.outputs.stage == 'LAB' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Opt-in is versioned in LAB branches only, so no unapproved branches publish.
+          if [ ! -f .motorlab/LAB_AUTOPUBLISH_POLICY.txt ]; then
+            echo "No LAB automatic-publication policy found in this branch. No publication."
+            exit 0
+          fi
+          grep -Fxq 'AUTO_PUBLISH_VERIFIED_LAB=true' .motorlab/LAB_AUTOPUBLISH_POLICY.txt
+          grep -Fxq 'PROMOTE_MADRE=false' .motorlab/LAB_AUTOPUBLISH_POLICY.txt
+          case "$GITHUB_REF_NAME" in
+            lab/visionflix-*) ;;
+            *) echo "::error::LAB autodelivery restricted to Visionflix namespaced branches"; exit 74 ;;
+          esac
+          test "${VISIONFLIX_SIGNING_MODE:-}" = "permanent-v1"
+          test -s /tmp/Verlezza-Vision-TV.apk
+          test -s /tmp/Verlezza-Vision-Mobile.apk
+          test -s /tmp/signature-info.txt
+          grep -Fq "ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6" /tmp/signature-info.txt
+          tag="visionflix-lab-ci-${GITHUB_RUN_ID}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Immutable LAB release tag already exists; refusing overwrite."
+            exit 75
+          fi
+          cat > "$RUNNER_TEMP/visionflix-lab-release.md" <<EOF
+          Verlezza Vision LAB verification-only build $APP_VERSION_NAME ($APP_VERSION_CODE).
+          Branch: $GITHUB_REF_NAME.
+          Source commit: $GITHUB_SHA.
+          Successful GitHub Actions run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          Signing certificate SHA-256: ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6.
+          TV APK SHA-256: $(sha256sum /tmp/Verlezza-Vision-TV.apk | awk '{print $1}')
+          Mobile APK SHA-256: $(sha256sum /tmp/Verlezza-Vision-Mobile.apk | awk '{print $1}')
+          TEST ONLY. The original signing identity differs from older pre-V1 installations.
+          No mutation of main, MADRE, Downloader codes or production.
+          EOF
+          gh release create "$tag" \
+            /tmp/Verlezza-Vision-TV.apk#Verlezza-Vision-TV-LAB.apk \
+            /tmp/Verlezza-Vision-Mobile.apk#Verlezza-Vision-Mobile-LAB.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Verlezza Vision LAB - $APP_VERSION_NAME (build $APP_VERSION_CODE)" \
+            --notes-file "$RUNNER_TEMP/visionflix-lab-release.md" \
+            --prerelease --latest=false
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+            --jq '{tag_name, prerelease, draft, assets: [.assets[].name]}' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Publish immutable private MADRE release
         if: steps.stage.outputs.stage == 'MADRE'
