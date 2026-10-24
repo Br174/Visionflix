@@ -1,2 +1,3 @@
 Visionflix LAB build trigger after repository visibility changed to public.
 Application source unchanged by this file.
+Retry after LAB-only ephemeral signing fallback enabled.
