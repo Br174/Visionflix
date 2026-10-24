@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.models.Movie
 import com.streamflixreborn.streamflix.models.TvShow
+import com.streamflixreborn.streamflix.providers.TmdbProvider
+import com.streamflixreborn.streamflix.utils.DirectorCredits
+import com.streamflixreborn.streamflix.utils.TmdbUtils
+import java.util.Calendar
 import com.streamflixreborn.streamflix.utils.EpisodeManager
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import kotlinx.coroutines.Dispatchers
@@ -97,6 +101,15 @@ class MovieViewModel(id: String, private val database: AppDatabase) : ViewModel(
         _state.emit(State.Loading)
 
         try {
+            val tmdbDirectedId = DirectorCredits.directedMovieId(id)
+            if (tmdbDirectedId != null) {
+                // A director's catalogue is TMDb metadata, independent of the
+                // active streaming provider. Do not alter the selected provider.
+                val language = UserPreferences.currentProvider?.language ?: "it"
+                val selected = TmdbProvider(language).getMovie(tmdbDirectedId.toString())
+                _state.emit(State.SuccessLoading(selected))
+                return@launch
+            }
             val movie = UserPreferences.currentProvider!!.getMovie(id)
 
             database.movieDao().getById(id)?.let { movieDb ->
@@ -105,6 +118,19 @@ class MovieViewModel(id: String, private val database: AppDatabase) : ViewModel(
             database.movieDao().insert(movie)
 
             _state.emit(State.SuccessLoading(movie))
+            // Metadata enrichment runs AFTER the visible movie details. A
+            // provider's own director IDs may not be TMDb person IDs, so use
+            // the verified TMDb film match before creating clickable tiles.
+            if (UserPreferences.enableTmdb &&
+                movie.directors.none { DirectorCredits.directorPersonId(it.id) != null }) {
+                val year = movie.released?.get(Calendar.YEAR)
+                val verified = TmdbUtils.getMovie(
+                    movie.title, year, UserPreferences.currentProvider?.language ?: "it"
+                )?.directors.orEmpty()
+                if (verified.isNotEmpty()) {
+                    _state.emit(State.SuccessLoading(movie.copy(directors = verified)))
+                }
+            }
         } catch (e: Exception) {
             Log.e("MovieViewModel", "getMovie: ", e)
             _state.emit(State.FailedLoading(e))
