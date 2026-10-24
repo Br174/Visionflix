@@ -74,19 +74,34 @@ jobs:
           echo "Versione di test/promozione: $APP_VERSION_NAME (build $APP_VERSION_CODE)."
 
       - name: Restore stable debug signing key
+        id: signing_cache
         uses: actions/cache/restore@v4
         with:
           path: ~/.android/debug.keystore
           key: visionflix-debug-keystore-v1
-          fail-on-cache-miss: true
+          fail-on-cache-miss: false
 
       - name: Pin signing identity
         shell: bash
         run: |
           set -euo pipefail
-          test -f "$HOME/.android/debug.keystore"
-          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
-          echo "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der" | sha256sum --check -
+          mkdir -p "$HOME/.android"
+
+          if [ -f "$HOME/.android/debug.keystore" ]; then
+            keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
+            echo "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der" | sha256sum --check -
+            echo "VISIONFLIX_SIGNING_MODE=stable" >> "$GITHUB_ENV"
+            echo "stable" > /tmp/signing-mode.txt
+          elif [ "$UAB_STAGE" = "LAB" ]; then
+            echo "::warning::Firma stabile non disponibile: genero una firma temporanea SOLO per compilazione/test LAB. APK non promuovibile e non distribuibile come aggiornamento."
+            keytool -genkeypair               -keystore "$HOME/.android/debug.keystore"               -storepass android               -alias androiddebugkey               -keypass android               -dname "CN=Visionflix LAB Temporary,O=MotorLab,C=IT"               -keyalg RSA               -keysize 2048               -validity 365               -noprompt
+            echo "VISIONFLIX_SIGNING_MODE=lab-ephemeral" >> "$GITHUB_ENV"
+            echo "lab-ephemeral" > /tmp/signing-mode.txt
+          else
+            echo "::error::Firma stabile Visionflix assente. CANDIDATA/MADRE non possono usare una chiave temporanea."
+            exit 1
+          fi
+
           echo "VISIONFLIX_SIGNING_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
           echo "[UAB_PROGRESS=45] Firma e controlli preliminari verificati"
 
@@ -127,7 +142,14 @@ jobs:
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs /tmp/Visionflix_BV_TV.apk | tee /tmp/signature-info.txt
           VV_CERTIFICATES="$(sed -n 's/^.*certificate SHA-256 digest: //p' /tmp/signature-info.txt | sort -u)"
-          test "$VV_CERTIFICATES" = "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e"
+          if [ "${VISIONFLIX_SIGNING_MODE:-}" = "stable" ]; then
+            test "$VV_CERTIFICATES" = "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e"
+          elif [ "$UAB_STAGE" = "LAB" ] && [ "${VISIONFLIX_SIGNING_MODE:-}" = "lab-ephemeral" ]; then
+            echo "::warning::Verifica firma stabile saltata esclusivamente per build LAB temporanea."
+          else
+            echo "::error::Modalità firma non valida per questo stage: ${VISIONFLIX_SIGNING_MODE:-unset}"
+            exit 1
+          fi
           "$BUILD_TOOLS/aapt" dump badging /tmp/Visionflix_BV_TV.apk > /tmp/apk-info.txt
           grep -F "package: name='com.br174.visionflix.tv.debug'" /tmp/apk-info.txt
           grep -F "com.streamflixreborn.streamflix.activities.main.MainTvActivity" /tmp/apk-info.txt
@@ -146,6 +168,7 @@ jobs:
             /tmp/SHA256SUMS.txt
             /tmp/apk-info.txt
             /tmp/signature-info.txt
+            /tmp/signing-mode.txt
           if-no-files-found: error
           retention-days: 14
 
