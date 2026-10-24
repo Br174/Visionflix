@@ -16,6 +16,7 @@ data class AdvancedSearchFilters(
     val directorName: String = "",
     val sort: SortFilter = SortFilter.POPULARITY,
     val platform: PlatformFilter = PlatformFilter.ALL,
+    val country: CountryFilter = CountryFilter.ALL,
 ) {
     enum class ContentType { ALL, MOVIE, TV, CARTOON }
     enum class ItalianFilter { ALL, YES, NO }
@@ -55,6 +56,40 @@ data class AdvancedSearchFilters(
         SCIENCE_FICTION("Fantascienza", 878, 10765),
         WAR("Guerra", 10752, 10768),
         WESTERN("Western", 37, 37),
+        ROMANCE("Romantico", 10749, null),
+        HORROR("Horror", 27, null),
+        THRILLER("Thriller", 53, null),
+        HISTORY("Storico", 36, null),
+        MUSIC("Musicale", 10402, null),
+        ACTION_ADVENTURE("Azione e avventura", null, 10759),
+        KIDS("Bambini", null, 10762),
+        REALITY("Reality", null, 10764),
+    }
+
+    // ISO 3166-1 alpha-2. ALL first, Italy first among concrete countries.
+    enum class CountryFilter(val label: String, val isoCode: String?) {
+        ALL("Tutti i Paesi", null),
+        ITALY("Italia", "IT"),
+        USA("Stati Uniti", "US"),
+        UK("Regno Unito", "GB"),
+        FRANCE("Francia", "FR"),
+        GERMANY("Germania", "DE"),
+        SPAIN("Spagna", "ES"),
+        CANADA("Canada", "CA"),
+        AUSTRALIA("Australia", "AU"),
+        JAPAN("Giappone", "JP"),
+        SOUTH_KOREA("Corea del Sud", "KR"),
+        CHINA("Cina", "CN"),
+        INDIA("India", "IN"),
+        BRAZIL("Brasile", "BR"),
+        MEXICO("Messico", "MX"),
+        ARGENTINA("Argentina", "AR"),
+        TURKEY("Turchia", "TR"),
+        SWEDEN("Svezia", "SE"),
+        DENMARK("Danimarca", "DK"),
+        NORWAY("Norvegia", "NO"),
+        NETHERLANDS("Paesi Bassi", "NL"),
+        BELGIUM("Belgio", "BE"),
     }
 
     val effectiveGenres: Set<GenreFilter>
@@ -72,7 +107,8 @@ data class AdvancedSearchFilters(
             !actorId.isNullOrBlank() ||
             !directorId.isNullOrBlank() ||
             sort != SortFilter.POPULARITY ||
-            platform != PlatformFilter.ALL
+            platform != PlatformFilter.ALL ||
+            country != CountryFilter.ALL
 }
 
 interface AdvancedSearchProvider {
