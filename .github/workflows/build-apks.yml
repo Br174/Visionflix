@@ -382,6 +382,27 @@ jobs:
             --tests '*DirectorCreditsTest' --stacktrace
           echo "[LAB162_TESTS=PASS] local brand identity and source/player regressions"
 
+      - name: LAB163 fixed Downloader regression and source safety checks
+        if: github.ref == 'refs/heads/lab/visionflix-lab163-permanent-downloader-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab162AdaptiveLogoTest' \
+            --tests '*Lab161AdaptivePlaybackTest' \
+            --tests '*Lab160AdaptiveSourceRulesTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' --stacktrace
+          echo '[LAB163_TESTS=PASS] source, player, UI and fixed Downloader invariants'
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
