@@ -122,6 +122,7 @@ class SearchTvFragment : Fragment() {
     // search grid. No poster data or row order is mutated.
     private var rowJumpRail: FrameLayout? = null
     private val rowJumpArrows = mutableMapOf<Int, TextView>()
+    private var rowJumpRefreshQueued = false
     private var rowJumpResumePosition = RecyclerView.NO_POSITION
     private var rowJumpResumeIdentity: String? = null
     private var rowJumpResumeLayout: android.os.Parcelable? = null
@@ -251,6 +252,7 @@ class SearchTvFragment : Fragment() {
         btnResetFilters = null
         filterFocusSentinel = null
         rowJumpArrows.clear()
+        rowJumpRefreshQueued = false
         rowJumpRail = null
         super.onDestroyView()
     }
@@ -534,17 +536,10 @@ class SearchTvFragment : Fragment() {
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(8) },
+                ).apply { topMargin = dp(3) },
             )
 
-            panel.addView(makeLabel("Filtri avanzati", 15f, true).apply { setPadding(0, dp(2), 0, 0) })
-            panel.addView(makeLabel(
-                "Combina testo, tipo, lingua, anno, genere, attore, regista, piattaforma e ordinamento.",
-                11f,
-                false,
-                Color.rgb(169, 178, 194),
-            ))
-
+            // LAB157: only presentation labels removed; every selector remains.
             val typeValues = listOf(
                 AdvancedSearchFilters.ContentType.ALL,
                 AdvancedSearchFilters.ContentType.MOVIE,
@@ -1470,7 +1465,8 @@ class SearchTvFragment : Fragment() {
             restorePosterIfNeeded()
             if (afterFilterReturnPending && appAdapter.items.isNotEmpty()) {
                 afterFilterReturnPending = false
-                restoreRowJumpPosition()
+                // Manual poster navigation takes precedence over deferred focus.
+                if (!vgvSearch.hasFocus()) restoreRowJumpPosition()
             }
             refreshRowJumpArrows()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
@@ -1496,7 +1492,8 @@ class SearchTvFragment : Fragment() {
             restorePosterIfNeeded()
             if (afterFilterReturnPending && appAdapter.items.isNotEmpty()) {
                 afterFilterReturnPending = false
-                restoreRowJumpPosition()
+                // Manual poster navigation takes precedence over deferred focus.
+                if (!vgvSearch.hasFocus()) restoreRowJumpPosition()
             }
             refreshRowJumpArrows()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
@@ -1504,9 +1501,15 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun refreshRowJumpArrows() {
-        // Running after layout preserves a stable focus surface while scrolling.
-        if (!isAdded) return
-        rowJumpRail?.post { if (isAdded) updateVisibleRowJumpArrows() }
+        // Coalesce high-frequency scroll updates to one frame, avoiding a
+        // backlog of stale arrow relayout callbacks after a DPAD movement.
+        if (!isAdded || rowJumpRefreshQueued) return
+        val rail = rowJumpRail ?: return
+        rowJumpRefreshQueued = true
+        rail.postOnAnimation {
+            rowJumpRefreshQueued = false
+            if (isAdded && rowJumpRail === rail) updateVisibleRowJumpArrows()
+        }
     }
 
     private fun revealRowJumpArrow(position: Int): Boolean {
@@ -1621,9 +1624,12 @@ class SearchTvFragment : Fragment() {
         val position = SearchRowShortcut.clampToAvailable(
             if (byIdentity >= 0) byIdentity else requested, appAdapter.items.size)
         vgvSearch.setNumColumns(currentGridColumns.coerceAtLeast(5))
+        // Never restore a stale row while the user is already on a poster.
+        if (vgvSearch.hasFocus()) return false
         vgvSearch.setSelectedPosition(position)
         vgvSearch.post {
-            if (!isAdded) return@post
+            if (!isAdded || vgvSearch.hasFocus() ||
+                vgvSearch.selectedPosition != position) return@post
             vgvSearch.requestFocus()
             refreshRowJumpArrows()
         }
@@ -1691,6 +1697,13 @@ class SearchTvFragment : Fragment() {
 
     private fun restorePosterIfNeeded() {
         val anchor = returnPosterId ?: return
+        // A delayed details result must never steal the user's active focus.
+        if (vgvSearch.hasFocus()) {
+            returnPosterId = null
+            returnPosterPosition = RecyclerView.NO_POSITION
+            returnPosterLayout = null
+            return
+        }
         if (appAdapter.items.isEmpty()) return
         val index = appAdapter.items.indexOfFirst {
             when (it) {
@@ -1704,7 +1717,9 @@ class SearchTvFragment : Fragment() {
         vgvSearch.setSelectedPosition(index)
         vgvSearch.post {
             if (!isAdded) return@post
-            vgvSearch.requestFocus()
+            if (!vgvSearch.hasFocus() && vgvSearch.selectedPosition == index) {
+                vgvSearch.requestFocus()
+            }
             returnPosterId = null
             returnPosterPosition = RecyclerView.NO_POSITION
             returnPosterLayout = null
