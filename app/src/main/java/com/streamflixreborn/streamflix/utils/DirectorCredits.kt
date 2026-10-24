@@ -18,6 +18,32 @@ internal object DirectorCredits {
         id.takeIf { it.startsWith(PERSON_PREFIX) }
             ?.removePrefix(PERSON_PREFIX)?.toIntOrNull()?.takeIf { it > 0 }
 
+    // Preserve the metadata authority of a card across nested person/film hops.
+    // Provider-native IDs must never be sent to TMDb and vice versa.
+    private const val ACTOR_PREFIX = "tmdb-actor:"
+    private const val CATALOG_MOVIE_PREFIX = "tmdb-movie:"
+    private const val CATALOG_TV_PREFIX = "tmdb-tv:"
+
+    fun actorPersonId(id: String): Int? = id.removePrefix(ACTOR_PREFIX)
+        .takeIf { id.startsWith(ACTOR_PREFIX) }?.toIntOrNull()?.takeIf { it > 0 }
+
+    fun catalogMovieId(id: String): Int? = id.removePrefix(CATALOG_MOVIE_PREFIX)
+        .takeIf { id.startsWith(CATALOG_MOVIE_PREFIX) }?.toIntOrNull()?.takeIf { it > 0 }
+
+    fun catalogTvId(id: String): Int? = id.removePrefix(CATALOG_TV_PREFIX)
+        .takeIf { id.startsWith(CATALOG_TV_PREFIX) }?.toIntOrNull()?.takeIf { it > 0 }
+
+    fun actorIdentity(id: Int): String = ACTOR_PREFIX + id
+
+    fun preserveCatalogFilmography(shows: List<com.streamflixreborn.streamflix.models.Show>)
+        : List<com.streamflixreborn.streamflix.models.Show> = shows.map { item ->
+        when (item) {
+            is Movie -> item.copy(id = CATALOG_MOVIE_PREFIX + item.id)
+            is com.streamflixreborn.streamflix.models.TvShow ->
+                item.copy(id = CATALOG_TV_PREFIX + item.id)
+        }
+    }
+
     fun directedMovieId(id: String): Int? =
         id.takeIf { it.startsWith(MOVIE_PREFIX) }
             ?.removePrefix(MOVIE_PREFIX)?.toIntOrNull()?.takeIf { it > 0 }
