@@ -343,7 +343,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             this@SearchViewModel.query = query
             page = targetPage
             val filtered = ParentalControlUtils.filterItems(results)
-            _state.emit(State.SuccessSearching(filtered, hasMore = !usingWebFallback && filtered.isNotEmpty()))
+            _state.emit(State.SuccessSearching(filtered, hasMore = !usingWebFallback &&
+                Lab164SearchMatchPolicy.canLoadLocalMore(filtered.isNotEmpty(), filters.isActive, targetPage)))
         } catch (e: Exception) {
             Log.e("SearchViewModel", "executeSearch", e)
             _state.emit(State.FailedSearching(e))
@@ -370,22 +371,48 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 (tmdbConfigured() && (filters.year != null ||
                     !filters.dateFrom.isNullOrBlank() || !filters.dateTo.isNullOrBlank()))
 
-        val directResults = when {
-            query.isNotBlank() -> searchProviderWithRecovery(provider, query, page)
-            needsTmdbMetadata -> emptyList() // TMDb title discovery below drives this filter-only search.
-            else -> {
-                // Scan several real provider catalog pages before applying local year/type filters.
-                // Each explicit load-more advances by the same bounded page window.
-                val pages = Lab154SearchPacing.providerPages(page)
-                pages.flatMap { sourcePage ->
-                    browseProvider(provider, sourcePage)
-                }.distinctBy { it.searchIdentityKey() }
-            }
+        val hasMetadata = tmdbConfigured()
+        val strictlyRequiresMetadata =
+            filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
+            filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+            filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+            !filters.actorId.isNullOrBlank() ||
+            !filters.directorId.isNullOrBlank()
+        if (needsTmdbMetadata && !hasMetadata && strictlyRequiresMetadata) {
+            throw IllegalStateException(
+                "Impossibile verificare questi filtri: manca una chiave TMDb gratuita. " +
+                    "Configurala nelle Impostazioni, non usare la chiave 'dummy'."
+            )
+        }
+        val metadataEnabled = needsTmdbMetadata && hasMetadata
+
+        suspend fun browseFilteredCatalog(): List<AppAdapter.Item> {
+            if (page > 1) return Lab154SearchPacing.providerPages(page)
+                .flatMap { browseProvider(provider, it) }
+                .distinctBy { it.searchIdentityKey() }
+            val initial = Lab164SearchMatchPolicy.catalogPages(1)
+                .flatMap { browseProvider(provider, it) }
+                .distinctBy { it.searchIdentityKey() }
+            if (applyProviderFilters(initial, filters).isNotEmpty()) return initial
+            val extra = Lab164SearchMatchPolicy.catalogPages(2)
+                .flatMap { browseProvider(provider, it) }
+            return (initial + extra).distinctBy { it.searchIdentityKey() }
         }
 
-        if (!needsTmdbMetadata) return@coroutineScope applyProviderFilters(directResults, filters)
-        if (!tmdbConfigured()) {
-            throw IllegalStateException("Filtri per Paese, genere, lingua, attori, registi o piattaforma richiedono la chiave TMDb gratuita nelle Impostazioni")
+        val directResults = when {
+            query.isNotBlank() -> searchProviderWithRecovery(provider, query, page)
+            metadataEnabled -> emptyList()
+            else -> browseFilteredCatalog()
+        }
+        if (!metadataEnabled) {
+            val local = applyProviderFilters(directResults, filters)
+            if (needsTmdbMetadata && local.isEmpty()) {
+                throw IllegalStateException(
+                    "Non ci sono generi verificabili nei risultati del provider. " +
+                        "Per questi filtri serve la chiave TMDb gratuita nelle Impostazioni."
+                )
+            }
+            return@coroutineScope local
         }
 
         val metadataMatches = sharedMetadata ?: searchTmdbAdvanced(
@@ -473,7 +500,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         is TvShow -> item.genres
                         else -> emptyList()
                     }
-                    trustMetadata || genres.any { it.name.contains("anim", ignoreCase = true) }
+                    trustMetadata || genres.any { Lab164SearchMatchPolicy.localGenreMatches(it.name, AdvancedSearchFilters.GenreFilter.ANIMATION) }
                 }
             }
             if (!typeOk) return@filter false
@@ -494,8 +521,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 }
                 if (genres.isEmpty() || genres.none { present ->
                     filters.effectiveGenres.any { chosen ->
-                        present.name.equals(chosen.label, ignoreCase = true) ||
-                            present.name.contains(chosen.label, ignoreCase = true)
+                        Lab164SearchMatchPolicy.localGenreMatches(present.name, chosen)
                     }
                 }) return@filter false
             }
