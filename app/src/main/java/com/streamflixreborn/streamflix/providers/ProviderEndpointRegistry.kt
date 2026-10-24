@@ -158,7 +158,13 @@ object ProviderEndpointRegistry {
             }.awaitAll()
         }
 
-        persistRemoteEntries(checked)
+        // One-provider updates must not discard every other remote source entry.
+        val retained = if (providers.size == 1) {
+            cachedRemoteEntries().filterNot { existing ->
+                providers.any { it.name == existing.engineName }
+            }
+        } else emptyList()
+        persistRemoteEntries(retained + checked)
         refreshManagedEndpoints(providers, checked)
         runCatching { prefs().edit().putLong(KEY_REFRESH_AT, now).apply() }
         checked.filter { it.enabled }
@@ -199,15 +205,44 @@ object ProviderEndpointRegistry {
                         .apply()
                     provider.onEndpointSelectionChanged()
                 } else {
-                    val lastGood = p.getString(lastGoodKey, null)
-                    if (!lastGood.isNullOrBlank()) {
-                        p.edit().putString(autoKey, lastGood).apply()
-                        provider.onEndpointSelectionChanged()
-                    }
+                    // A previous URL is NOT automatically healthy after this check.
+                    // Preserve it only as history, never silently route to an unverified 404.
+                    p.edit().remove(autoKey).apply()
+                    provider.onEndpointSelectionChanged()
                 }
             }
         }.awaitAll()
         Unit
+    }
+
+    data class RefreshResult(
+        val providerName: String,
+        val success: Boolean,
+        val message: String,
+    )
+
+    /** Manual refresh is scoped to a single provider; a reachable homepage is not proof. */
+    suspend fun refreshOne(provider: Provider): RefreshResult = withContext(Dispatchers.IO) {
+        val managed = provider as? EndpointManagedProvider
+        val configured = selectedOverride(provider.name)
+        if (configured != null && !probe(configured).first) {
+            selectOriginal(provider.name)
+            managed?.onEndpointSelectionChanged()
+        }
+        if (managed != null) refreshIfNeeded(listOf(provider), force = true)
+        val url = provider.baseUrl
+        if (!probe(url).first) {
+            return@withContext RefreshResult(provider.name, false, "Indirizzo non raggiungibile; nessun endpoint verificato")
+        }
+        val functional = runCatching {
+            // A real search tests the provider engine, not just its HTTP homepage.
+            provider.search("Roma", 1).isNotEmpty()
+        }.getOrDefault(false)
+        if (functional) {
+            RefreshResult(provider.name, true, "Ricerca di prova riuscita")
+        } else {
+            RefreshResult(provider.name, false, "Sito raggiungibile ma ricerca non verificata")
+        }
     }
 
     private fun persistRemoteEntries(entries: List<RemoteEntry>) {
@@ -329,7 +364,12 @@ object ProviderEndpointRegistry {
                 .get()
                 .build()
             client.newCall(request).execute().use { response ->
-                val alive = response.code in 200..399 || response.code == 401 || response.code == 403
+                val content = if (response.code in 200..299) {
+                    runCatching { response.peekBody(1024).string().lowercase() }.getOrDefault("")
+                } else ""
+                val blocked = "just a moment" in content || "checking your browser" in content ||
+                    "access denied" in content || "captcha" in content
+                val alive = response.code in 200..299 && !blocked
                 val finalUrl = response.request.url.let {
                     val defaultPort = when (it.scheme.lowercase()) {
                         "http" -> 80
