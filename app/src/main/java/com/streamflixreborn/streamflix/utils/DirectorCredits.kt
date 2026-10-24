@@ -35,6 +35,20 @@ internal object DirectorCredits {
                 )
             }.toList()
 
+    fun reconcileWithSource(
+        sourceDirectors: List<People>,
+        verifiedDirectors: List<People>,
+    ): List<People> {
+        if (sourceDirectors.isEmpty()) return verifiedDirectors
+        // A fuzzy movie-title match must not relabel an unrelated film's crew.
+        val sourceNames = sourceDirectors.map { it.name.trim().lowercase(java.util.Locale.ROOT) }
+            .filter { it.isNotBlank() }.toSet()
+        if (sourceNames.isEmpty()) return emptyList()
+        return verifiedDirectors.filter {
+            it.name.trim().lowercase(java.util.Locale.ROOT) in sourceNames
+        }
+    }
+
     fun castFirst(directors: List<People>, actors: List<People>): List<People> {
         val verified = directors.filter { directorPersonId(it.id) != null }
             .distinctBy { directorPersonId(it.id) }
