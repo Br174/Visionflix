@@ -1,6 +1,7 @@
 package com.streamflixreborn.streamflix.fragments.search
 
 import android.content.Context
+import com.bumptech.glide.Glide
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
@@ -109,6 +110,8 @@ class SearchTvFragment : Fragment() {
     private var returnPosterId: String? = null
     private var returnPosterPosition = RecyclerView.NO_POSITION
     private var returnPosterLayout: android.os.Parcelable? = null
+    private val prefetchedPosterUrls = hashSetOf<String>()
+    private var posterPrefetchJob: Job? = null
 
     private val appAdapter by lazy {
         AppAdapter().apply {
@@ -190,6 +193,7 @@ class SearchTvFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        posterPrefetchJob?.cancel()
         actorSearchJob?.cancel()
         directorSearchJob?.cancel()
         voiceHelper?.stopRecognition()
@@ -1267,6 +1271,7 @@ class SearchTvFragment : Fragment() {
                 is People -> item.itemType = AppAdapter.Type.PEOPLE_TV_ITEM
             }
         })
+        prefetchPosters(list)
         if (hasMore && (vm.query.isNotEmpty() || vm.advancedFilters.isActive)) {
             appAdapter.setOnLoadMoreListener { vm.loadMore() }
         } else {
@@ -1291,12 +1296,39 @@ class SearchTvFragment : Fragment() {
                 is TvShow -> item.itemType = AppAdapter.Type.TV_SHOW_GRID_TV_ITEM
             }
         })
+        prefetchPosters(posters)
         if (hasMore) appAdapter.setOnLoadMoreListener { vm.loadMoreGlobal() }
         else appAdapter.setOnLoadMoreListener(null)
         searchHeader.post {
             updateGridTopPadding()
             restorePosterIfNeeded()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
+        }
+    }
+
+    private fun prefetchPosters(items: List<AppAdapter.Item>) {
+        if (!isAdded) return
+        // Progressive, lifecycle-scoped prefetch. Never download an unbounded
+        // catalog: visible tiles win Glide priority, next rows fill cache gently.
+        val candidates = items.asSequence().mapNotNull {
+            when (it) {
+                is Movie -> it.poster
+                is TvShow -> it.poster
+                else -> null
+            }
+        }.filter { it.startsWith("https://") || it.startsWith("http://") }
+            .distinct().take(180).filterNot { it in prefetchedPosterUrls }.toList()
+        if (candidates.isEmpty()) return
+        posterPrefetchJob?.cancel()
+        posterPrefetchJob = viewLifecycleOwner.lifecycleScope.launch {
+            for (url in candidates) {
+                if (!isAdded) break
+                if (prefetchedPosterUrls.add(url)) {
+                    Glide.with(this@SearchTvFragment)
+                        .load(url).preload(dp(160), dp(240))
+                    delay(65)
+                }
+            }
         }
     }
 
