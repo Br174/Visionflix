@@ -13,13 +13,26 @@ class Lab164SearchMatchPolicyTest {
         assertFalse(Lab164SearchMatchPolicy.matchesMetadata("movie|filmtest|2024", setOf("movie|filmtest|2016")))
     }
 
-    @Test fun tvSeasonYearToleranceDoesNotMergeDistantReboots() {
-        assertTrue(Lab164SearchMatchPolicy.matchesMetadata("tv|serialtest|2020", setOf("tv|serialtest|2017")))
-        assertFalse(Lab164SearchMatchPolicy.matchesMetadata("tv|serialtest|2025", setOf("tv|serialtest|2017")))
+    @Test fun tvLastEpisodeYearCanBeMuchLaterThanOriginalAirDate() {
+        assertTrue(Lab164SearchMatchPolicy.matchesMetadata("tv|serialtest|2025", setOf("tv|serialtest|2017")))
+        assertFalse(Lab164SearchMatchPolicy.matchesMetadata("tv|serialtest|2045", setOf("tv|serialtest|2017")))
+        assertFalse(Lab164SearchMatchPolicy.matchesMetadata("tv|other|2025", setOf("tv|serialtest|2017")))
     }
 
     @Test fun typeIdentityPreventsFilmAndSeriesMixup() {
         assertFalse(Lab164SearchMatchPolicy.matchesMetadata("movie|filmtest|2017", setOf("tv|filmtest|2017")))
+    }
+
+    @Test fun providerTitleMayCarryVerifiedYearOrFilmSuffix() {
+        assertTrue(Lab164SearchMatchPolicy.matchesMetadata(
+            "movie|insideout22024|2024", setOf("movie|insideout2|2024")
+        ))
+        assertTrue(Lab164SearchMatchPolicy.matchesMetadata(
+            "movie|insideout2filmcompleto|2024", setOf("movie|insideout2|2024")
+        ))
+        assertFalse(Lab164SearchMatchPolicy.matchesMetadata(
+            "movie|insideout3|2024", setOf("movie|insideout2|2024")
+        ))
     }
 
     @Test fun missingProviderYearCanUseVerifiedMetadata() {
