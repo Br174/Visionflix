@@ -24,6 +24,13 @@ class Lab155SearchSafetyTest {
             assertFalse(Lab155SearchSafety.isRestricted(code))
         }
     }
+    @Test fun userFacingRestrictedMessageAvoidsClaimingProviderSearchIsAnAppCrash() {
+        val message = Lab155SearchSafety.explainRestrictedProvider("Catalogo test")
+        assertTrue(message.contains("HTTP 451"))
+        assertTrue(message.contains("non disponibile"))
+        assertTrue(message.contains("Cerca resta aperta"))
+    }
+
     @Test fun restrictedProviderErrorRemainsReadableWithoutExposingAnUrl() {
         val message = Lab155SearchSafety.explainRestrictedProvider("Provider di prova")
         assertTrue(message.contains("HTTP 451"))
