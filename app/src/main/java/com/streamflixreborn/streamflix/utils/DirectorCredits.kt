@@ -49,6 +49,21 @@ internal object DirectorCredits {
         }
     }
 
+    fun matchesSourceMovie(
+        sourceImdb: String?,
+        catalogImdb: String?,
+        sourceYear: Int?,
+        catalogYear: Int?,
+    ): Boolean {
+        val knownImdb = sourceImdb?.trim().orEmpty()
+        if (knownImdb.isNotEmpty() && !knownImdb.equals(catalogImdb?.trim(), ignoreCase = true)) {
+            return false
+        }
+        if (sourceYear != null && catalogYear != null &&
+            kotlin.math.abs(sourceYear - catalogYear) > 1) return false
+        return true
+    }
+
     fun castFirst(directors: List<People>, actors: List<People>): List<People> {
         val verified = directors.filter { directorPersonId(it.id) != null }
             .distinctBy { directorPersonId(it.id) }
