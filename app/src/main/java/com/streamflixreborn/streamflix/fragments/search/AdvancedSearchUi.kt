@@ -24,7 +24,7 @@ internal object AdvancedSearchUi {
             contentType.adapter = mobileAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
             italian.adapter = mobileAdapter(
                 context,
-                listOf("Italiani: tutti", "Italiani: sì", "Italiani: no"),
+                listOf("Lingua originale: tutte", "Originale italiana", "Originale non italiana"),
             )
             year.adapter = mobileYearAdapter(context, "Anno: tutti")
             year.rootView.findViewById<Spinner>(R.id.et_date_from)?.adapter =
@@ -33,7 +33,7 @@ internal object AdvancedSearchUi {
                 mobileYearAdapter(context, "Al: tutti")
         } else {
             contentType.adapter = compactAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
-            italian.adapter = compactAdapter(context, listOf("Tutti", "Sì", "No"))
+            italian.adapter = compactAdapter(context, listOf("Tutte", "Italiana", "Non italiana"))
             year.adapter = yearAdapter(context)
             genre.adapter = compactAdapter(
                 context,
