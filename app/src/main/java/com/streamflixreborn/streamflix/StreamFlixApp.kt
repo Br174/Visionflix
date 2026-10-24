@@ -16,6 +16,9 @@ import org.conscrypt.Conscrypt
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.fragments.settings.SourceSettingsInjector
 import com.streamflixreborn.streamflix.providers.AniWorldProvider
+import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.ProviderEndpointRefreshScheduler
+import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
 import com.streamflixreborn.streamflix.providers.SerienStreamProvider
 import com.streamflixreborn.streamflix.sync.CloudSyncManager
 import com.streamflixreborn.streamflix.sync.SupabaseProvider
@@ -123,6 +126,10 @@ class StreamFlixApp : Application() {
             SerienStreamProvider.initialize(appContext)
             AniWorldProvider.initialize(appContext)
             ArtworkRepairScheduler.schedule(appContext, UserPreferences.currentProvider)
+            ProviderEndpointRefreshScheduler.schedule(appContext)
+            runCatching {
+                ProviderEndpointRegistry.refreshIfNeeded(Provider.providers.keys)
+            }
             CacheUtils.autoClearIfNeeded(appContext, thresholdMb = threshold)
         }
     }
