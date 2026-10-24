@@ -3,6 +3,7 @@ package com.streamflixreborn.streamflix.providers
 import org.junit.Assert.*
 import org.junit.Test
 
+/** LAB150 verified source-change trigger: both Mobile and TV must compile before delivery. */
 class Lab150AdvancedFiltersTest {
     @Test fun defaultSelectionIsNotActive() {
         assertFalse(AdvancedSearchFilters().isActive)
