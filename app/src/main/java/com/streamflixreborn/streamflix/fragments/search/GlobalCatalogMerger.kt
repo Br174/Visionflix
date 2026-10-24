@@ -18,7 +18,7 @@ object GlobalCatalogMerger {
         val alternatives: Map<String, List<AppAdapter.Item>>,
     )
 
-    fun merge(results: List<ProviderResult>): Catalog {
+    fun merge(results: List<ProviderResult>, previous: Catalog? = null): Catalog {
         val buckets = linkedMapOf<String, MutableList<AppAdapter.Item>>()
         results.forEach { result ->
             val items = (result.state as? ProviderResult.State.Success)?.results ?: return@forEach
@@ -34,8 +34,21 @@ object GlobalCatalogMerger {
                     }) bucket.add(item)
             }
         }
-        val selected = buckets.values.mapNotNull { entries ->
-            entries.maxByOrNull(::posterQuality)
+        val previousByKey = previous?.posters.orEmpty().associateBy(::identity)
+        val existingOrder = previous?.posters.orEmpty()
+            .mapIndexed { index, item -> identity(item) to index }.toMap()
+        val initialOrder = buckets.keys.withIndex().associate { it.value to it.index }
+        val stableKeys = buckets.keys.sortedWith(compareBy<String> { existingOrder[it] ?: Int.MAX_VALUE }
+            .thenBy { initialOrder[it] ?: Int.MAX_VALUE })
+        val selected = stableKeys.mapNotNull { key ->
+            val entries = buckets[key].orEmpty()
+            val best = entries.maxByOrNull(::posterQuality) ?: return@mapNotNull null
+            val prior = previousByKey[key]
+            // Avoid poster swaps and focus jumps for marginal metadata differences.
+            val sameSource = entries.firstOrNull {
+                itemId(it) == prior?.let(::itemId) && provider(it) == prior?.let(::provider)
+            }
+            if (sameSource != null && posterQuality(best) - posterQuality(sameSource) < 20) sameSource else best
         }
         return Catalog(selected, buckets.mapValues { it.value.toList() })
     }
