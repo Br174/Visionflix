@@ -26,15 +26,15 @@ class Lab154SearchPacingTest {
     }
 
     @Test fun foregroundProviderHasPriorityOnInitialFilteredPass() {
-        assertEquals(16, Lab154SearchPacing.candidateLimit(true, true))
-        assertEquals(8, Lab154SearchPacing.candidateLimit(true, false))
+        assertEquals(24, Lab154SearchPacing.candidateLimit(true, true))
+        assertEquals(12, Lab154SearchPacing.candidateLimit(true, false))
         assertTrue(Lab154SearchPacing.candidateLimit(true, true) >
                    Lab154SearchPacing.candidateLimit(true, false))
     }
 
     @Test fun deepPagesRecoverMoreCandidates() {
-        assertEquals(24, Lab154SearchPacing.candidateLimit(false, false))
-        assertEquals(24, Lab154SearchPacing.candidateLimit(false, true))
+        assertEquals(32, Lab154SearchPacing.candidateLimit(false, false))
+        assertEquals(32, Lab154SearchPacing.candidateLimit(false, true))
     }
 
     @Test fun invalidPageNeverFetchesAnySource() {
