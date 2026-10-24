@@ -312,7 +312,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
                 !filters.actorId.isNullOrBlank() ||
                 !filters.directorId.isNullOrBlank() ||
-                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL
+                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+                filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+                filters.effectiveGenres.isNotEmpty() ||
+                filters.type == AdvancedSearchFilters.ContentType.CARTOON
 
         val directResults = if (query.isNotBlank()) {
             searchProviderWithRecovery(provider, query, page)
@@ -320,7 +323,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
         if (!needsTmdbMetadata) return@coroutineScope applyProviderFilters(directResults, filters)
         if (!tmdbConfigured()) {
-            throw IllegalStateException("Filtri lingua, attori, registi o piattaforma richiedono la chiave TMDb gratuita nelle Impostazioni")
+            throw IllegalStateException("Filtri per Paese, genere, lingua, attori, registi o piattaforma richiedono la chiave TMDb gratuita nelle Impostazioni")
         }
 
         val metadataMatches = runCatching {
@@ -339,12 +342,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             .toSet()
 
         if (query.isNotBlank()) {
-            return@coroutineScope applyProviderFilters(directResults, filters)
+            return@coroutineScope applyProviderFilters(directResults, filters, trustMetadata = true)
                 .filter { itemMatchesMetadata(it, metadataKeys) }
         }
 
         val discovered = metadataMatches
-            .take(8)
+            .take(24)
             .map { candidate ->
                 async(Dispatchers.IO) {
                     val title = when (candidate) {
@@ -360,7 +363,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             .flatten()
             .distinctBy { it.searchIdentityKey() }
 
-        applyProviderFilters(discovered, filters)
+        applyProviderFilters(discovered, filters, trustMetadata = true)
             .filter { itemMatchesMetadata(it, metadataKeys) }
     }
 
@@ -405,6 +408,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private fun applyProviderFilters(
         results: List<AppAdapter.Item>,
         filters: AdvancedSearchFilters,
+        trustMetadata: Boolean = false,
     ): List<AppAdapter.Item> {
         val filtered = results.filter { item ->
             val typeOk = when (filters.type) {
@@ -417,7 +421,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         is TvShow -> item.genres
                         else -> emptyList()
                     }
-                    genres.any { it.name.contains("anim", ignoreCase = true) }
+                    trustMetadata || genres.any { it.name.contains("anim", ignoreCase = true) }
                 }
             }
             if (!typeOk) return@filter false
@@ -429,13 +433,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             }
             if (!matchesYearFilter(date, filters)) return@filter false
 
-            if (filters.effectiveGenres.isNotEmpty()) {
+            if (filters.effectiveGenres.isNotEmpty() && !trustMetadata) {
                 val genres = when (item) {
                     is Movie -> item.genres
                     is TvShow -> item.genres
                     else -> emptyList()
                 }
-                if (genres.isNotEmpty() && genres.none { present ->
+                if (genres.isEmpty() || genres.none { present ->
                     filters.effectiveGenres.any { chosen ->
                         present.name.equals(chosen.label, ignoreCase = true) ||
                             present.name.contains(chosen.label, ignoreCase = true)
@@ -527,6 +531,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val excludeItalian = filters.italian == AdvancedSearchFilters.ItalianFilter.NO
         val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
         val selectedGenres = filters.effectiveGenres
+        val productionCountry = filters.country.isoCode
         val actorId = filters.actorId?.takeIf { it.isNotBlank() }
         val directorId = filters.directorId?.takeIf { it.isNotBlank() }
         val platformProviderIds = filters.platform.providerIds
@@ -574,7 +579,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 async { provider.getPeople(id, page = 1).filmography }
             }
 
-            val needsDiscoverConstraint = platformProviderIds != null
+            val needsDiscoverConstraint = platformProviderIds != null || productionCountry != null
             val movieConstraintDeferred = if (needsDiscoverConstraint && includeMovies) async {
                 (firstDiscoverPage until firstDiscoverPage + 6).map { discoverPage ->
                     async {
@@ -588,6 +593,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             params["watch_region"] = "IT"
                             params["with_watch_providers"] = it
                         }
+                        productionCountry?.let { params["with_origin_country"] = it }
                         TMDb3.Discover.movie(params).results.map { it.id.toString() }
                     }
                 }.awaitAll().flatten().toHashSet()
@@ -605,6 +611,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                             params["watch_region"] = "IT"
                             params["with_watch_providers"] = it
                         }
+                        productionCountry?.let { params["with_origin_country"] = it }
                         TMDb3.Discover.tv(params).results.map { it.id.toString() }
                     }
                 }.awaitAll().flatten().toHashSet()
@@ -716,6 +723,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 params["watch_region"] = "IT"
                 params["with_watch_providers"] = it
             }
+            productionCountry?.let { params["with_origin_country"] = it }
 
             val genreIds = selectedGenres.mapNotNull { it.movieId }.distinct()
             if (cartoonOnly) params["with_genres"] = "16"
@@ -724,7 +732,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.year?.let { params["primary_release_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.lte"] = it }
-            TMDb3.Discover.movie(params).results
+            val pages = ((page - 1) * 3 + 1)..(page * 3)
+            pages.map { discoverPage -> async {
+                TMDb3.Discover.movie(params + ("page" to discoverPage.toString())).results
+            } }.awaitAll().flatten()
         } else null
 
         val tvDeferred = if (includeTv) async {
@@ -741,6 +752,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 params["watch_region"] = "IT"
                 params["with_watch_providers"] = it
             }
+            productionCountry?.let { params["with_origin_country"] = it }
 
             val genreIds = selectedGenres.mapNotNull { it.tvId }.distinct()
             if (cartoonOnly) params["with_genres"] = "16"
@@ -749,7 +761,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.year?.let { params["first_air_date_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["first_air_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["first_air_date.lte"] = it }
-            TMDb3.Discover.tv(params).results
+            val pages = ((page - 1) * 3 + 1)..(page * 3)
+            pages.map { discoverPage -> async {
+                TMDb3.Discover.tv(params + ("page" to discoverPage.toString())).results
+            } }.awaitAll().flatten()
         } else null
 
         val blankDirectorDetails = directorDetailsDeferred?.await()
