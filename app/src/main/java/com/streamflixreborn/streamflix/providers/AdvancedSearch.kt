@@ -96,6 +96,17 @@ data class AdvancedSearchFilters(
         get() = genres.filterNot { it == GenreFilter.ALL }.toSet()
             .ifEmpty { if (genre == GenreFilter.ALL) emptySet() else setOf(genre) }
 
+    /** Consistent genre matching for TMDb text search and multi-page discovery. */
+    fun acceptsGenreIds(genreIds: Collection<Int>, movie: Boolean): Boolean {
+        if (type == ContentType.CARTOON && 16 !in genreIds) return false
+        val requested = effectiveGenres
+        if (requested.isEmpty()) return true
+        return requested.any { genre ->
+            val id = if (movie) genre.movieId else genre.tvId
+            id != null && id in genreIds
+        }
+    }
+
     val isActive: Boolean
         get() = type != ContentType.ALL ||
             italian != ItalianFilter.ALL ||
