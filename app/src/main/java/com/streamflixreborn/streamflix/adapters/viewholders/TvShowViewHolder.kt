@@ -216,11 +216,11 @@ class TvShowViewHolder(
         } ?: currentSeason
     }
 
-    private fun setPoster(imageView: ImageView) {
+    private fun setPoster(imageView: ImageView, animate: Boolean = true) {
         imageView.scaleType = if (isIptvProvider()) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
         imageView.loadTvShowPoster(tvShow) {
             fallback(R.drawable.glide_fallback_cover)
-            transition(DrawableTransitionOptions.withCrossFade())
+            if (animate) transition(DrawableTransitionOptions.withCrossFade()) else dontAnimate()
         }
     }
 
@@ -346,7 +346,7 @@ class TvShowViewHolder(
             ShowOptionsMobileDialog(context, tvShow).show()
             true
         }
-        setPoster(binding.ivTvShowPoster)
+        setPoster(binding.ivTvShowPoster, animate = false)
         bindRibbons(binding.ivTvShowFavoriteRibbon, binding.ivTvShowWatchedRibbon)
         binding.tvTvShowQuality.apply {
             text = tvShow.quality ?: ""
@@ -397,7 +397,7 @@ class TvShowViewHolder(
                 animation.fillAfter = true
             }
         }
-        setPoster(binding.ivTvShowPoster)
+        setPoster(binding.ivTvShowPoster, animate = false)
         bindRibbons(binding.ivTvShowFavoriteRibbon, binding.ivTvShowWatchedRibbon)
         binding.tvTvShowQuality.apply {
             text = tvShow.quality ?: ""
