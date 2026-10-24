@@ -542,8 +542,7 @@ class MovieViewHolder(
             }
         }
 
-        binding.tvMovieReleasedYear.text = movie.released?.format("yyyy")
-            ?: context.getString(R.string.movie_item_type)
+        binding.tvMovieReleasedYear.text = "FILM • " + (movie.released?.format("yyyy") ?: "Anno n.d.")
 
         binding.pbMovieProgress.apply {
             val watchHistory = movie.watchHistory
@@ -625,8 +624,7 @@ class MovieViewHolder(
                 else -> View.VISIBLE
             }
         }
-        binding.tvMovieReleasedYear.text = movie.released?.format("yyyy")
-            ?: context.getString(R.string.movie_item_type)
+        binding.tvMovieReleasedYear.text = "FILM • " + (movie.released?.format("yyyy") ?: "Anno n.d.")
         binding.tvMovieTitle.text = movie.title
     }
 
