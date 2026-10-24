@@ -11,3 +11,10 @@ local.properties
 *.salive
 *.log
 app/src/main/cpp/native-lib.cpp
+
+# Permanent signing material: never commit private keys or recovery secrets
+*.p12
+*.jks
+*.keystore
+*.pfx
+Visionflix_Signing_Recovery_Secret_V1.txt
