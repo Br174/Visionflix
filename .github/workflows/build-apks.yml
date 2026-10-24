@@ -424,6 +424,7 @@ jobs:
           EOF
           ./gradlew :app:testDebugUnitTest \
             --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab164TmdbCredentialRoutingTest' \
             --tests '*Lab154SearchPacingTest' \
             --tests '*Lab150AdvancedFiltersTest' \
             --tests '*Lab151CountryAndGenreTest' \
