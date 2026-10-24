@@ -361,7 +361,7 @@ class TvShowViewHolder(
             }
             isVisible = watchHistory != null
         }
-        binding.tvTvShowLastEpisode.text = episodeBadgeText()
+        binding.tvTvShowLastEpisode.text = "SERIE • " + (tvShow.released?.format("yyyy") ?: "Anno n.d.")
         binding.tvTvShowTitle.text = tvShow.title
     }
 
@@ -412,7 +412,7 @@ class TvShowViewHolder(
             }
             isVisible = watchHistory != null
         }
-        binding.tvTvShowLastEpisode.text = episodeBadgeText()
+        binding.tvTvShowLastEpisode.text = "SERIE • " + (tvShow.released?.format("yyyy") ?: "Anno n.d.")
         binding.tvTvShowTitle.text = tvShow.title
     }
 
