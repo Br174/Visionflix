@@ -1,0 +1,65 @@
+package com.streamflixreborn.streamflix.utils
+
+import com.streamflixreborn.streamflix.models.Movie
+import com.streamflixreborn.streamflix.models.People
+
+/**
+ * One canonical director role for the poster row and person filmography.
+ * Only TMDb credits explicitly marked Director are promoted to this role.
+ * Source-only names are retained by the existing director text fallback.
+ */
+internal object DirectorCredits {
+    private const val PERSON_PREFIX = "tmdb-director:"
+    private const val MOVIE_PREFIX = "tmdb-directed-movie:"
+
+    fun directorPersonId(id: String): Int? =
+        id.takeIf { it.startsWith(PERSON_PREFIX) }
+            ?.removePrefix(PERSON_PREFIX)?.toIntOrNull()?.takeIf { it > 0 }
+
+    fun directedMovieId(id: String): Int? =
+        id.takeIf { it.startsWith(MOVIE_PREFIX) }
+            ?.removePrefix(MOVIE_PREFIX)?.toIntOrNull()?.takeIf { it > 0 }
+
+    fun directorTiles(crew: List<TMDb3.Crew>?): List<People> =
+        crew.orEmpty().asSequence()
+            .filter { it.job.equals("Director", ignoreCase = true) }
+            .filter { it.id > 0 && it.name.isNotBlank() }
+            .distinctBy { it.id }
+            .map {
+                People(
+                    id = PERSON_PREFIX + it.id,
+                    name = it.name,
+                    image = it.profilePath?.w500,
+                )
+            }.toList()
+
+    fun castFirst(directors: List<People>, actors: List<People>): List<People> {
+        val verified = directors.filter { directorPersonId(it.id) != null }
+            .distinctBy { directorPersonId(it.id) }
+        if (verified.isEmpty()) return actors
+        val directorIds = verified.mapNotNull { directorPersonId(it.id) }.toSet()
+        // Preserve the actors' original billing order; avoid dual-role duplicates.
+        return verified + actors.filterNot { it.id.toIntOrNull() in directorIds }
+    }
+
+    fun directedMovies(credits: List<TMDb3.Person.Credit.Movie>?): List<Movie> =
+        credits.orEmpty().asSequence()
+            .filter { it.job.equals("Director", ignoreCase = true) && it.id > 0 }
+            .filter { !it.adult }
+            .distinctBy { it.id }
+            .map {
+                Movie(
+                    id = MOVIE_PREFIX + it.id,
+                    title = it.title?.takeIf(String::isNotBlank)
+                        ?: it.originalTitle.orEmpty(),
+                    overview = it.overview,
+                    released = it.releaseDate?.takeIf { date -> date.isNotBlank() },
+                    rating = it.voteAverage.toDouble(),
+                    poster = it.posterPath?.w500,
+                    banner = it.backdropPath?.original,
+                )
+            }
+            .filter { it.title.isNotBlank() }
+            .sortedByDescending { it.released?.timeInMillis ?: Long.MIN_VALUE }
+            .toList()
+}
