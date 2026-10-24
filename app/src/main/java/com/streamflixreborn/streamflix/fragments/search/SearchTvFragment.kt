@@ -188,16 +188,27 @@ class SearchTvFragment : Fragment() {
 
         // Mostra prima la pagina stabile, poi inizializza i sottosistemi separatamente.
         // Database/ViewModel, filtri e voce NON devono tornare nel percorso di inflation.
+        val owner = viewLifecycleOwner
         view.post {
-            if (!isAdded || viewLifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) {
-                return@post
+            // Opening the Search menu must never run stale callbacks belonging
+            // to a view that Navigation has already destroyed.
+            if (!isAdded || owner.lifecycle.currentState == Lifecycle.State.DESTROYED ||
+                view !== this.view) return@post
+            fun initStep(name: String, action: () -> Unit) {
+                try {
+                    if (owner.lifecycle.currentState != Lifecycle.State.DESTROYED) action()
+                } catch (error: Exception) {
+                    Log.e(TAG, "LAB155 search entry stage failed: $name", error)
+                }
             }
-            buildAdvancedFiltersSafely()
-            createViewModelSafely()
-            restorePersistedFiltersSafely()
-            initializeScrollableHeader()
-            updateGridTopPadding()
-            if (returnPosterId == null) etSearch.requestFocus()
+            initStep("advanced-filter-shell") { buildAdvancedFiltersSafely() }
+            initStep("viewmodel-and-collectors") { createViewModelSafely() }
+            initStep("saved-filters") { restorePersistedFiltersSafely() }
+            initStep("remote-control") { initializeScrollableHeader() }
+            initStep("grid-measurement") { updateGridTopPadding() }
+            initStep("initial-focus") {
+                if (returnPosterId == null && this.view === view) etSearch.requestFocus()
+            }
         }
     }
 
@@ -260,7 +271,7 @@ class SearchTvFragment : Fragment() {
         // When the remote enters from the *external* left sidebar, focus X,
         // rather than activating the editable query and keyboard immediately.
         val observer = ViewTreeObserver.OnGlobalFocusChangeListener { from, to ->
-            if (to !== etSearch || from == null) return@OnGlobalFocusChangeListener
+            if (!isAdded || to !== etSearch || from == null) return@OnGlobalFocusChangeListener
             val nav = requireActivity().findViewById<View>(R.id.nav_main) ?: return@OnGlobalFocusChangeListener
             var current: View? = from
             while (current != null) {
@@ -377,25 +388,28 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun createViewModelSafely() {
-        if (searchViewModel != null) return
         try {
-            val database = AppDatabase.getInstance(requireContext())
-            val factory = object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    if (!modelClass.isAssignableFrom(SearchViewModel::class.java)) {
-                        throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
+            if (searchViewModel == null) {
+                val database = AppDatabase.getInstance(requireContext())
+                val factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        if (!modelClass.isAssignableFrom(SearchViewModel::class.java)) {
+                            throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
+                        }
+                        return SearchViewModel(database) as T
                     }
-                    return SearchViewModel(database) as T
                 }
+                searchViewModel = ViewModelProvider(this, factory)[SearchViewModel::class.java]
             }
-            searchViewModel = ViewModelProvider(this, factory)[SearchViewModel::class.java]
+            // Each recreated view needs NEW collectors even if Navigation kept
+            // the fragment's ViewModel alive. Previous collectors died with its view.
             collectSearchStateSafely()
             collectActorSuggestionsSafely()
             collectDirectorSuggestionsSafely()
-        } catch (error: Throwable) {
-            Log.e(TAG, "Search ViewModel creation failed", error)
-            showSafeToast("Cerca aperta, ma il motore di ricerca non è disponibile")
+        } catch (error: Exception) {
+            Log.e(TAG, "LAB155 Search ViewModel/collector binding failed", error)
+            showSafeToast("Cerca aperta, motore temporaneamente non disponibile")
         }
     }
 
@@ -1269,14 +1283,13 @@ class SearchTvFragment : Fragment() {
 
             saved.actorId?.takeIf { saved.actorName.isNotBlank() }?.let {
                 searchViewModel?.selectActorFilter(it, saved.actorName)
-            } ?: run {
-                if (saved.actorName.length >= 2) searchViewModel?.searchActors(saved.actorName)
             }
             saved.directorId?.takeIf { saved.directorName.isNotBlank() }?.let {
                 searchViewModel?.selectDirectorFilter(it, saved.directorName)
-            } ?: run {
-                if (saved.directorName.length >= 2) searchViewModel?.searchDirectors(saved.directorName)
             }
+            // Do not start any HTTP calls merely by entering the Search screen.
+            // Text and chosen IDs remain unchanged. Unselected actor/director
+            // suggestions are fetched only on an explicit user interaction.
         } catch (error: Throwable) {
             Log.w(TAG, "Restoring persistent filters failed", error)
         }
