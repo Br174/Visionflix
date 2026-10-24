@@ -428,6 +428,40 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginBottom="4dp"
+                    android:text="Paese di produzione"
+                    android:textColor="#A9B2C2"
+                    android:textSize="12sp" />
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:background="@drawable/bg_filter_control_tv">
+                    <Spinner
+                        android:id="@+id/sp_country"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@android:color/transparent"
+                        android:paddingEnd="30dp"
+                        android:spinnerMode="dropdown" />
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="end|center_vertical"
+                        android:layout_marginEnd="9dp"
+                        android:src="@drawable/ic_filter_chevron_down"
+                        tools:ignore="ContentDescription" />
+                </FrameLayout>
+            </LinearLayout>
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
