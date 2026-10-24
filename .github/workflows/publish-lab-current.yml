@@ -1,0 +1,36 @@
+name: Initialize constant Verlezza Vision LAB Downloader address
+
+on:
+  push:
+    branches:
+      - lab/visionflix-lab150-recovery-20261024
+    paths:
+      - .github/workflows/publish-lab-current.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: visionflix-lab-current-download-slot
+  cancel-in-progress: false
+
+jobs:
+  initialize:
+    name: Publish validated LAB150 behind a permanent test-only URL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.repository == 'Br174/Visionflix' && github.ref == 'refs/heads/lab/visionflix-lab150-recovery-20261024'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LAB_SOURCE_RUN_ID: '40055175514'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check authorized LAB policy
+        run: |
+          set -euo pipefail
+          grep -Fxq 'AUTO_PUBLISH_VERIFIED_LAB=true' .motorlab/LAB_AUTOPUBLISH_POLICY.txt
+          grep -Fxq 'PROMOTE_MADRE=false' .motorlab/LAB_AUTOPUBLISH_POLICY.txt
+      - name: Initialize stable numeric-code destination for Downloader
+        shell: bash
+        run: bash .motorlab/distribution/publish-lab-current.sh
