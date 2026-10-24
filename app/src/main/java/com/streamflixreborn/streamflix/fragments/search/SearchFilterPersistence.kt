@@ -14,6 +14,8 @@ internal data class SavedSearchFilterState(
     val genre: AdvancedSearchFilters.GenreFilter = AdvancedSearchFilters.GenreFilter.ALL,
     val sort: AdvancedSearchFilters.SortFilter = AdvancedSearchFilters.SortFilter.POPULARITY,
     val platform: AdvancedSearchFilters.PlatformFilter = AdvancedSearchFilters.PlatformFilter.ALL,
+    val country: AdvancedSearchFilters.CountryFilter = AdvancedSearchFilters.CountryFilter.ALL,
+    val genres: Set<AdvancedSearchFilters.GenreFilter> = emptySet(),
     val actorId: String? = null,
     val actorName: String = "",
     val directorId: String? = null,
@@ -42,6 +44,10 @@ internal object SearchFilterPersistence {
             genre = enumValue("genre", AdvancedSearchFilters.GenreFilter.values(), AdvancedSearchFilters.GenreFilter.ALL),
             sort = enumValue("sort", AdvancedSearchFilters.SortFilter.values(), AdvancedSearchFilters.SortFilter.POPULARITY),
             platform = enumValue("platform", AdvancedSearchFilters.PlatformFilter.values(), AdvancedSearchFilters.PlatformFilter.ALL),
+            country = enumValue("country", AdvancedSearchFilters.CountryFilter.values(), AdvancedSearchFilters.CountryFilter.ALL),
+            genres = p.getStringSet("genres", emptySet()).orEmpty().mapNotNull { name ->
+                AdvancedSearchFilters.GenreFilter.entries.firstOrNull { it.name == name && it != AdvancedSearchFilters.GenreFilter.ALL }
+            }.toSet(),
             actorId = optionalString("actor_id"),
             actorName = p.getString("actor_name", "").orEmpty(),
             directorId = optionalString("director_id"),
@@ -57,6 +63,8 @@ internal object SearchFilterPersistence {
         e.putString("genre", state.genre.name)
         e.putString("sort", state.sort.name)
         e.putString("platform", state.platform.name)
+        e.putString("country", state.country.name)
+        e.putStringSet("genres", state.genres.map { it.name }.toSet())
         if (state.year == null) e.remove("year") else e.putInt("year", state.year)
         if (state.fromYear == null) e.remove("from_year") else e.putInt("from_year", state.fromYear)
         if (state.toYear == null) e.remove("to_year") else e.putInt("to_year", state.toYear)
