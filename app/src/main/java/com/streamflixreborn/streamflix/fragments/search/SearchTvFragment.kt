@@ -735,7 +735,8 @@ class SearchTvFragment : Fragment() {
                 setOnClickListener {
                     val opening = !filterPanelExpanded
                     setFilterPanelExpanded(opening, true)
-                    if (!opening && appAdapter.itemCount > 0) {
+                    if (!opening && appAdapter.itemCount > 0 &&
+                        Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT, arrowActivated = true)) {
                         vgvSearch.post { if (isAdded && !filterPanelExpanded) vgvSearch.requestFocus() }
                     }
                 }
@@ -799,7 +800,10 @@ class SearchTvFragment : Fragment() {
         llGlobalSearch.nextFocusLeftId = sidebar
         llGlobalSearch.setOnKeyListener { _, code, event ->
             event.action == KeyEvent.ACTION_DOWN && filterPanelExpanded &&
-                (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_RIGHT)
+                ((code == KeyEvent.KEYCODE_DPAD_UP &&
+                    !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.TOP)) ||
+                 (code == KeyEvent.KEYCODE_DPAD_RIGHT &&
+                    !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)))
         }
 
         type.setNextFocus(left = sidebar, right = italian.viewId,
@@ -862,7 +866,8 @@ class SearchTvFragment : Fragment() {
         // Only pressing OK on the arrow may collapse the drawer, never RIGHT.
         apply.setOnKeyListener { _, code, event ->
             event.action == KeyEvent.ACTION_DOWN && filterPanelExpanded &&
-                code == KeyEvent.KEYCODE_DPAD_RIGHT
+                code == KeyEvent.KEYCODE_DPAD_RIGHT &&
+                !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)
         }
         // Editable person fields keep their suggestions on DOWN, but never
         // leak to the poster wall on RIGHT and remain reachable in reverse.
@@ -2005,9 +2010,11 @@ class SearchTvFragment : Fragment() {
                     KeyEvent.KEYCODE_DPAD_RIGHT ->
                         // A self-target marks the last item of a row: never
                         // escape the drawer to the right.
-                        focusView.nextFocusRightId == focusView.id
+                        focusView.nextFocusRightId == focusView.id &&
+                            !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)
                     KeyEvent.KEYCODE_DPAD_UP ->
-                        focusView.nextFocusUpId == focusView.id
+                        focusView.nextFocusUpId == focusView.id &&
+                            !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.TOP)
                     KeyEvent.KEYCODE_DPAD_CENTER,
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_NUMPAD_ENTER -> {
