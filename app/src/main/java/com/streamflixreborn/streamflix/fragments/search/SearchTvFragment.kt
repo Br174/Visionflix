@@ -102,6 +102,7 @@ class SearchTvFragment : Fragment() {
     private var directorFallbackSuggestions: LinearLayout? = null
     private var filterPanelBody: LinearLayout? = null
     private var filterPanelScroll: ScrollView? = null
+    private var filterActionRow: LinearLayout? = null
     private var navigationFocusObserver: ViewTreeObserver.OnGlobalFocusChangeListener? = null
     private var afterFilterReturnPending = false
     private var btnApplyFilters: TextView? = null
@@ -232,6 +233,7 @@ class SearchTvFragment : Fragment() {
         }
         navigationFocusObserver = null
         filterPanelScroll = null
+        filterActionRow = null
         filterPanelBody = null
         btnApplyFilters = null
         btnResetFilters = null
@@ -491,7 +493,7 @@ class SearchTvFragment : Fragment() {
             // pushing Apply/Reset below the TV edge.
             val scroll = object : ScrollView(requireContext()) {
                 override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                    val maxHeight = minOf((rootView.height * 0.59f).toInt().coerceAtLeast(dp(180)), dp(345))
+                    val maxHeight = minOf((rootView.height * 0.54f).toInt().coerceAtLeast(dp(170)), dp(315))
                     super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(
                         maxHeight, View.MeasureSpec.AT_MOST))
                 }
@@ -678,6 +680,14 @@ class SearchTvFragment : Fragment() {
                 button.setOnClickListener { submitSearch() }
                 button.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
+
+            // Pin Apply/Reset below the scrolling form so neither can be
+            // clipped when both actor/director suggestions are expanded.
+            panel.removeView(actions)
+            actions.setPadding(dp(10), dp(2), dp(10), dp(3))
+            filterActionRow = actions
+            dropdown.addView(actions, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
 
             // Always-visible bottom lip. The filters above are still the exact
             // existing components with unchanged labels and arrangement.
@@ -1297,6 +1307,7 @@ class SearchTvFragment : Fragment() {
         filterPanelExpanded = expanded
         searchHeader.animate().cancel(); searchHeader.translationY = 0f
         filterPanelBody?.visibility = if (expanded) View.VISIBLE else View.GONE
+        filterActionRow?.visibility = if (expanded) View.VISIBLE else View.GONE
         dropdownArrow?.apply {
             text = if (expanded) "⌃" else "⌄"
             contentDescription = if (expanded) "Chiudi i filtri" else "Apri i filtri"
