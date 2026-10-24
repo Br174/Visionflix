@@ -69,6 +69,7 @@ import com.streamflixreborn.streamflix.models.Provider
 import com.streamflixreborn.streamflix.models.Season
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.fragments.favorites.FavoriteSectionHeader
+import com.streamflixreborn.streamflix.fragments.providers.ProviderSectionHeader
 
 class AppAdapter(
     val items: MutableList<Item> = mutableListOf()
@@ -115,6 +116,7 @@ class AppAdapter(
         FOOTER,
 
         FAVORITE_SECTION_HEADER,
+        PROVIDER_SECTION_HEADER,
 
         GENRE_GRID_MOBILE_ITEM,
         GENRE_GRID_TV_ITEM,
@@ -242,6 +244,13 @@ class AppAdapter(
                 footer!!.binding(parent)
             )
             Type.FAVORITE_SECTION_HEADER -> FavoriteSectionHeaderViewHolder(
+                ItemFavoriteSectionHeaderBinding.inflate(
+                    LayoutInflater.from(parent.context),
+                    parent,
+                    false,
+                )
+            )
+            Type.PROVIDER_SECTION_HEADER -> ProviderSectionHeaderViewHolder(
                 ItemFavoriteSectionHeaderBinding.inflate(
                     LayoutInflater.from(parent.context),
                     parent,
@@ -545,6 +554,9 @@ class AppAdapter(
             is FooterViewHolder -> footer?.bind?.invoke(holder.binding)
             is FavoriteSectionHeaderViewHolder -> holder.bind(
                 items[adjustedPosition] as FavoriteSectionHeader
+            )
+            is ProviderSectionHeaderViewHolder -> holder.bind(
+                items[adjustedPosition] as ProviderSectionHeader
             )
             is GenreViewHolder -> holder.bind(
                 items[adjustedPosition] as Genre
@@ -862,6 +874,14 @@ class AppAdapter(
         }
     }
 
+    private class ProviderSectionHeaderViewHolder(
+        private val binding: ItemFavoriteSectionHeaderBinding,
+    ) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(header: ProviderSectionHeader) {
+            binding.tvFavoriteSectionTitle.text = header.title
+        }
+    }
+
     private data class Header<T : ViewBinding>(
         val binding: (parent: ViewGroup) -> T,
         val bind: ((binding: T) -> Unit)? = null,
@@ -921,6 +941,7 @@ class AppAdapter(
         is Category -> "category:${name}"
         is Episode -> "episode:${id}"
         is FavoriteSectionHeader -> "favorite-header:${section.key}"
+        is ProviderSectionHeader -> "provider-header:${title}"
         is Genre -> "genre:${id}"
         is Movie -> "movie:${id}"
         is People -> "people:${id}"
