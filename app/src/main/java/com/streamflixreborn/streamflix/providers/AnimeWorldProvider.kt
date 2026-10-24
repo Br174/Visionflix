@@ -38,7 +38,7 @@ object AnimeWorldProvider : EndpointManagedProvider {
     override val name = "AnimeWorld"
     override val builtInBaseUrl = "https://www.animeworld.ac"
     override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
-    override val logo: String get() = "$baseUrl/assets/images/favicon/android-icon-192x192.png?4"
+    override val logo = "https://static.animeworld.ac/assets/images/favicon/android-icon-192x192.png?4"
     override val language = "it"
 
     private var service = AnimeWorldService.build(baseUrl)
