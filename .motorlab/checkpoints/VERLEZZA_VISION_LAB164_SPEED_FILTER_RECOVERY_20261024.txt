@@ -87,3 +87,11 @@ FOLLOWUP_20261024_2_ZIP_SHA256=d345f62c0fab654ddebe8bb50dc3ead32be88d5eaba49087f
 FOLLOWUP_20261024_2_CERT_SHA256=ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6
 FOLLOWUP_20261024_2_MAIN_SHA=c142c9544cb2d25536faa9534ca80d58339e65d4
 FOLLOWUP_20261024_2_NEXT_DEVICE_TEST=Select text-only known-good, same query with single year, blank text with single year separately, genre combinations, global on/off; ask if crash occurs on selector click or after Apply.
+
+
+DOWNLOADER_20261024_USER_DIRECTIVE=At the end of each future Verlezza Vision modification, display the fixed AFTVnews Downloader code ONLY after the new TV APK has been uploaded and the code destination and target release have been verified.
+VERLEZZA_VISION_DOWNLOADER_USER_CODE=6920196
+VERLEZZA_VISION_DOWNLOADER_VERIFIED_DESTINATION=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-current/Verlezza-Vision-TV.apk
+VERLEZZA_VISION_DOWNLOADER_SHORT_LINK=https://go.aftvnews.com/6920196
+VERLEZZA_VISION_DOWNLOADER_LAST_VERIFIED_VERSION_CODE=464
+DOWNLOADER_RULE=For future revisions, do not report code as up to date before fixed LAB channel updates and the AFTVnews target are checked. The numeric code belongs to the user's external Downloader shortlink and is NOT a GH build ID.
