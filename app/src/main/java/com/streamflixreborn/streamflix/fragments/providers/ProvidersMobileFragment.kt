@@ -47,6 +47,7 @@ class ProvidersMobileFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         initializeProviders()
+        Toast.makeText(requireContext(), "Tieni premuto sul provider (⟳) per Aggiorna provider, Aggiorna tutti o Preferiti", Toast.LENGTH_LONG).show()
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.state.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED).collect { state ->
