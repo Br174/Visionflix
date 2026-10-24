@@ -23,6 +23,23 @@ class Lab164SearchMatchPolicyTest {
         assertFalse(Lab164SearchMatchPolicy.matchesMetadata("movie|filmtest|2017", setOf("tv|filmtest|2017")))
     }
 
+    @Test fun typedYearDoesNotLaunchUnboundedMetadataDiscovery() {
+        val filters = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters(year=2018)
+        assertTrue(Lab164SearchMatchPolicy.providerFirstYearQuery("Il nome della rosa", filters))
+        assertFalse(Lab164SearchMatchPolicy.providerFirstYearQuery("", filters))
+        assertFalse(Lab164SearchMatchPolicy.providerFirstYearQuery("Il nome della rosa",
+            filters.copy(genres=setOf(
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.COMEDY))))
+        assertFalse(Lab164SearchMatchPolicy.providerFirstYearQuery("Il nome della rosa",
+            filters.copy(year=null)))
+    }
+
+    @Test fun providerFirstSupportsDecadeRangeWithoutGlobalDiscovery() {
+        val dateRange = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters(
+            dateFrom="2010-01-01",dateTo="2019-12-31")
+        assertTrue(Lab164SearchMatchPolicy.providerFirstYearQuery("natale", dateRange))
+    }
+
     @Test fun providerTitleMayCarryVerifiedYearOrFilmSuffix() {
         assertTrue(Lab164SearchMatchPolicy.matchesMetadata(
             "movie|insideout22024|2024", setOf("movie|insideout2|2024")
