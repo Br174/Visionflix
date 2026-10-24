@@ -90,6 +90,7 @@ class SearchTvFragment : Fragment() {
     private var toSelector: DropdownSelector<Int?>? = null
     private var sortSelector: DropdownSelector<AdvancedSearchFilters.SortFilter>? = null
     private var platformSelector: DropdownSelector<AdvancedSearchFilters.PlatformFilter>? = null
+    private var countrySelector: DropdownSelector<AdvancedSearchFilters.CountryFilter>? = null
     private var actorEdit: EditText? = null
     private var directorEdit: EditText? = null
     private var actorSuggestionsGrid: HorizontalGridView? = null
@@ -197,6 +198,7 @@ class SearchTvFragment : Fragment() {
         toSelector = null
         sortSelector = null
         platformSelector = null
+        countrySelector = null
         filterPanelBody = null
         btnApplyFilters = null
         btnResetFilters = null
@@ -566,6 +568,14 @@ class SearchTvFragment : Fragment() {
             directorRow.addView(directorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
             setupDirectorTextSearch()
             addDirectorSuggestionsSurface(panel)
+
+            countrySelector = makeSelector("Paese di produzione", AdvancedSearchFilters.CountryFilter.entries.toList()) { it.label }
+            val countryRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(5), 0, 0)
+            }
+            panel.addView(countryRow)
+            addSelectorToRow(countryRow, countrySelector)
 
             val actions = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -944,6 +954,7 @@ class SearchTvFragment : Fragment() {
         toSelector?.reset()
         sortSelector?.reset()
         platformSelector?.reset()
+        countrySelector?.reset()
         suppressActorTextChange = true
         actorEdit?.setText("")
         suppressActorTextChange = false
@@ -1024,6 +1035,7 @@ class SearchTvFragment : Fragment() {
             directorName = vm?.selectedDirectorName.orEmpty(),
             sort = sortSelector?.value ?: AdvancedSearchFilters.SortFilter.POPULARITY,
             platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
+            country = countrySelector?.value ?: AdvancedSearchFilters.CountryFilter.ALL,
         )
     }
 
@@ -1090,6 +1102,8 @@ class SearchTvFragment : Fragment() {
                     genre = genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
                     sort = sortSelector?.value ?: AdvancedSearchFilters.SortFilter.POPULARITY,
                     platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
+                    country = countrySelector?.value ?: AdvancedSearchFilters.CountryFilter.ALL,
+                    genres = selectedGenres.toSet(),
                     actorId = searchViewModel?.selectedActorId,
                     actorName = actorEdit?.text?.toString().orEmpty().trim(),
                     directorId = searchViewModel?.selectedDirectorId,
@@ -1116,6 +1130,9 @@ class SearchTvFragment : Fragment() {
             genreSelector?.selectValue(saved.genre)
             sortSelector?.selectValue(saved.sort)
             platformSelector?.selectValue(saved.platform)
+            countrySelector?.selectValue(saved.country)
+            selectedGenres.clear()
+            selectedGenres.addAll(saved.genres)
 
             suppressActorTextChange = true
             actorEdit?.setText(saved.actorName)
