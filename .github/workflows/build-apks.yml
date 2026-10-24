@@ -131,6 +131,22 @@ jobs:
           ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --stacktrace
           echo "[LAB150_TESTS=PASS] Genre combinations, title-free filters and criteria matrix"
 
+      - name: LAB151 country, genre and search-filter regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab151-search-country-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --stacktrace
+          echo "[LAB151_TESTS=PASS] 21 country selections, genre mappings and filter combinations"
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
