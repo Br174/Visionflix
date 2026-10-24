@@ -67,6 +67,7 @@ import com.streamflixreborn.streamflix.utils.loadTvShowBanner
 import com.streamflixreborn.streamflix.utils.loadTvShowPoster
 import com.streamflixreborn.streamflix.utils.ArtworkRepair
 import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.ProviderSelection
 import java.util.Locale
 
 class TvShowViewHolder(
@@ -155,11 +156,7 @@ class TvShowViewHolder(
     }
 
     private fun checkProviderAndRun(action: () -> Unit) {
-        if (!tvShow.providerName.isNullOrBlank() && tvShow.providerName != UserPreferences.currentProvider?.name) {
-            Provider.providers.keys.find { it.name == tvShow.providerName }?.let {
-                UserPreferences.currentProvider = it
-            }
-        }
+        ProviderSelection.select(tvShow.providerName, tvShow.providerEndpoint)
         action()
     }
 
