@@ -22,9 +22,18 @@ internal object Lab164SearchMatchPolicy {
             val candidateKind = key.substringBefore('|')
             val candidateTitle = key.substringAfter('|', "").substringBeforeLast('|', "")
             val candidateYear = key.substringAfterLast('|').toIntOrNull()
-            candidateKind == kind && candidateTitle == title &&
-                (year == null || candidateYear == null ||
-                    abs(year - candidateYear) <= if (kind == "tv") 3 else 1)
+            val yearMatches = year == null || candidateYear == null ||
+                // Several providers report last episode date; TMDb reports first airing.
+                if (kind == "tv") year >= candidateYear - 1 && year <= candidateYear + 20
+                else abs(year - candidateYear) <= 2
+            val titleMatches = candidateTitle == title || (
+                candidateTitle.length >= 8 && title.startsWith(candidateTitle) &&
+                    title.removePrefix(candidateTitle) in setOf(
+                        "film", "filmcompleto", "streaming", "ita", "serietv",
+                        "seriecompleta", candidateYear?.toString().orEmpty()
+                    )
+                )
+            candidateKind == kind && titleMatches && yearMatches
         }
     }
 
