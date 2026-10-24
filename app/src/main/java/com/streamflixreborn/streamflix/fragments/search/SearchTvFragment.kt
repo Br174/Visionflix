@@ -85,6 +85,7 @@ class SearchTvFragment : Fragment() {
     private var italianSelector: DropdownSelector<AdvancedSearchFilters.ItalianFilter>? = null
     private var yearSelector: DropdownSelector<Int?>? = null
     private var genreSelector: DropdownSelector<AdvancedSearchFilters.GenreFilter>? = null
+    private val selectedGenres = linkedSetOf<AdvancedSearchFilters.GenreFilter>()
     private var fromSelector: DropdownSelector<Int?>? = null
     private var toSelector: DropdownSelector<Int?>? = null
     private var sortSelector: DropdownSelector<AdvancedSearchFilters.SortFilter>? = null
@@ -475,6 +476,7 @@ class SearchTvFragment : Fragment() {
             val yearValues: List<Int?> = listOf<Int?>(null) + (currentYear downTo 1900).map { it }
             yearSelector = makeSelector("Anno", yearValues) { it?.toString() ?: "Tutti" }
             genreSelector = makeSelector("Genere", AdvancedSearchFilters.GenreFilter.entries.toList()) { it.label }
+            genreSelector?.setLongPressAction { showMultiGenrePicker() }
 
             val firstRow = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -937,6 +939,7 @@ class SearchTvFragment : Fragment() {
         italianSelector?.reset()
         yearSelector?.reset()
         genreSelector?.reset()
+        selectedGenres.clear()
         fromSelector?.reset()
         toSelector?.reset()
         sortSelector?.reset()
@@ -958,6 +961,31 @@ class SearchTvFragment : Fragment() {
         updateGlobalSwitch()
         SearchFilterPersistence.clear(requireContext())
         searchViewModel?.search("")
+    }
+
+    private fun showMultiGenrePicker() {
+        if (!isAdded) return
+        val options = AdvancedSearchFilters.GenreFilter.entries.filterNot { it == AdvancedSearchFilters.GenreFilter.ALL }
+        val initial = selectedGenres.ifEmpty {
+            genreSelector?.value?.takeIf { it != AdvancedSearchFilters.GenreFilter.ALL }
+                ?.let { setOf(it) } ?: emptySet()
+        }
+        val picks = initial.toMutableSet()
+        val labels = options.map { it.label }.toTypedArray()
+        val checked = options.map { it in initial }.toBooleanArray()
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Generi multipli")
+            .setMultiChoiceItems(labels, checked) { _, index, selected ->
+                if (selected) picks.add(options[index]) else picks.remove(options[index])
+            }
+            .setPositiveButton("Applica") { _, _ ->
+                selectedGenres.clear()
+                selectedGenres.addAll(picks)
+                if (selectedGenres.isNotEmpty()) genreSelector?.selectValue(AdvancedSearchFilters.GenreFilter.ALL)
+                showSafeToast("Generi selezionati: ${selectedGenres.size}")
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
     }
 
     private fun currentFilters(): AdvancedSearchFilters? {
@@ -986,6 +1014,7 @@ class SearchTvFragment : Fragment() {
             type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
             italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
             genre = genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
+            genres = selectedGenres.toSet(),
             year = yearSelector?.value,
             dateFrom = from?.let { "%04d-01-01".format(it) },
             dateTo = to?.let { "%04d-12-31".format(it) },
@@ -1412,6 +1441,12 @@ class SearchTvFragment : Fragment() {
                 return values[selected]
             }
         val viewId: Int get() = focusView.id
+        private var onLongPressAction: (() -> Unit)? = null
+
+        fun setLongPressAction(action: () -> Unit) {
+            onLongPressAction = action
+            focusView.setOnLongClickListener { action(); true }
+        }
 
         init {
             require(values.isNotEmpty())
@@ -1422,6 +1457,10 @@ class SearchTvFragment : Fragment() {
             }
             focusView.setOnKeyListener { _, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                if (event.isLongPress && onLongPressAction != null) {
+                    onLongPressAction?.invoke()
+                    return@setOnKeyListener true
+                }
                 when (keyCode) {
                     KeyEvent.KEYCODE_DPAD_CENTER,
                     KeyEvent.KEYCODE_ENTER,
