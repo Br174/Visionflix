@@ -12,6 +12,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.adapters.AppAdapter
@@ -56,7 +57,7 @@ class ProvidersMobileFragment : Fragment() {
                         gIsLoadingRetry.visibility = View.GONE
                     }
                     is ProvidersViewModel.State.SuccessLoading -> {
-                        displayProviders(state.providers)
+                        displayProviders(state.items)
                         binding.isLoading.root.visibility = View.GONE
                     }
                     is ProvidersViewModel.State.FailedLoading -> {
@@ -164,12 +165,18 @@ class ProvidersMobileFragment : Fragment() {
             addItemDecoration(
                 SpacingItemDecoration(32.dp(requireContext()))
             )
+            (layoutManager as? GridLayoutManager)?.let { manager ->
+                manager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                    override fun getSpanSize(position: Int): Int =
+                        if (appAdapter.items.getOrNull(position) is ProviderSectionHeader) manager.spanCount else 1
+                }
+            }
         }
     }
 
-    private fun displayProviders(providers: List<ModelProvider>) {
-        appAdapter.submitList(providers.onEach {
-            it.itemType = AppAdapter.Type.PROVIDER_MOBILE_ITEM
+    private fun displayProviders(items: List<AppAdapter.Item>) {
+        appAdapter.submitList(items.onEach { item ->
+            if (item is ModelProvider) item.itemType = AppAdapter.Type.PROVIDER_MOBILE_ITEM
         })
     }
 }
