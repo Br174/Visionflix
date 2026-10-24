@@ -1,6 +1,7 @@
 package com.streamflixreborn.streamflix.fragments.search
 
 import kotlin.math.abs
+import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 
 /**
  * LAB164: single shared rule for metadata matching and sparse filtered pagination.
@@ -25,6 +26,43 @@ internal object Lab164SearchMatchPolicy {
                 (year == null || candidateYear == null ||
                     abs(year - candidateYear) <= if (kind == "tv") 3 else 1)
         }
+    }
+
+    /** Recover sparse provider catalog filters with a bounded second window. */
+    fun catalogPages(window: Int): IntRange = when(window) {
+        1 -> 1..4
+        2 -> 5..8
+        else -> IntRange.EMPTY
+    }
+
+    /** Provider genre names may be in Italian or English. Never infer unverified genres. */
+    fun localGenreMatches(name: String, requested: AdvancedSearchFilters.GenreFilter): Boolean {
+        val value = name.trim().lowercase()
+        val aliases = when(requested) {
+            AdvancedSearchFilters.GenreFilter.ALL -> return true
+            AdvancedSearchFilters.GenreFilter.COMEDY -> listOf("comedy","commedia")
+            AdvancedSearchFilters.GenreFilter.ACTION -> listOf("action","azione")
+            AdvancedSearchFilters.GenreFilter.ADVENTURE -> listOf("adventure","avventura")
+            AdvancedSearchFilters.GenreFilter.ANIMATION -> listOf("animation","animazione","anime")
+            AdvancedSearchFilters.GenreFilter.ROMANCE -> listOf("romance","romant")
+            AdvancedSearchFilters.GenreFilter.DRAMA -> listOf("drama","dramma")
+            AdvancedSearchFilters.GenreFilter.FANTASY -> listOf("fantasy","fantastico")
+            AdvancedSearchFilters.GenreFilter.SCIENCE_FICTION -> listOf("science fiction","sci-fi","fantascienza")
+            AdvancedSearchFilters.GenreFilter.CRIME -> listOf("crime","poliziesco")
+            AdvancedSearchFilters.GenreFilter.HISTORY -> listOf("history","storico")
+            AdvancedSearchFilters.GenreFilter.MYSTERY -> listOf("mystery","mistero")
+            AdvancedSearchFilters.GenreFilter.MUSIC -> listOf("music","musicale")
+            AdvancedSearchFilters.GenreFilter.WAR -> listOf("war","guerra")
+            AdvancedSearchFilters.GenreFilter.DOCUMENTARY -> listOf("documentary","documentario")
+            AdvancedSearchFilters.GenreFilter.FAMILY -> listOf("family","famiglia")
+            AdvancedSearchFilters.GenreFilter.HORROR -> listOf("horror")
+            AdvancedSearchFilters.GenreFilter.WESTERN -> listOf("western")
+            AdvancedSearchFilters.GenreFilter.THRILLER -> listOf("thriller")
+            AdvancedSearchFilters.GenreFilter.ACTION_ADVENTURE -> listOf("action & adventure","action and adventure","azione e avventura")
+            AdvancedSearchFilters.GenreFilter.KIDS -> listOf("kids","bambini")
+            AdvancedSearchFilters.GenreFilter.REALITY -> listOf("reality")
+        }
+        return value.isNotBlank() && aliases.any { value.contains(it) }
     }
 
     fun canLoadLocalMore(foundNew: Boolean, filtered: Boolean, scannedPage: Int): Boolean =
