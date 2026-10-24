@@ -31,20 +31,67 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="70dp"
+        android:layout_marginTop="16dp"
         android:layout_marginEnd="70dp"
         android:gravity="center"
         android:text="@string/providers_choose_title"
         android:textColor="#FFFFFF"
         android:textSize="30sp"
-        app:layout_constraintBottom_toTopOf="@id/rv_providers"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_chainStyle="packed" />
+        app:layout_constraintTop_toBottomOf="@id/s_providers_language" />
+
+    <TextView
+        android:id="@+id/tv_provider_originals_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="70dp"
+        android:layout_marginTop="18dp"
+        android:layout_marginEnd="70dp"
+        android:text="Provider originali"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tv_providers_label" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_providers"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="horizontal"
+        android:paddingStart="70dp"
+        android:paddingTop="@dimen/providers_spacing"
+        android:paddingEnd="70dp"
+        android:paddingBottom="@dimen/providers_spacing"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tv_provider_originals_label"
+        tools:itemCount="4"
+        tools:listitem="@layout/item_provider_tv" />
+
+    <TextView
+        android:id="@+id/tv_provider_pastebin_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="70dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="70dp"
+        android:text="Provider Pastebin"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/rv_providers" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_providers_pastebin"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:clipChildren="false"
         android:clipToPadding="false"
@@ -57,8 +104,8 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tv_providers_label"
-        tools:itemCount="2"
+        app:layout_constraintTop_toBottomOf="@id/tv_provider_pastebin_label"
+        tools:itemCount="4"
         tools:listitem="@layout/item_provider_tv" />
 
     <include
