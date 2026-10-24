@@ -20,6 +20,7 @@ internal object AdvancedSearchUi {
         genre: Spinner? = null,
         sort: Spinner? = null,
         platform: Spinner? = null,
+        country: Spinner? = null,
     ) {
         if (genre == null) {
             contentType.adapter = mobileAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
@@ -45,6 +46,8 @@ internal object AdvancedSearchUi {
         }
         sort?.adapter = compactAdapter(context, AdvancedSearchFilters.SortFilter.values().map { it.label })
         platform?.adapter = compactAdapter(context, AdvancedSearchFilters.PlatformFilter.values().map { it.label })
+        country?.adapter = if (genre == null) mobileAdapter(context, AdvancedSearchFilters.CountryFilter.entries.map { it.label })
+            else compactAdapter(context, AdvancedSearchFilters.CountryFilter.entries.map { it.label })
     }
 
     fun read(
@@ -56,6 +59,7 @@ internal object AdvancedSearchUi {
         genre: Spinner? = null,
         sort: Spinner? = null,
         platform: Spinner? = null,
+        country: Spinner? = null,
     ): AdvancedSearchFilters {
         val selectedYear = selectedYear(year)
         val selectedFrom = selectedYear(yearFrom)
@@ -88,11 +92,13 @@ internal object AdvancedSearchUi {
             dateTo = selectedTo?.let { "%04d-12-31".format(it) },
             sort = sort?.let { AdvancedSearchFilters.SortFilter.values().getOrElse(it.selectedItemPosition) { AdvancedSearchFilters.SortFilter.POPULARITY } } ?: AdvancedSearchFilters.SortFilter.POPULARITY,
             platform = platform?.let { AdvancedSearchFilters.PlatformFilter.values().getOrElse(it.selectedItemPosition) { AdvancedSearchFilters.PlatformFilter.ALL } } ?: AdvancedSearchFilters.PlatformFilter.ALL,
+            country = country?.let { AdvancedSearchFilters.CountryFilter.entries.getOrElse(it.selectedItemPosition) { AdvancedSearchFilters.CountryFilter.ALL } } ?: AdvancedSearchFilters.CountryFilter.ALL,
         )
 
         val needsTmdb = UserPreferences.currentProvider is TmdbProvider ||
             filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
-            filters.platform != AdvancedSearchFilters.PlatformFilter.ALL
+            filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+            filters.country != AdvancedSearchFilters.CountryFilter.ALL
         if (needsTmdb && !hasUsableTmdbKey()) {
             throw IllegalArgumentException(
                 "Per usare i filtri inserisci una chiave TMDb valida in Impostazioni → Contenuti → Chiave API TMDb"
@@ -111,6 +117,7 @@ internal object AdvancedSearchUi {
         genre: Spinner? = null,
         sort: Spinner? = null,
         platform: Spinner? = null,
+        country: Spinner? = null,
     ) {
         contentType.setSelection(0)
         italian.setSelection(0)
@@ -120,6 +127,7 @@ internal object AdvancedSearchUi {
         genre?.setSelection(0)
         sort?.setSelection(0)
         platform?.setSelection(0)
+        country?.setSelection(0)
     }
 
     private fun compactAdapter(
