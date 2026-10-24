@@ -648,9 +648,9 @@ class SearchMobileFragment : Fragment() {
         providerResults.forEach { providerResult ->
             val headerTitle = when (val state = providerResult.state) {
                 is ProviderResult.State.Loading ->
-                    "${providerResult.provider.name} - ${getString(R.string.searching)}"
+                    "${providerResult.displayName} - ${getString(R.string.searching)}"
                 is ProviderResult.State.Error ->
-                    "${providerResult.provider.name} - ${getString(R.string.search_error)}"
+                    "${providerResult.displayName} - ${getString(R.string.search_error)}"
                 is ProviderResult.State.Success -> {
                     val count = state.results.size
                     val resultText = if (count == 1) {
@@ -658,7 +658,7 @@ class SearchMobileFragment : Fragment() {
                     } else {
                         getString(R.string.results)
                     }
-                    "${providerResult.provider.name} - $count $resultText"
+                    "${providerResult.displayName} - $count $resultText"
                 }
             }
 
