@@ -29,11 +29,12 @@ import java.util.concurrent.TimeUnit
 import java.net.URLEncoder
 import java.util.Base64
 
-object GuardaFlixProvider : Provider {
+object GuardaFlixProvider : EndpointManagedProvider {
 
     override val name: String = "GuardaFlix"
-    override val baseUrl: String = "https://guardaplay.store"
-    override val logo: String = "$baseUrl/wp-content/uploads/2021/05/cropped-Guarda-Flix-2.png"
+    override val builtInBaseUrl: String = "https://guardaplay.store"
+    override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
+    override val logo: String get() = "$baseUrl/wp-content/uploads/2021/05/cropped-Guarda-Flix-2.png"
     override val language: String = "it"
 
     private const val USER_AGENT = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -75,7 +76,22 @@ object GuardaFlixProvider : Provider {
         suspend fun movies(@Path("page") page: Int): Document
     }
 
-    private val service = GuardaFlixService.build(baseUrl)
+    private var serviceUrl: String? = null
+    private var serviceCache: GuardaFlixService? = null
+    private val service: GuardaFlixService
+        get() {
+            val currentUrl = baseUrl
+            if (serviceCache == null || serviceUrl != currentUrl) {
+                serviceUrl = currentUrl
+                serviceCache = GuardaFlixService.build(currentUrl)
+            }
+            return serviceCache!!
+        }
+
+    override fun onEndpointSelectionChanged() {
+        serviceUrl = null
+        serviceCache = null
+    }
 
     private fun normalizeUrl(url: String): String {
         return when {
