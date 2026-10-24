@@ -10,6 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -222,14 +225,17 @@ object ProviderEndpointRegistry {
     )
 
     /** Manual refresh is scoped to a single provider; a reachable homepage is not proof. */
-    suspend fun refreshOne(provider: Provider): RefreshResult = withContext(Dispatchers.IO) {
+    suspend fun refreshOne(provider: Provider, refreshRegistry: Boolean = true): RefreshResult = withContext(Dispatchers.IO) {
         val managed = provider as? EndpointManagedProvider
         val configured = selectedOverride(provider.name)
         if (configured != null && !probe(configured).first) {
             selectOriginal(provider.name)
             managed?.onEndpointSelectionChanged()
         }
-        if (managed != null) refreshIfNeeded(listOf(provider), force = true)
+        if (managed != null && refreshRegistry) refreshIfNeeded(listOf(provider), force = true)
+        if (provider is ProviderConfigUrl) {
+            runCatching { provider.onChangeUrl(forceRefresh = true) }
+        }
         val url = provider.baseUrl
         if (!probe(url).first) {
             return@withContext RefreshResult(provider.name, false, "Indirizzo non raggiungibile; nessun endpoint verificato")
@@ -243,6 +249,20 @@ object ProviderEndpointRegistry {
         } else {
             RefreshResult(provider.name, false, "Sito raggiungibile ma ricerca non verificata")
         }
+    }
+
+    /** A single registry refresh, then bounded tests to avoid provider floods. */
+    suspend fun refreshAll(providers: Collection<Provider>): List<RefreshResult> = coroutineScope {
+        refreshIfNeeded(providers, force = true)
+        val gate = Semaphore(3)
+        providers.map { provider ->
+            async(Dispatchers.IO) {
+                gate.withPermit {
+                    withTimeoutOrNull(15_000) { refreshOne(provider, refreshRegistry = false) }
+                        ?: RefreshResult(provider.name, false, "Timeout di verifica (15s)")
+                }
+            }
+        }.awaitAll()
     }
 
     private fun persistRemoteEntries(entries: List<RemoteEntry>) {
