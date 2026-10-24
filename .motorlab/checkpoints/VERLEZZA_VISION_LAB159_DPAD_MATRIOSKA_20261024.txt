@@ -1,0 +1,25 @@
+MOTORLAB OPERATION CHECKPOINT
+OPERATION_ID=VV-LAB159-DPAD-MATRIOSKA-20261024
+CORE_RELEASE=2026.10.22-r38
+PROJECT=Br174/Visionflix
+BASE=lab/visionflix-lab158-director-first-filmography-20261024
+BASE_VERIFIED_HEAD=c5da4838d03632586d255f2159ef8cccf1402832
+ISOLATED_BRANCH=lab/visionflix-lab159-dpad-matryoshka-20261024
+LAST_SOURCE_COMMIT=eb464161d5cb2089338392b29817123aa41a560d
+SCOPE=TV drawer DPAD four-borders and arrow exception; Matrioska director-to-TMDb film-to-actor-to-film; verified directors on all film and TV detail entry tabs; no graphics/provider/signing/main/MADRE/production writes.
+FOCUS_GRAPH=Explicit links for global search, advanced filters, country, actor, director, reset, apply, pinned search lip, quick All/Movie/TV/Sort, arrow, suggestion circles.
+BOUNDARIES=TOP sealed at global search; RIGHT sealed; LEFT native nav rail; DOWN poster wall after bottom lip; arrow OK closes and focuses posters.
+MATRIOSKA_PROVENANCE=tmdb-actor: ID for verified TMDb cast; tmdb-movie:/tmdb-tv: for nested actor filmography; legacy tmdb-directed-movie: preserved.
+TV_SHOW_DIRECTORS=Only independently verified TMDb crew job Director, matched with source IMDb/year/source directors; if none, existing text fallback.
+ANDROID_IDENTITY=existing applicationId and permanent-v1 signature unchanged
+VERSION_GUARD=LAB159 code >423 (LAB158 1.7.494)
+REGRESSION_TESTS=DirectorCreditsTest extended; Lab159DrawerFocusPolicyTest added; LAB153/155/156/157 regressions configured on LAB159 branch
+LAST_OBSERVED_CI=https://github.com/Br174/Visionflix/actions/runs/40100169380
+LAST_OBSERVED_CI_STATUS=in_progress, at LAB159 regression suite
+SOURCE_WRITE_STATUS=COMPLETE_PENDING_CI_VERIFICATION
+APK_TV=NOT_YET_VERIFIED
+APK_MOBILE=NOT_YET_VERIFIED
+ZIP=NOT_YET_VERIFIED
+RELEASE=CONDITIONAL_PRERELEASE_ONLY
+NEXT_SAFE_STEPS=check run 40100169380 job test/build/signature/publication; fix on LAB159 only if fail; read back GitHub release assets and checksums; deliver verified URLs only
+NO_MAIN_OR_PRODUCTION_MUTATION=true
