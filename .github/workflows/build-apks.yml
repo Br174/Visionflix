@@ -249,11 +249,14 @@ jobs:
           TEST ONLY. The original signing identity differs from older pre-V1 installations.
           No mutation of main, MADRE, Downloader codes or production.
           EOF
+          # GitHub's restricted workflow token may not create a release tag pointing
+          # directly to a LAB commit that modifies .github/workflows/.
+          # Tag is only a distribution anchor; release notes pin the exact tested LAB SHA.
           gh release create "$tag" \
             /tmp/Verlezza-Vision-TV.apk#Verlezza-Vision-TV-LAB.apk \
             /tmp/Verlezza-Vision-Mobile.apk#Verlezza-Vision-Mobile-LAB.apk \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --target "main" \
             --title "Verlezza Vision LAB - $APP_VERSION_NAME (build $APP_VERSION_CODE)" \
             --notes-file "$RUNNER_TEMP/visionflix-lab-release.md" \
             --prerelease --latest=false
