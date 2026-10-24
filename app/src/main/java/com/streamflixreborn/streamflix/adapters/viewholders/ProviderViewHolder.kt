@@ -15,6 +15,7 @@ import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.databinding.ItemProviderMobileBinding
 import com.streamflixreborn.streamflix.databinding.ItemProviderTvBinding
 import com.streamflixreborn.streamflix.models.Provider
+import com.streamflixreborn.streamflix.providers.AdaptiveCinemaProvider
 import com.streamflixreborn.streamflix.providers.EndpointManagedProvider
 import com.streamflixreborn.streamflix.providers.Provider as EngineProvider
 import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
@@ -267,6 +268,15 @@ class ProviderViewHolder(
     }
 
     private fun loadProviderLogo(imageView: ImageView) {
+        // Keep the only Adaptive Cinema visual override independent of remote logos.
+        if (provider.provider === AdaptiveCinemaProvider) {
+            imageView.setLayerType(View.LAYER_TYPE_NONE, null)
+            Glide.with(context)
+                .load(R.drawable.ic_adaptive_cinema_logo)
+                .fitCenter()
+                .into(imageView)
+            return
+        }
         val logo = provider.logo.takeIf { it.isNotEmpty() }
         val isSvg = logo?.substringBefore("?")?.endsWith(".svg", ignoreCase = true) == true
 

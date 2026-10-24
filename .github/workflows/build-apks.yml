@@ -98,6 +98,11 @@ jobs:
               if [ "$APP_VERSION_CODE" -le 452 ]; then APP_VERSION_CODE=453; fi
               test "$APP_VERSION_CODE" -gt 452
             fi
+            # LAB162 remains installable over signed LAB161 version 1.7.525 (454).
+            if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab162-adaptive-logo-20261024' ]; then
+              if [ "$APP_VERSION_CODE" -le 454 ]; then APP_VERSION_CODE=455; fi
+              test "$APP_VERSION_CODE" -gt 454
+            fi
           else
             LATEST_TAG="$(curl --fail --silent --show-error --retry 4 --retry-all-errors --retry-delay 2 --location \
               'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
@@ -350,6 +355,27 @@ jobs:
             --tests '*Lab159DrawerFocusPolicyTest' \
             --tests '*DirectorCreditsTest' --stacktrace
           echo "[LAB161_TESTS=PASS] embedded candidates, native-source safety, older navigation"
+
+      - name: LAB162 distinct local Adaptive Cinema logo and regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab162-adaptive-logo-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab162AdaptiveLogoTest' \
+            --tests '*Lab161AdaptivePlaybackTest' \
+            --tests '*Lab160AdaptiveSourceRulesTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*DirectorCreditsTest' --stacktrace
+          echo "[LAB162_TESTS=PASS] local brand identity and source/player regressions"
 
       - name: Build Android mobile debug APK
         env:

@@ -1,5 +1,6 @@
 package com.streamflixreborn.streamflix.providers
 
+import com.streamflixreborn.streamflix.BuildConfig
 import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.extractors.Extractor
 import com.streamflixreborn.streamflix.models.Category
@@ -32,7 +33,8 @@ object AdaptiveCinemaProvider : EndpointManagedProvider {
     override val builtInBaseUrl = SourcePreferences.DEFAULT_WEB_SOURCE
     override val baseUrl: String
         get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
-    override val logo: String = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Tmdb.new.logo.svg/1280px-Tmdb.new.logo.svg.png"
+    // Local, independent logo: never confuse Adaptive Cinema with TMDb.
+    override val logo: String = "android.resource://${BuildConfig.APPLICATION_ID}/drawable/ic_adaptive_cinema_logo"
 
     private const val MAX_SOURCES = 6
     private const val MAX_CARDS = 24

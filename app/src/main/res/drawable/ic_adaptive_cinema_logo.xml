@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+
+    <!-- Brand-new, self-contained Adaptive Cinema artwork. -->
+    <path android:fillColor="#172544"
+        android:pathData="M24,5 L104,5 C115,5 123,13 123,24 L123,104 C123,115 115,123 104,123 L24,123 C13,123 5,115 5,104 L5,24 C5,13 13,5 24,5 Z"/>
+    <path android:fillColor="#28D7C4"
+        android:pathData="M30,26 L98,26 C102,26 105,29 105,33 L105,44 L23,44 L23,33 C23,29 26,26 30,26 Z"/>
+    <path android:fillColor="#243A5A"
+        android:pathData="M24,47 L104,47 L104,96 C104,103 99,108 92,108 L36,108 C29,108 24,103 24,96 Z"/>
+    <path android:fillColor="#11203C"
+        android:pathData="M31,29 L43,29 L36,42 L24,42 Z M53,29 L65,29 L58,42 L46,42 Z M75,29 L87,29 L80,42 L68,42 Z M97,29 L105,29 L105,42 L90,42 Z"/>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M51,58 C51,55 54,54 57,56 L83,73 C86,75 86,79 83,81 L57,98 C54,100 51,98 51,95 Z"/>
+    <path android:fillColor="#28D7C4"
+        android:pathData="M30,112 L98,112 L98,115 L30,115 Z"/>
+    <path android:fillColor="#28D7C4"
+        android:pathData="M94,11 L97,16 L102,18 L97,20 L94,25 L92,20 L87,18 L92,16 Z"/>
+</vector>
