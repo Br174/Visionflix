@@ -307,6 +307,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         query: String,
         filters: AdvancedSearchFilters,
         page: Int,
+        sharedMetadata: List<AppAdapter.Item>? = null,
+        candidateLimit: Int = 24,
     ): List<AppAdapter.Item> = coroutineScope {
         val needsTmdbMetadata =
             filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
@@ -326,14 +328,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             throw IllegalStateException("Filtri per Paese, genere, lingua, attori, registi o piattaforma richiedono la chiave TMDb gratuita nelle Impostazioni")
         }
 
-        val metadataMatches = runCatching {
-            searchTmdbAdvanced(
-                TmdbProvider(provider.language),
-                query,
-                filters,
-                page,
-            )
-        }.getOrDefault(emptyList())
+        val metadataMatches = sharedMetadata ?: searchTmdbAdvanced(
+            TmdbProvider(provider.language),
+            query,
+            filters,
+            page,
+        )
 
         if (metadataMatches.isEmpty()) return@coroutineScope emptyList()
 
@@ -347,7 +347,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
 
         val discovered = metadataMatches
-            .take(24)
+            .take(candidateLimit)
             .map { candidate ->
                 async(Dispatchers.IO) {
                     val title = when (candidate) {
@@ -479,21 +479,29 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             _state.emit(State.SearchingMore)
             try {
                 val provider = UserPreferences.currentProvider!!
-                val nextPage = page + 1
-                val results = when {
-                    provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank()) ->
-                        searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
-                    advancedFilters.isActive -> searchProviderAdvanced(provider, query, advancedFilters, nextPage)
-                    query.isBlank() -> browseProvider(provider, nextPage)
-                    else -> searchProviderWithRecovery(provider, query, nextPage)
-                }
-
-                val filtered = ParentalControlUtils.filterItems(results)
+                var nextPage = page
                 val existingKeys = currentState.results
                     .asSequence()
                     .map { it.searchIdentityKey() }
                     .toHashSet()
-                val newUniqueResults = filtered.filterNot { it.searchIdentityKey() in existingKeys }
+                var newUniqueResults: List<AppAdapter.Item> = emptyList()
+                var attempts = 0
+                // A partially filtered page may be empty while later provider pages contain matches.
+                // Bounded skips prevent infinite retries and preserve provider rate limits.
+                while (attempts < 3 && newUniqueResults.isEmpty()) {
+                    nextPage++
+                    attempts++
+                    val results = when {
+                        provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank()) ->
+                            searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
+                        advancedFilters.isActive -> searchProviderAdvanced(provider, query, advancedFilters, nextPage)
+                        query.isBlank() -> browseProvider(provider, nextPage)
+                        else -> searchProviderWithRecovery(provider, query, nextPage)
+                    }
+                    if (results.isEmpty()) break
+                    newUniqueResults = ParentalControlUtils.filterItems(results)
+                        .filterNot { it.searchIdentityKey() in existingKeys }
+                }
                 page = nextPage
                 _state.emit(
                     State.SuccessSearching(
@@ -918,6 +926,30 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             return@launch
         }
 
+        val needsGlobalMetadata = advancedFilters.isActive && (
+            advancedFilters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
+            advancedFilters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+            advancedFilters.effectiveGenres.isNotEmpty() ||
+            advancedFilters.type == AdvancedSearchFilters.ContentType.CARTOON ||
+            advancedFilters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+            !advancedFilters.actorId.isNullOrBlank() ||
+            !advancedFilters.directorId.isNullOrBlank()
+        )
+        val globalMetadata = if (needsGlobalMetadata) {
+            if (!tmdbConfigured()) {
+                _state.emit(State.FailedSearching(IllegalStateException(
+                    "I filtri globali per Paese, genere, lingua e metadati richiedono una chiave TMDb valida"
+                )))
+                return@launch
+            }
+            try {
+                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
+            } catch (error: Exception) {
+                _state.emit(State.FailedSearching(error))
+                return@launch
+            }
+        } else null
+
         val mutableResults = targets.map { target ->
             ProviderResult(
                 provider = target.provider,
@@ -958,7 +990,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                         provider is TmdbProvider && filters.isActive ->
                                             searchTmdbAdvanced(provider, query, advancedFilters, 1)
                                         filters.isActive ->
-                                            searchProviderAdvanced(provider, query, advancedFilters, 1)
+                                            searchProviderAdvanced(
+                                                provider, query, advancedFilters, 1,
+                                                sharedMetadata = globalMetadata, candidateLimit = 12,
+                                            )
                                         query.isBlank() -> browseProvider(provider, 1)
                                         else -> searchProviderWithRecovery(provider, query, 1)
                                     }
