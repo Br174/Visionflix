@@ -302,7 +302,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 is TvShow -> item.released?.format("yyyy-MM-dd")
                 else -> null
             }
-            if (!matchesRequestedYear(date, filters)) return@filter false
+            if (!matchesYearFilter(date, filters)) return@filter false
 
             if (filters.genre != AdvancedSearchFilters.GenreFilter.ALL) {
                 val genres = when (item) {
