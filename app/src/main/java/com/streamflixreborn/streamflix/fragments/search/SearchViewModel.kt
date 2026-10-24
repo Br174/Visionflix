@@ -290,8 +290,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         )
 
     private fun tmdbConfigured(): Boolean =
-        UserPreferences.tmdbApiKey.takeIf { it.isNotBlank() && it != "dummy" } != null ||
-            BuildConfig.TMDB_API_KEY.takeIf { it.isNotBlank() && it != "dummy" } != null
+        com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting
+            .hasKey(UserPreferences.tmdbApiKey, BuildConfig.TMDB_API_KEY)
 
     private suspend fun browseProvider(provider: Provider, page: Int): List<AppAdapter.Item> = coroutineScope {
         // Browse instead of asking providers to text-search an empty string.
@@ -415,12 +415,17 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             return@coroutineScope local
         }
 
-        val metadataMatches = sharedMetadata ?: searchTmdbAdvanced(
-            TmdbProvider(provider.language),
-            query,
-            filters,
-            page,
-        )
+        val metadataMatches = try {
+            sharedMetadata ?: searchTmdbAdvanced(TmdbProvider(provider.language), query, filters, page)
+        } catch (error: retrofit2.HttpException) {
+            if (error.code() == 401 || error.code() == 403) {
+                throw IllegalStateException(
+                    "TMDb ha rifiutato la chiave salvata (HTTP ${error.code()}). " +
+                        "Verifica che sia una API Key v3 oppure un Read Access Token valido.", error
+                )
+            }
+            throw error
+        }
 
         if (metadataMatches.isEmpty()) return@coroutineScope emptyList()
 
@@ -433,30 +438,47 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 .filter { itemMatchesMetadata(it, metadataKeys) }
         }
 
-        // No more than three simultaneous requests to a single provider engine.
+        // Search only as far as needed. Sparse first windows get a second bounded
+        // candidate batch instead of giving a false empty result.
         val providerGate = Semaphore(3)
-        val discovered = metadataMatches
-            .take(candidateLimit)
-            .map { candidate ->
+        suspend fun findVerified(items: List<AppAdapter.Item>): List<AppAdapter.Item> {
+            return items.map { candidate ->
                 async(Dispatchers.IO) {
                     providerGate.withPermit {
+                        val candidateKey = filterMatchKey(candidate)
                         val title = when (candidate) {
                             is Movie -> candidate.title
                             is TvShow -> candidate.title
                             else -> ""
                         }
-                        if (title.isBlank()) emptyList()
+                        if (title.isBlank() || candidateKey == null) emptyList()
                         else runCatching { searchProviderWithRecovery(provider, title, 1) }
                             .getOrDefault(emptyList())
+                            // Correlate each returned provider title to the exact TMDb
+                            // candidate queried, never a different filtered title.
+                            .filter { item ->
+                                filterMatchKey(item)?.let { itemKey ->
+                                    Lab164SearchMatchPolicy.matchesMetadata(
+                                        itemKey, setOf(candidateKey)
+                                    )
+                                } ?: false
+                            }
                     }
                 }
-            }
-            .awaitAll()
-            .flatten()
-            .distinctBy { it.searchIdentityKey() }
-
-        applyProviderFilters(discovered, filters, trustMetadata = true)
+            }.awaitAll().flatten().distinctBy { it.searchIdentityKey() }
+        }
+        val firstBatch = findVerified(metadataMatches.take(candidateLimit))
+        val verified = if (firstBatch.isEmpty()) {
+            (firstBatch + findVerified(metadataMatches.drop(candidateLimit).take(candidateLimit)))
+                .distinctBy { it.searchIdentityKey() }
+        } else firstBatch
+        val accepted = applyProviderFilters(verified, filters, trustMetadata = true)
             .filter { itemMatchesMetadata(it, metadataKeys) }
+        if (accepted.isEmpty() && page == 1 && metadataMatches.isNotEmpty()) {
+            Log.i("SearchViewModel",
+                "Filter metadata found ${metadataMatches.size} titles; provider ${provider.name} supplied 0 verified matches")
+        }
+        accepted
     }
 
     private fun filterMatchKey(item: AppAdapter.Item): String? {
