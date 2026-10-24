@@ -41,12 +41,13 @@ class ProviderViewHolder(
     private fun displayMobileItem(binding: ItemProviderMobileBinding) {
         binding.root.apply {
             setOnClickListener {
+                val endpointOverride = provider.endpointOverride
                 if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointHealthy) {
                     Toast.makeText(context, "Provider Pastebin non disponibile", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
-                if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointOverride.isNullOrBlank()) {
-                    ProviderEndpointRegistry.selectRemote(provider.provider.name, provider.endpointOverride)
+                if (provider.origin == Provider.Origin.PASTEBIN && !endpointOverride.isNullOrBlank()) {
+                    ProviderEndpointRegistry.selectRemote(provider.provider.name, endpointOverride)
                 } else {
                     ProviderEndpointRegistry.selectOriginal(provider.provider.name)
                 }
@@ -82,12 +83,13 @@ class ProviderViewHolder(
     private fun displayTvItem(binding: ItemProviderTvBinding) {
         binding.root.apply {
             setOnClickListener {
+                val endpointOverride = provider.endpointOverride
                 if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointHealthy) {
                     Toast.makeText(context, "Provider Pastebin non disponibile", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
-                if (provider.origin == Provider.Origin.PASTEBIN && !provider.endpointOverride.isNullOrBlank()) {
-                    ProviderEndpointRegistry.selectRemote(provider.provider.name, provider.endpointOverride)
+                if (provider.origin == Provider.Origin.PASTEBIN && !endpointOverride.isNullOrBlank()) {
+                    ProviderEndpointRegistry.selectRemote(provider.provider.name, endpointOverride)
                 } else {
                     ProviderEndpointRegistry.selectOriginal(provider.provider.name)
                 }
