@@ -24,6 +24,12 @@ class Lab164TmdbCredentialRoutingTest {
             Lab164TmdbCredentialRouting.resolve(token, "dummy"))
     }
 
+    @Test fun existingPersonalV3DoesNotGetReplacedByBuildDefault() {
+        assertEquals(Lab164TmdbCredentialRouting.Credential.V3("custom-v3"),
+            Lab164TmdbCredentialRouting.resolve("custom-v3", "embedded-v3"))
+        assertTrue(Lab164TmdbCredentialRouting.hasKey("custom-v3", "dummy"))
+    }
+
     @Test fun v3KeysRemainV3Credentials() {
         assertEquals(Lab164TmdbCredentialRouting.Credential.V3("abcdef012345"),
             Lab164TmdbCredentialRouting.resolve("abcdef012345", "dummy"))
