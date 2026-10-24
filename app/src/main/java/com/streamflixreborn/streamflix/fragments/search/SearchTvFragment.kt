@@ -1204,13 +1204,13 @@ class SearchTvFragment : Fragment() {
         val categories = providerResults.map { providerResult ->
             val title = when (val providerState = providerResult.state) {
                 is ProviderResult.State.Loading ->
-                    "${providerResult.provider.name} - ${getString(R.string.searching)}"
+                    "${providerResult.displayName} - ${getString(R.string.searching)}"
                 is ProviderResult.State.Error ->
-                    "${providerResult.provider.name} - ${getString(R.string.search_error)}"
+                    "${providerResult.displayName} - ${getString(R.string.search_error)}"
                 is ProviderResult.State.Success -> {
                     val count = providerState.results.size
                     val word = if (count == 1) getString(R.string.result) else getString(R.string.results)
-                    "${providerResult.provider.name} - $count $word"
+                    "${providerResult.displayName} - $count $word"
                 }
             }
             val items = (providerResult.state as? ProviderResult.State.Success)?.results?.onEach {
