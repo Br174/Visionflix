@@ -33,7 +33,7 @@ internal object SearchFilterPersistence {
         fun optionalString(key: String): String? = p.getString(key, null)?.takeIf { it.isNotBlank() }
         return SavedSearchFilterState(
             query = p.getString("query", "").orEmpty(),
-            globalSearch = p.getBoolean("global", false),
+            globalSearch = false,
             type = enumValue("type", AdvancedSearchFilters.ContentType.values(), AdvancedSearchFilters.ContentType.ALL),
             italian = enumValue("italian", AdvancedSearchFilters.ItalianFilter.values(), AdvancedSearchFilters.ItalianFilter.ALL),
             year = optionalInt("year"),
@@ -52,7 +52,6 @@ internal object SearchFilterPersistence {
     fun save(context: Context, state: SavedSearchFilterState) {
         val e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         e.putString("query", state.query)
-        e.putBoolean("global", state.globalSearch)
         e.putString("type", state.type.name)
         e.putString("italian", state.italian.name)
         e.putString("genre", state.genre.name)
