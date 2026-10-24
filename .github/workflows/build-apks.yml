@@ -200,6 +200,22 @@ jobs:
           ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --tests '*Lab152GlobalCatalogTest' --tests '*Lab153NavigationTest' --tests '*Lab154SearchPacingTest' --stacktrace
           echo "[LAB154_TESTS=PASS] Fast first filtered results, progressive coverage and preserved poster navigation"
 
+      - name: LAB155 Cerca entry and HTTP451 crash regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab155-http451-search-recovery-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --tests '*Lab152GlobalCatalogTest' --tests '*Lab153NavigationTest' --tests '*Lab154SearchPacingTest' --tests '*Lab155SearchSafetyTest' --stacktrace
+          echo "[LAB155_TESTS=PASS] HTTP451 provider guard, safe screen re-entry, existing TV filter regressions"
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
