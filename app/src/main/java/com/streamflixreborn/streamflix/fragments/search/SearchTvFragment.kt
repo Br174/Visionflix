@@ -260,13 +260,13 @@ class SearchTvFragment : Fragment() {
         val observer = ViewTreeObserver.OnGlobalFocusChangeListener { from, to ->
             if (to !== etSearch || from == null) return@OnGlobalFocusChangeListener
             val nav = requireActivity().findViewById<View>(R.id.nav_main) ?: return@OnGlobalFocusChangeListener
-            var current: android.view.ViewParent? = from
+            var current: View? = from
             while (current != null) {
                 if (current === nav) {
                     btnSearchClear.post { if (isAdded && etSearch.hasFocus()) btnSearchClear.requestFocus() }
                     break
                 }
-                current = current.parent
+                current = current.parent as? View
             }
         }
         rootView.rootView.viewTreeObserver.addOnGlobalFocusChangeListener(observer)
@@ -504,7 +504,7 @@ class SearchTvFragment : Fragment() {
             filterPanelScroll = scroll
             dropdown.addView(scroll, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            scroll.addView(panel, ScrollView.LayoutParams(
+            scroll.addView(panel, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
             // TV only: search bar + clear + mic + Ricerca globale now belong to the same box.
