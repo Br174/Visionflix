@@ -152,15 +152,30 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val previous = (_state.value as? State.SuccessGlobalSearching)?.catalog
         val catalog = GlobalCatalogMerger.merge(results, previous,
             preferredProviderName = UserPreferences.currentProvider?.name)
-        val newestFirst = advancedFilters.sort != AdvancedSearchFilters.SortFilter.OLDEST
-        val ordered = catalog.posters.sortedWith(compareBy<AppAdapter.Item> {
-            val release = when (it) {
-                is Movie -> it.released?.timeInMillis
-                is TvShow -> it.released?.timeInMillis
-                else -> null
+        val ordered = when (advancedFilters.sort) {
+            AdvancedSearchFilters.SortFilter.DATE -> catalog.posters.sortedByDescending {
+                when (it) {
+                    is Movie -> it.released?.timeInMillis ?: Long.MIN_VALUE
+                    is TvShow -> it.released?.timeInMillis ?: Long.MIN_VALUE
+                    else -> Long.MIN_VALUE
+                }
             }
-            if (release == null) Long.MAX_VALUE else if (newestFirst) -release else release
-        })
+            AdvancedSearchFilters.SortFilter.OLDEST -> catalog.posters.sortedBy {
+                when (it) {
+                    is Movie -> it.released?.timeInMillis ?: Long.MAX_VALUE
+                    is TvShow -> it.released?.timeInMillis ?: Long.MAX_VALUE
+                    else -> Long.MAX_VALUE
+                }
+            }
+            AdvancedSearchFilters.SortFilter.VOTE -> catalog.posters.sortedByDescending {
+                when (it) {
+                    is Movie -> it.rating ?: Double.NEGATIVE_INFINITY
+                    is TvShow -> it.rating ?: Double.NEGATIVE_INFINITY
+                    else -> Double.NEGATIVE_INFINITY
+                }
+            }
+            AdvancedSearchFilters.SortFilter.POPULARITY -> catalog.posters
+        }
         return State.SuccessGlobalSearching(results, hasMore, catalog.copy(posters = ordered))
     }
 

@@ -91,7 +91,7 @@ class SearchTvFragment : Fragment() {
     private val selectedGenres = linkedSetOf<AdvancedSearchFilters.GenreFilter>()
     private var fromSelector: DropdownSelector<Int?>? = null
     private var toSelector: DropdownSelector<Int?>? = null
-    private var sortSelector: DropdownSelector<AdvancedSearchFilters.SortFilter>? = null
+    private var selectedSort: AdvancedSearchFilters.SortFilter = AdvancedSearchFilters.SortFilter.DATE
     private var platformSelector: DropdownSelector<AdvancedSearchFilters.PlatformFilter>? = null
     private var countrySelector: DropdownSelector<AdvancedSearchFilters.CountryFilter>? = null
     private var actorEdit: EditText? = null
@@ -237,7 +237,6 @@ class SearchTvFragment : Fragment() {
         genreSelector = null
         fromSelector = null
         toSelector = null
-        sortSelector = null
         platformSelector = null
         countrySelector = null
         navigationFocusObserver?.let { observer ->
@@ -515,7 +514,7 @@ class SearchTvFragment : Fragment() {
                 }
             }.apply {
                 isFillViewport = false
-                isVerticalScrollBarEnabled = true
+                isVerticalScrollBarEnabled = false
                 clipToPadding = false
                 descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
             }
@@ -626,10 +625,8 @@ class SearchTvFragment : Fragment() {
             setupActorTextSearch()
             addActorSuggestionsSurface(panel)
 
-            sortSelector = makeSelector(
-                "Ordina per",
-                AdvancedSearchFilters.SortFilter.entries.toList(),
-            ) { it.label }
+            // Sorting is intentionally absent from advanced filters: the
+            // bottom-lip button owns the complete, mutually exclusive choice.
             platformSelector = makeSelector(
                 "Piattaforma",
                 AdvancedSearchFilters.PlatformFilter.entries.toList(),
@@ -640,7 +637,6 @@ class SearchTvFragment : Fragment() {
                 setPadding(0, dp(2), 0, 0)
             }
             panel.addView(thirdRow)
-            addSelectorToRow(thirdRow, sortSelector)
             addSelectorToRow(thirdRow, platformSelector)
 
             val directorColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
@@ -670,19 +666,19 @@ class SearchTvFragment : Fragment() {
             addDirectorSuggestionsSurface(panel)
 
             countrySelector = makeSelector("Paese di produzione", AdvancedSearchFilters.CountryFilter.entries.toList()) { it.label }
-            val countryRow = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(2), 0, 0)
-            }
-            panel.addView(countryRow)
-            addSelectorToRow(countryRow, countrySelector)
-
             val actions = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.END
-                setPadding(0, dp(3), 0, 0)
+                gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(1), dp(10), dp(1))
             }
-            panel.addView(actions)
+            // Country shares this pinned footer with Reset and Apply; it no
+            // longer takes a full-width, separate row in the scrolling drawer.
+            countrySelector?.let { selector ->
+                actions.addView(selector.root,
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginEnd = dp(12)
+                    })
+            }
             btnResetFilters = makeActionButton("Azzera", primary = false).also { button ->
                 actions.addView(
                     button,
@@ -699,11 +695,9 @@ class SearchTvFragment : Fragment() {
 
             // Pin Apply/Reset below the scrolling form so neither can be
             // clipped when both actor/director suggestions are expanded.
-            panel.removeView(actions)
-            actions.setPadding(dp(10), dp(2), dp(10), dp(3))
             filterActionRow = actions
             dropdown.addView(actions, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(59)))
 
             // Always-visible bottom lip. The filters above are still the exact
             // existing components with unchanged labels and arrangement.
@@ -731,11 +725,9 @@ class SearchTvFragment : Fragment() {
             quickAll = quickButton("Tutti", 68) { quickType(AdvancedSearchFilters.ContentType.ALL) }
             quickFilm = quickButton("Film", 68) { quickType(AdvancedSearchFilters.ContentType.MOVIE) }
             quickSeries = quickButton("Serie", 68) { quickType(AdvancedSearchFilters.ContentType.TV) }
-            quickDate = quickButton("Più nuovi", 87) {
-                sortSelector?.selectValue(if (sortSelector?.value == AdvancedSearchFilters.SortFilter.OLDEST)
-                    AdvancedSearchFilters.SortFilter.DATE else AdvancedSearchFilters.SortFilter.OLDEST)
-                updateQuickBar()
-                submitSearch()
+            quickDate = quickButton("Più nuovi", 104) { openUnifiedSortMenu() }.apply {
+                textSize = 11f
+                contentDescription = "Ordina i risultati: tocca per scegliere"
             }
             dropdownArrow = TextView(requireContext()).apply {
                 id = View.generateViewId()
@@ -783,7 +775,6 @@ class SearchTvFragment : Fragment() {
         val genre = genreSelector ?: return
         val from = fromSelector ?: return
         val to = toSelector ?: return
-        val sort = sortSelector ?: return
         val platform = platformSelector ?: return
         val actor = actorEdit ?: return
         val director = directorEdit ?: return
@@ -806,25 +797,23 @@ class SearchTvFragment : Fragment() {
         year.setNextFocus(left = italian.viewId, right = genre.viewId, up = llGlobalSearch.id, down = actor.id)
         genre.setNextFocus(left = year.viewId, up = llGlobalSearch.id, down = actor.id)
 
-        from.setNextFocus(right = to.viewId, up = type.viewId, down = sort.viewId)
+        from.setNextFocus(right = to.viewId, up = type.viewId, down = platform.viewId)
         to.setNextFocus(left = from.viewId, right = actor.id, up = italian.viewId, down = platform.viewId)
         actor.nextFocusLeftId = to.viewId
         actor.nextFocusUpId = year.viewId
-        actor.nextFocusDownId = director.id
+        actor.nextFocusDownId = platform.viewId
 
-        sort.setNextFocus(right = platform.viewId, up = from.viewId, down = country.viewId)
-        platform.setNextFocus(left = sort.viewId, right = director.id, up = to.viewId, down = country.viewId)
+        platform.setNextFocus(right = director.id, up = from.viewId, down = country.viewId)
         director.nextFocusLeftId = platform.viewId
         director.nextFocusUpId = actor.id
         director.nextFocusDownId = country.viewId
 
-        // LAB152: country filter was visually present but absent from the TV D-pad graph.
-        // Give it explicit up/down links and route both adjacent controls through it.
-        country.setNextFocus(up = director.id, down = apply.id)
-        reset.nextFocusUpId = country.viewId
+        country.setNextFocus(right = reset.id, up = platform.viewId, down = vgvSearch.id)
+        reset.nextFocusUpId = director.id
+        reset.nextFocusLeftId = country.viewId
         reset.nextFocusRightId = apply.id
         reset.nextFocusDownId = vgvSearch.id
-        apply.nextFocusUpId = country.viewId
+        apply.nextFocusUpId = director.id
         apply.nextFocusLeftId = reset.id
         apply.nextFocusDownId = vgvSearch.id
         vgvSearch.nextFocusUpId = dropdownArrow?.id ?: apply.id
@@ -866,6 +855,60 @@ class SearchTvFragment : Fragment() {
         }
     }
 
+    private fun focusPersonCircle(grid: HorizontalGridView?): Boolean {
+        if (!isAdded || grid == null || grid.visibility != View.VISIBLE ||
+            (grid.adapter?.itemCount ?: 0) == 0) return false
+        hideKeyboard()
+        val scroller = filterPanelScroll
+        scroller?.smoothScrollTo(0, (grid.bottom - (scroller.height - dp(20))).coerceAtLeast(0))
+        grid.setSelectedPosition(0)
+        grid.post {
+            if (isAdded && grid.visibility == View.VISIBLE) {
+                val first = grid.findViewHolderForAdapterPosition(0)?.itemView
+                if (first?.requestFocus() != true) grid.requestFocus()
+            }
+        }
+        return true
+    }
+
+    private fun configurePersonCircleNavigation(
+        grid: HorizontalGridView,
+        edit: EditText,
+        nextId: () -> Int,
+    ) {
+        grid.isFocusable = true
+        grid.isFocusableInTouchMode = true
+        grid.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        grid.setNumRows(1)
+        grid.addOnChildViewHolderSelectedListener(object : OnChildViewHolderSelectedListener() {
+            override fun onChildViewHolderSelected(
+                parent: RecyclerView,
+                child: RecyclerView.ViewHolder?,
+                position: Int,
+                subposition: Int,
+            ) {
+                child?.itemView?.apply {
+                    nextFocusUpId = edit.id
+                    nextFocusDownId = nextId()
+                    setOnKeyListener { _, code, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) false
+                        else when (code) {
+                            KeyEvent.KEYCODE_DPAD_UP -> edit.requestFocus()
+                            KeyEvent.KEYCODE_DPAD_DOWN ->
+                                parent.rootView.findViewById<View>(nextId())?.requestFocus() == true
+                            else -> false
+                        }
+                    }
+                }
+            }
+        })
+        edit.setOnKeyListener { _, code, event ->
+            if (event.action == KeyEvent.ACTION_DOWN &&
+                code == KeyEvent.KEYCODE_DPAD_DOWN) focusPersonCircle(grid)
+            else false
+        }
+    }
+
     private fun addActorSuggestionsSurface(panel: LinearLayout) {
         // HorizontalGridView è opzionale: se quel componente non è disponibile sul firmware,
         // viene usato automaticamente un elenco testuale semplice senza chiudere Cerca.
@@ -875,6 +918,11 @@ class SearchTvFragment : Fragment() {
                 visibility = View.GONE
                 adapter = actorSuggestionsAdapter
                 setItemSpacing(dp(12))
+                actorEdit?.let { edit ->
+                    configurePersonCircleNavigation(this, edit) {
+                        platformSelector?.viewId ?: directorEdit?.id ?: View.NO_ID
+                    }
+                }
             }
             panel.addView(
                 actorSuggestionsGrid,
@@ -940,6 +988,11 @@ class SearchTvFragment : Fragment() {
                 visibility = View.GONE
                 adapter = directorSuggestionsAdapter
                 setItemSpacing(dp(12))
+                directorEdit?.let { edit ->
+                    configurePersonCircleNavigation(this, edit) {
+                        countrySelector?.viewId ?: btnApplyFilters?.id ?: View.NO_ID
+                    }
+                }
             }
             panel.addView(
                 directorSuggestionsGrid,
@@ -998,7 +1051,11 @@ class SearchTvFragment : Fragment() {
                 if (items.isNotEmpty()) {
                     actorEdit?.nextFocusDownId = grid.id
                     grid.nextFocusUpId = actorEdit?.id ?: View.NO_ID
-                    grid.nextFocusDownId = sortSelector?.viewId ?: View.NO_ID
+                    grid.post { if (grid.visibility == View.VISIBLE && (grid.adapter?.itemCount ?: 0) > 0) {
+                        grid.findViewHolderForAdapterPosition(0)?.itemView?.nextFocusUpId =
+                            actorEdit?.id ?: View.NO_ID
+                    } }
+                    grid.nextFocusDownId = platformSelector?.viewId ?: View.NO_ID
                 } else {
                     actorEdit?.nextFocusDownId = directorEdit?.id ?: View.NO_ID
                 }
@@ -1037,7 +1094,7 @@ class SearchTvFragment : Fragment() {
         savePersistedFiltersSafely()
         actorSuggestionsGrid?.visibility = View.GONE
         actorFallbackSuggestions?.visibility = View.GONE
-        sortSelector?.requestFocus()
+        actorEdit?.requestFocus()
         hideKeyboard()
         searchHeader.post { updateGridTopPadding() }
     }
@@ -1052,6 +1109,10 @@ class SearchTvFragment : Fragment() {
                 if (items.isNotEmpty()) {
                     directorEdit?.nextFocusDownId = grid.id
                     grid.nextFocusUpId = directorEdit?.id ?: View.NO_ID
+                    grid.post { if (grid.visibility == View.VISIBLE && (grid.adapter?.itemCount ?: 0) > 0) {
+                        grid.findViewHolderForAdapterPosition(0)?.itemView?.nextFocusUpId =
+                            directorEdit?.id ?: View.NO_ID
+                    } }
                     grid.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
                 } else {
                     directorEdit?.nextFocusDownId = btnApplyFilters?.id ?: View.NO_ID
@@ -1101,7 +1162,8 @@ class SearchTvFragment : Fragment() {
         selectedGenres.clear()
         fromSelector?.reset()
         toSelector?.reset()
-        sortSelector?.reset()
+        selectedSort = AdvancedSearchFilters.SortFilter.DATE
+        updateQuickBar()
         platformSelector?.reset()
         countrySelector?.reset()
         suppressActorTextChange = true
@@ -1182,7 +1244,7 @@ class SearchTvFragment : Fragment() {
             actorName = vm?.selectedActorName.orEmpty(),
             directorId = vm?.selectedDirectorId,
             directorName = vm?.selectedDirectorName.orEmpty(),
-            sort = sortSelector?.value ?: AdvancedSearchFilters.SortFilter.POPULARITY,
+            sort = selectedSort,
             platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
             country = countrySelector?.value ?: AdvancedSearchFilters.CountryFilter.ALL,
         )
@@ -1239,7 +1301,7 @@ class SearchTvFragment : Fragment() {
                     fromYear = fromSelector?.value,
                     toYear = toSelector?.value,
                     genre = genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
-                    sort = sortSelector?.value ?: AdvancedSearchFilters.SortFilter.POPULARITY,
+                    sort = selectedSort,
                     platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
                     country = countrySelector?.value ?: AdvancedSearchFilters.CountryFilter.ALL,
                     genres = selectedGenres.toSet(),
@@ -1268,8 +1330,7 @@ class SearchTvFragment : Fragment() {
             fromSelector?.selectValue(saved.fromYear)
             toSelector?.selectValue(saved.toYear)
             genreSelector?.selectValue(saved.genre)
-            sortSelector?.selectValue(if (saved.sort == AdvancedSearchFilters.SortFilter.POPULARITY)
-                AdvancedSearchFilters.SortFilter.DATE else saved.sort)
+            selectedSort = saved.sort
             updateQuickBar()
             platformSelector?.selectValue(saved.platform)
             countrySelector?.selectValue(saved.country)
@@ -1595,13 +1656,30 @@ class SearchTvFragment : Fragment() {
         }
     }
 
+    private fun openUnifiedSortMenu() {
+        if (!isAdded) return
+        val choices = Lab156UnifiedSort.options
+        val labels = choices.map(Lab156UnifiedSort::label).toTypedArray()
+        val dialog = android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Ordina risultati")
+            .setSingleChoiceItems(labels, choices.indexOf(selectedSort)) { current, index ->
+                selectedSort = choices[index]
+                updateQuickBar()
+                current.dismiss()
+                submitSearch()
+            }
+            .setNegativeButton("Annulla", null)
+            .create()
+        dialog.setOnDismissListener { quickDate?.post { quickDate?.requestFocus() } }
+        dialog.show()
+    }
+
     private fun updateQuickBar() {
         val type = typeSelector?.value
         quickAll?.isActivated = type == AdvancedSearchFilters.ContentType.ALL
         quickFilm?.isActivated = type == AdvancedSearchFilters.ContentType.MOVIE
         quickSeries?.isActivated = type == AdvancedSearchFilters.ContentType.TV
-        quickDate?.text = if (sortSelector?.value == AdvancedSearchFilters.SortFilter.OLDEST)
-            "Più vecchi" else "Più nuovi"
+        quickDate?.text = Lab156UnifiedSort.label(selectedSort)
     }
 
     private fun rememberPoster(id: String, kind: String) {
