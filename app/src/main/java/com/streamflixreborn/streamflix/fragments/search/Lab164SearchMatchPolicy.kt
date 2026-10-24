@@ -37,6 +37,20 @@ internal object Lab164SearchMatchPolicy {
         }
     }
 
+    /** A typed title plus a year should not trigger full discovery across TMDb.
+     * Keep provider search primary, checking TMDb only when local release years are absent.
+     */
+    fun providerFirstYearQuery(query: String, filters: AdvancedSearchFilters): Boolean =
+        query.isNotBlank() &&
+            (filters.year != null || !filters.dateFrom.isNullOrBlank() ||
+                !filters.dateTo.isNullOrBlank()) &&
+            filters.italian == AdvancedSearchFilters.ItalianFilter.ALL &&
+            filters.country == AdvancedSearchFilters.CountryFilter.ALL &&
+            filters.platform == AdvancedSearchFilters.PlatformFilter.ALL &&
+            filters.effectiveGenres.isEmpty() &&
+            filters.type != AdvancedSearchFilters.ContentType.CARTOON &&
+            filters.actorId.isNullOrBlank() && filters.directorId.isNullOrBlank()
+
     /** Recover sparse provider catalog filters with a bounded second window. */
     fun catalogPages(window: Int): IntRange = when(window) {
         1 -> 1..4
