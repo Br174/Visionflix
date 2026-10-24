@@ -41,3 +41,27 @@ CURRENT_STATUS=ARTIFACTS_VERIFIED_ON_GITHUB_PENDING_ANDROID_DEVICE_TEST
 DEVICE_TESTS=NOT_YET_EXECUTED
 ACTUAL_PROVIDER_COVERAGE_AND_LATENCY=NOT_YET_DEVICE_VERIFIED
 NEXT=install_in_place_and_compare_filter_results_speed_vs_LAB163_on_TV_and_mobile;keep_immutable_release_until_user_verifies;do_not_claim_final_root_cause_closure_without_device_evidence
+
+
+FOLLOWUP_REASON=User confirmed LAB164 any applied filter returned 0 results in real TV use
+FOLLOWUP_ROOT_CAUSE_CONFIRMED=CI signed TV/Mobile APK packaged TMDB_API_KEY=dummy; TMDb-dependent filters have no bundled API credential
+FOLLOWUP_ADDITIONAL_CAUSE=Local filtered browsing first page scan insufficient; genre translation mapping too strict; empty first page prevents effective discovery
+FOLLOWUP_PATCH_SOURCE_SHA=6dca5473ca34c6c7f1450a894aa652e2bc1912db
+FOLLOWUP_ACTIONS=Local provider browse first 4 pages with 5-8 fallback only when needed; provider genre bilingual aliases; missing metadata source raises explicit configuration error; empty first page pagination flag preserved
+FOLLOWUP_AUTOMATED_TESTS=PASS
+FOLLOWUP_WORKFLOW_RUN=40125237576
+FOLLOWUP_BUILD=SUCCESS
+FOLLOWUP_FIXED_TEST_DOWNLOADER=SUCCESS
+FOLLOWUP_VERSION=1.7.533
+FOLLOWUP_VERSION_CODE=462
+FOLLOWUP_RELEASE=https://github.com/Br174/Visionflix/releases/tag/visionflix-lab-ci-40125237576
+FOLLOWUP_TV=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-ci-40125237576/Verlezza-Vision-TV.apk
+FOLLOWUP_TV_SHA256=14d18904d5e00d8d4a0d788c03626f920e9192c815d5d7ae590a3bf7d185b1f7
+FOLLOWUP_MOBILE=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-ci-40125237576/Verlezza-Vision-Mobile.apk
+FOLLOWUP_MOBILE_SHA256=edfd156dde9f27f48dd34502bdb25e5d4831763dc59de2099a7ef2c6dd89f807
+FOLLOWUP_ZIP=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-ci-40125237576/Verlezza-Vision-LAB.zip
+FOLLOWUP_ZIP_SHA256=5206e88841f00191c45779bb1b47f2db96d3d97262d68d2ae3facbce65a91aa6
+FOLLOWUP_CERT_SHA256=ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6
+FOLLOWUP_STATUS=SIGNED_BUILD_VERIFIED_REAL_PROVIDER_FILTERS_NOT_YET_DEVICE_VERIFIED
+FOLLOWUP_LIMITATION=Country/original-language/platform/actor/director require user configured valid TMDb key; cannot claim fully functional without it; local genre relies on provider-provided genre labels
+FOLLOWUP_PROTECTED=main,MADRE,production,player,providers,UI_layout
