@@ -127,8 +127,9 @@ class MovieViewModel(id: String, private val database: AppDatabase) : ViewModel(
                 val verified = TmdbUtils.getMovie(
                     movie.title, year, UserPreferences.currentProvider?.language ?: "it"
                 )?.directors.orEmpty()
-                if (verified.isNotEmpty()) {
-                    _state.emit(State.SuccessLoading(movie.copy(directors = verified)))
+                val matched = DirectorCredits.reconcileWithSource(movie.directors, verified)
+                if (matched.isNotEmpty()) {
+                    _state.emit(State.SuccessLoading(movie.copy(directors = matched)))
                 }
             }
         } catch (e: Exception) {
