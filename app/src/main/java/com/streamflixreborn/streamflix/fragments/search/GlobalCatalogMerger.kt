@@ -18,10 +18,13 @@ object GlobalCatalogMerger {
         val alternatives: Map<String, List<AppAdapter.Item>>,
     )
 
-    fun merge(results: List<ProviderResult>, previous: Catalog? = null): Catalog {
+    fun merge(results: List<ProviderResult>, previous: Catalog? = null): Catalog =
+        mergeItems(results.mapNotNull { (it.state as? ProviderResult.State.Success)?.results }, previous)
+
+    /** Pure entry point used by deterministic no-network unit tests. */
+    fun mergeItems(groups: List<List<AppAdapter.Item>>, previous: Catalog? = null): Catalog {
         val buckets = linkedMapOf<String, MutableList<AppAdapter.Item>>()
-        results.forEach { result ->
-            val items = (result.state as? ProviderResult.State.Success)?.results ?: return@forEach
+        groups.forEach { items ->
             items.forEach { item ->
                 if (item !is Movie && item !is TvShow) return@forEach
                 val key = identity(item)
