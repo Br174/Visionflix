@@ -125,11 +125,18 @@ class DirectorCreditsTest {
             com.streamflixreborn.streamflix.models.TvShow(id = "903", title = "Serie da attore"),
         )
         val routed = DirectorCredits.preserveCatalogFilmography(source)
-        assertEquals(listOf("tmdb-movie:902", "tmdb-tv:903"),
-            routed.map { it.id })
-        assertEquals(902, DirectorCredits.catalogMovieId(routed[0].id))
-        assertEquals(903, DirectorCredits.catalogTvId(routed[1].id))
-        assertEquals(listOf("902", "903"), source.map { it.id })
+        fun ids(list: List<com.streamflixreborn.streamflix.models.Show>): List<String> =
+            list.map { item ->
+                when (item) {
+                    is com.streamflixreborn.streamflix.models.Movie -> item.id
+                    is com.streamflixreborn.streamflix.models.TvShow -> item.id
+                }
+            }
+        val routedIds = ids(routed)
+        assertEquals(listOf("tmdb-movie:902", "tmdb-tv:903"), routedIds)
+        assertEquals(902, DirectorCredits.catalogMovieId(routedIds[0]))
+        assertEquals(903, DirectorCredits.catalogTvId(routedIds[1]))
+        assertEquals(listOf("902", "903"), ids(source))
         assertNull(DirectorCredits.catalogMovieId("tmdb-movie:oops"))
         assertNull(DirectorCredits.catalogTvId("903"))
     }
