@@ -8,6 +8,7 @@ import com.streamflixreborn.streamflix.models.Movie
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.models.Video
 import com.streamflixreborn.streamflix.utils.SourcePreferences
+import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.format
 import java.net.URI
 import java.text.Normalizer
@@ -46,8 +47,7 @@ object WebSourceFallback {
         listOf("animeworld") to "AnimeWorldProvider",
         listOf("animeunity") to "AnimeUnityProvider",
         listOf("animesaturn") to "AnimeSaturnProvider",
-        listOf("eurostreaming") to "EurostreamingProvider",
-        listOf("guardaplay") to "GuardaPlayProvider",
+        listOf("guardaplay", "guardaflix") to "GuardaFlixProvider",
     )
 
     suspend fun searchFallback(
@@ -176,12 +176,15 @@ object WebSourceFallback {
         )
     }
 
-    suspend fun configuredProviders(excludeProviderName: String? = null): List<Provider> {
+    suspend fun configuredProviders(
+        excludeProviderName: String? = null,
+        targetLanguage: String? = UserPreferences.currentProvider?.language,
+    ): List<Provider> {
         val sites = expandedSites()
         val result = linkedMapOf<String, Provider>()
 
         sites.forEach { site ->
-            findProviderForSite(site)?.let { provider ->
+            findProviderForSite(site, targetLanguage)?.let { provider ->
                 if (provider.name != excludeProviderName && provider !is IptvProvider && provider !is TmdbProvider) {
                     result.putIfAbsent(provider.name, provider)
                 }
@@ -251,7 +254,7 @@ object WebSourceFallback {
         return listOf(source)
     }
 
-    private fun findProviderForSite(site: String): Provider? {
+    private fun findProviderForSite(site: String, targetLanguage: String?): Provider? {
         val host = hostOf(site)
         if (host.isBlank()) return null
         val hostCompact = host.replace(".", "").replace("-", "")
@@ -260,14 +263,15 @@ object WebSourceFallback {
             ?.second
             ?.let { className ->
                 Provider.providers.keys.firstOrNull { provider ->
-                    provider::class.java.simpleName == className && provider.language.lowercase().startsWith("it")
+                    provider::class.java.simpleName == className &&
+                        (targetLanguage == null || provider.language == targetLanguage)
                 }?.let { return it }
-                Provider.providers.keys.firstOrNull { it::class.java.simpleName == className }?.let { return it }
             }
 
         val siteStem = domainStem(host)
         return Provider.providers.keys.firstOrNull { provider ->
             if (provider is IptvProvider || provider is TmdbProvider) return@firstOrNull false
+            if (targetLanguage != null && provider.language != targetLanguage) return@firstOrNull false
             val providerHost = hostOf(provider.baseUrl)
             providerHost.isNotBlank() && (
                 host == providerHost ||
