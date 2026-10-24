@@ -1,6 +1,7 @@
 package com.streamflixreborn.streamflix.providers
 
 import com.streamflixreborn.streamflix.adapters.AppAdapter
+import com.streamflixreborn.streamflix.extractors.Extractor
 import com.streamflixreborn.streamflix.models.Category
 import com.streamflixreborn.streamflix.models.Episode
 import com.streamflixreborn.streamflix.models.Genre
@@ -130,19 +131,25 @@ object AdaptiveCinemaProvider : EndpointManagedProvider {
 
     override suspend fun getServers(id: String, videoType: Video.Type): List<Video.Server> {
         val doc = page(id) ?: return emptyList()
-        val candidates = mutableListOf<String>()
-        doc.select("video[src], video source[src], source[type^=video/], meta[property=og:video][content]").forEach { el ->
-            val url = if (el.tagName() == "meta") el.absUrl("content") else el.absUrl("src")
-            if (publicUrl(url)) candidates.add(url)
-        }
-        return candidates.distinct().take(8).mapIndexed { index, url ->
-            Video.Server(id = url, name = "HTML5 ${index + 1}", src = url)
+        return AdaptiveMediaLinks.fromDocument(doc).mapIndexed { index, link ->
+            Video.Server(
+                id = "adaptive-${link.kind.name.lowercase()}:${link.url}",
+                name = if (link.kind == AdaptiveMediaLinks.Kind.DIRECT) "Diretto ${index + 1}" else "Player incorporato ${index + 1}",
+                src = link.url,
+            )
         }
     }
 
     override suspend fun getVideo(server: Video.Server): Video {
         val source = server.src.ifBlank { server.id }
         require(publicUrl(source)) { "Flusso non accessibile" }
+        if (server.id.startsWith("adaptive-embed:")) {
+            // Reuse existing specialized extractors only for a public embedded player.
+            // Never treat an iframe webpage as a playable media stream.
+            val video = Extractor.extract(source, server)
+            require(publicUrl(video.source)) { "Nessun flusso pubblico valido dal player incorporato" }
+            return video
+        }
         return Video(source = source)
     }
 }

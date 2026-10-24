@@ -94,6 +94,10 @@ jobs:
               if [ "$APP_VERSION_CODE" -le 440 ]; then APP_VERSION_CODE=441; fi
               test "$APP_VERSION_CODE" -gt 440
             fi
+            if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab161-adaptive-coverage-20261024' ]; then
+              if [ "$APP_VERSION_CODE" -le 452 ]; then APP_VERSION_CODE=453; fi
+              test "$APP_VERSION_CODE" -gt 452
+            fi
           else
             LATEST_TAG="$(curl --fail --silent --show-error --retry 4 --retry-all-errors --retry-delay 2 --location \
               'https://api.github.com/repos/Br174/streamflix-BV/releases/latest' \
@@ -326,6 +330,26 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab155SearchSafetyTest' --stacktrace
           echo "[LAB160_TESTS=PASS] Source safety and previous navigation"
+
+      - name: LAB161 embedded playback and LAB160 regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab161-adaptive-coverage-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab161AdaptivePlaybackTest' \
+            --tests '*Lab160AdaptiveSourceRulesTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*DirectorCreditsTest' --stacktrace
+          echo "[LAB161_TESTS=PASS] embedded candidates, native-source safety, older navigation"
 
       - name: Build Android mobile debug APK
         env:
