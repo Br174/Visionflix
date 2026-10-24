@@ -146,6 +146,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private var globalPage = 1
     private var globalLoadingMore = false
 
+    private fun globalWallState(results: List<ProviderResult>, hasMore: Boolean = true): State.SuccessGlobalSearching {
+        val previous = (_state.value as? State.SuccessGlobalSearching)?.catalog
+        return State.SuccessGlobalSearching(
+            results, hasMore, GlobalCatalogMerger.merge(results, previous)
+        )
+    }
+
     fun search(query: String) = viewModelScope.launch(Dispatchers.IO) {
         advancedFilters = AdvancedSearchFilters()
         selectedActorId = null
@@ -943,7 +950,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         globalPage = 1
         globalLoadingMore = false
         if (targets.isEmpty()) {
-            _state.emit(State.SuccessGlobalSearching(emptyList()))
+            _state.emit(globalWallState(emptyList(), hasMore = false))
             return@launch
         }
 
@@ -980,7 +987,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 displayName = target.displayName,
             )
         }.toMutableList()
-        _state.emit(State.SuccessGlobalSearching(mutableResults.toList()))
+        _state.emit(globalWallState(mutableResults.toList()))
 
         val stateComparator = compareBy<ProviderResult> { providerResult ->
             when (val state = providerResult.state) {
@@ -1058,7 +1065,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                     // Batch UI updates for a fluid poster wall instead of rebuilding
                                     // RecyclerView on every individual provider completion.
                                     if (completedTargets == 1 || completedTargets % 3 == 0 || completedTargets == targets.size) {
-                                        _state.emit(State.SuccessGlobalSearching(mutableResults.toList().sortedWith(stateComparator)))
+                                        _state.emit(globalWallState(mutableResults.toList()))
                                     }
                                 }
                             }
@@ -1161,7 +1168,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             }
             globalPage = nextPage
             // If all sources produced nothing, stop automatic paging to avoid endless calls.
-            _state.emit(State.SuccessGlobalSearching(updated, hasMore = addedCount > 0))
+            _state.emit(globalWallState(updated, hasMore = addedCount > 0))
         } catch (e: Exception) {
             Log.e("SearchViewModel", "loadMoreGlobal", e)
             _state.emit(existing.copy(hasMore = false))
