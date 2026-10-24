@@ -476,7 +476,7 @@ class TmdbProvider(override val language: String) : Provider {
                 ),
                 cast = movie.credits?.cast?.map { cast ->
                     People(
-                        id = cast.id.toString(),
+                        id = com.streamflixreborn.streamflix.utils.DirectorCredits.actorIdentity(cast.id),
                         name = cast.name,
                         image = cast.profilePath?.w500,
                     )
@@ -553,7 +553,7 @@ class TmdbProvider(override val language: String) : Provider {
                 },
                 cast = tv.credits?.cast?.map { cast ->
                     People(
-                        id = cast.id.toString(),
+                        id = com.streamflixreborn.streamflix.utils.DirectorCredits.actorIdentity(cast.id),
                         name = cast.name,
                         image = cast.profilePath?.w500,
                     )
