@@ -541,14 +541,8 @@ class SearchMobileFragment : Fragment() {
         )
         savePersistedFilters()
 
-        if (filters.isActive) {
-            binding.swGlobalSearch.isChecked = false
-            viewModel.searchAdvanced(query, filters)
-            return true
-        }
-
         if (binding.swGlobalSearch.isChecked) {
-            if (query.isBlank()) {
+            if (query.isBlank() && !filters.isActive) {
                 Toast.makeText(
                     requireContext(),
                     getString(R.string.search_empty_query),
@@ -557,9 +551,9 @@ class SearchMobileFragment : Fragment() {
                 return true
             }
             val currentLanguage = UserPreferences.currentProvider?.language ?: "it"
-            viewModel.searchGlobal(query, currentLanguage)
+            viewModel.searchGlobal(query, currentLanguage, filters)
         } else {
-            viewModel.search(query)
+            if (filters.isActive) viewModel.searchAdvanced(query, filters) else viewModel.search(query)
         }
         return true
     }
