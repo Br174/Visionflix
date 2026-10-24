@@ -102,6 +102,17 @@ class DirectorCreditsTest {
         assertTrue(DirectorCredits.matchesSourceMovie(null, null, 2020, 2020))
     }
 
+    @Test fun directorOnlyCastAndNoDirectorFallbackRemainStable() {
+        val actors = listOf(People("601", "Primo attore"), People("602", "Secondo attore"))
+        assertEquals(actors, DirectorCredits.castFirst(emptyList(), actors))
+        val directors = DirectorCredits.directorTiles(
+            listOf(crew(700, "Director", "Prima regista"), crew(701, "Director", "Secondo regista"))
+        )
+        assertEquals(listOf("Prima regista", "Secondo regista"),
+            DirectorCredits.castFirst(directors, emptyList()).map { it.name })
+        assertEquals(emptyList<People>(), DirectorCredits.directorTiles(null))
+    }
+
     @Test fun malformedAndUnverifiedIdsAreRejected() {
         assertNull(DirectorCredits.directorPersonId("director-abc"))
         assertNull(DirectorCredits.directorPersonId("tmdb-director:0"))
