@@ -25,6 +25,7 @@ data class AdvancedSearchFilters(
         POPULARITY("Popolarità"),
         DATE("Data"),
         VOTE("Voto"),
+        OLDEST("Data crescente"),
     }
 
     enum class PlatformFilter(val label: String, val providerIds: String?) {
