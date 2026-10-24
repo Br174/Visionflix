@@ -76,6 +76,13 @@ object ProviderEndpointRegistry {
         runCatching { prefs().edit().remove(key("selected", providerName)).apply() }
     }
 
+    fun selectedOverride(providerName: String): String? =
+        runCatching { prefs().getString(key("selected", providerName), null) }.getOrNull()
+
+    fun restoreSelection(providerName: String, endpoint: String?) {
+        if (endpoint.isNullOrBlank()) selectOriginal(providerName) else selectRemote(providerName, endpoint)
+    }
+
     fun selectRemote(providerName: String, url: String) {
         val normalized = normalizeUrl(url) ?: return
         runCatching {
@@ -155,43 +162,46 @@ object ProviderEndpointRegistry {
     private suspend fun refreshManagedEndpoints(
         providers: Collection<Provider>,
         remoteEntries: List<RemoteEntry>,
-    ) {
-        providers.filterIsInstance<EndpointManagedProvider>().forEach { provider ->
-            val p = prefs()
-            val autoKey = key("auto", provider.name)
-            val lastGoodKey = key("lastgood", provider.name)
-            val currentAuto = p.getString(autoKey, null)
-            val candidates = buildList {
-                currentAuto?.takeIf { it.isNotBlank() }?.let(::add)
-                add(provider.builtInBaseUrl)
-                remoteEntries
-                    .filter { it.engineName == provider.name && it.healthy }
-                    .forEach { add(it.url) }
-            }.mapNotNull(::normalizeUrl).distinct()
+    ) = coroutineScope {
+        providers.filterIsInstance<EndpointManagedProvider>().map { provider ->
+            async(Dispatchers.IO) {
+                val p = prefs()
+                val autoKey = key("auto", provider.name)
+                val lastGoodKey = key("lastgood", provider.name)
+                val currentAuto = p.getString(autoKey, null)
+                val candidates = buildList {
+                    remoteEntries
+                        .filter { it.engineName == provider.name && it.healthy }
+                        .forEach { add(it.url) }
+                    currentAuto?.takeIf { it.isNotBlank() }?.let(::add)
+                    add(provider.builtInBaseUrl)
+                }.mapNotNull(::normalizeUrl).distinct()
 
-            var chosen: String? = null
-            for (candidate in candidates) {
-                val probe = probe(candidate)
-                if (probe.first) {
-                    chosen = probe.second ?: candidate
-                    break
+                var chosen: String? = null
+                for (candidate in candidates) {
+                    val probe = probe(candidate)
+                    if (probe.first) {
+                        chosen = probe.second ?: candidate
+                        break
+                    }
                 }
-            }
 
-            if (chosen != null) {
-                p.edit()
-                    .putString(autoKey, chosen)
-                    .putString(lastGoodKey, chosen)
-                    .apply()
-                provider.onEndpointSelectionChanged()
-            } else {
-                val lastGood = p.getString(lastGoodKey, null)
-                if (!lastGood.isNullOrBlank()) {
-                    p.edit().putString(autoKey, lastGood).apply()
+                if (chosen != null) {
+                    p.edit()
+                        .putString(autoKey, chosen)
+                        .putString(lastGoodKey, chosen)
+                        .apply()
                     provider.onEndpointSelectionChanged()
+                } else {
+                    val lastGood = p.getString(lastGoodKey, null)
+                    if (!lastGood.isNullOrBlank()) {
+                        p.edit().putString(autoKey, lastGood).apply()
+                        provider.onEndpointSelectionChanged()
+                    }
                 }
             }
-        }
+        }.awaitAll()
+        Unit
     }
 
     private fun persistRemoteEntries(entries: List<RemoteEntry>) {
@@ -313,9 +323,14 @@ object ProviderEndpointRegistry {
                 .get()
                 .build()
             client.newCall(request).execute().use { response ->
-                val alive = response.code in 200..399
+                val alive = response.code in 200..399 || response.code == 401 || response.code == 403
                 val finalUrl = response.request.url.let {
-                    "${it.scheme}://${it.host}" + if (it.port != it.defaultPort) ":${it.port}" else ""
+                    val defaultPort = when (it.scheme.lowercase()) {
+                        "http" -> 80
+                        "https" -> 443
+                        else -> it.port
+                    }
+                    "${it.scheme}://${it.host}" + if (it.port != defaultPort) ":${it.port}" else ""
                 }
                 alive to finalUrl
             }
