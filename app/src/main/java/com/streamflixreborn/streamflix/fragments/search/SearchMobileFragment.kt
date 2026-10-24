@@ -54,6 +54,7 @@ class SearchMobileFragment : Fragment() {
     private var suppressActorTextChange: Boolean = false
     private var suppressDirectorTextChange: Boolean = false
     private var searchHeaderOffset: Int = 0
+    private val selectedGenres = linkedSetOf<com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter>()
 
     private val actorSuggestionsAdapter by lazy {
         AppAdapter().apply {
@@ -208,6 +209,7 @@ class SearchMobileFragment : Fragment() {
             binding.spPlatform,
         )
 
+        binding.spGenre.setOnLongClickListener { showMultiGenrePicker(); true }
         binding.btnApplyFilters.setOnClickListener { submitSearch() }
         binding.btnResetFilters.setOnClickListener {
             AdvancedSearchUi.reset(
@@ -220,6 +222,7 @@ class SearchMobileFragment : Fragment() {
                 binding.spSort,
                 binding.spPlatform,
             )
+            selectedGenres.clear()
             clearActorField()
             clearDirectorField()
             binding.etSearch.setText("")
@@ -455,6 +458,31 @@ class SearchMobileFragment : Fragment() {
         binding.searchHeaderMobile.post { updateGridTopPadding() }
     }
 
+    private fun showMultiGenrePicker() {
+        val options = com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.entries
+            .filterNot { it == com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.ALL }
+        val selected = selectedGenres.ifEmpty {
+            com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.entries
+                .getOrNull(binding.spGenre.selectedItemPosition)
+                ?.takeIf { it != com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.ALL }
+                ?.let { setOf(it) } ?: emptySet()
+        }.toMutableSet()
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Generi multipli")
+            .setMultiChoiceItems(options.map { it.label }.toTypedArray(),
+                options.map { it in selected }.toBooleanArray()) { _, index, checked ->
+                if (checked) selected.add(options[index]) else selected.remove(options[index])
+            }
+            .setPositiveButton("Applica") { _, _ ->
+                selectedGenres.clear()
+                selectedGenres.addAll(selected)
+                if (selectedGenres.isNotEmpty()) binding.spGenre.setSelection(0)
+                Toast.makeText(requireContext(), "Generi selezionati: ${selectedGenres.size}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
     private fun submitSearch(): Boolean {
         val query = binding.etSearch.text?.toString().orEmpty().trim()
         hideKeyboard()
@@ -501,6 +529,7 @@ class SearchMobileFragment : Fragment() {
             actorName = viewModel.selectedActorName,
             directorId = viewModel.selectedDirectorId,
             directorName = viewModel.selectedDirectorName,
+            genres = selectedGenres.toSet(),
         )
         savePersistedFilters()
 
