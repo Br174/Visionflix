@@ -31,20 +31,24 @@ import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-object AnimeWorldProvider : Provider {
+object AnimeWorldProvider : EndpointManagedProvider {
 
-    private const val URL = "https://www.animeworld.ac"
-    override val baseUrl = URL
     private const val USER_AGENT = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 
     override val name = "AnimeWorld"
-    override val logo = "https://static.animeworld.ac/assets/images/favicon/android-icon-192x192.png?4"
+    override val builtInBaseUrl = "https://www.animeworld.ac"
+    override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
+    override val logo: String get() = "$baseUrl/assets/images/favicon/android-icon-192x192.png?4"
     override val language = "it"
 
-    private var service = AnimeWorldService.build()
+    private var service = AnimeWorldService.build(baseUrl)
+
+    override fun onEndpointSelectionChanged() {
+        service = AnimeWorldService.build(baseUrl)
+    }
 
     private fun rebuildServiceUnsafe() {
-        service = AnimeWorldService.buildUnsafe()
+        service = AnimeWorldService.buildUnsafe(baseUrl)
     }
 
     private suspend fun <T> withSslFallback(block: suspend (AnimeWorldService) -> T): T {
@@ -702,7 +706,7 @@ object AnimeWorldProvider : Provider {
     private interface AnimeWorldService {
 
         companion object {
-            fun build(): AnimeWorldService {
+            fun build(baseUrl: String): AnimeWorldService {
                 val client = OkHttpClient.Builder()
                     .cookieJar(MyCookieJar())
                     .readTimeout(30, TimeUnit.SECONDS)
@@ -711,7 +715,7 @@ object AnimeWorldProvider : Provider {
                     .build()
 
                 val retrofit = Retrofit.Builder()
-                    .baseUrl(URL)
+                    .baseUrl(baseUrl)
                     .addConverterFactory(JsoupConverterFactory.create())
                     .addConverterFactory(GsonConverterFactory.create())
                     .client(client)
@@ -720,7 +724,7 @@ object AnimeWorldProvider : Provider {
                 return retrofit.create(AnimeWorldService::class.java)
             }
 
-            fun buildUnsafe(): AnimeWorldService {
+            fun buildUnsafe(baseUrl: String): AnimeWorldService {
                 val trustAllCerts = arrayOf<TrustManager>(
                     object : X509TrustManager {
                         override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
@@ -741,7 +745,7 @@ object AnimeWorldProvider : Provider {
                     .build()
 
                 val retrofit = Retrofit.Builder()
-                    .baseUrl(URL)
+                    .baseUrl(baseUrl)
                     .addConverterFactory(JsoupConverterFactory.create())
                     .addConverterFactory(GsonConverterFactory.create())
                     .client(client)
