@@ -519,12 +519,15 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         filters: AdvancedSearchFilters,
         page: Int,
     ): List<AppAdapter.Item> = coroutineScope {
-        val includeMovies = filters.type == AdvancedSearchFilters.ContentType.ALL ||
+        val availableGenres = filters.effectiveGenres
+        val includeMovies = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
             filters.type == AdvancedSearchFilters.ContentType.MOVIE ||
-            filters.type == AdvancedSearchFilters.ContentType.CARTOON
-        val includeTv = filters.type == AdvancedSearchFilters.ContentType.ALL ||
+            filters.type == AdvancedSearchFilters.ContentType.CARTOON) &&
+            (availableGenres.isEmpty() || availableGenres.any { it.movieId != null })
+        val includeTv = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
             filters.type == AdvancedSearchFilters.ContentType.TV ||
-            filters.type == AdvancedSearchFilters.ContentType.CARTOON
+            filters.type == AdvancedSearchFilters.ContentType.CARTOON) &&
+            (availableGenres.isEmpty() || availableGenres.any { it.tvId != null })
 
         val language = provider.language
         val italianOnly = filters.italian == AdvancedSearchFilters.ItalianFilter.YES
@@ -872,11 +875,18 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             .distinctBy { it.lowercase(Locale.ROOT) }.take(6)
     }
 
-    fun searchGlobal(query: String, currentLanguage: String) = viewModelScope.launch(Dispatchers.IO) {
-        selectedActorId = null
-        selectedActorName = ""
-        selectedDirectorId = null
-        selectedDirectorName = ""
+    fun searchGlobal(
+        query: String,
+        currentLanguage: String,
+        filters: AdvancedSearchFilters = AdvancedSearchFilters(),
+    ) = viewModelScope.launch(Dispatchers.IO) {
+        advancedFilters = normalizeFilters(filters)
+        this@SearchViewModel.query = query
+        page = 1
+        selectedActorId = advancedFilters.actorId
+        selectedActorName = advancedFilters.actorName
+        selectedDirectorId = advancedFilters.directorId
+        selectedDirectorName = advancedFilters.directorName
         _actorSuggestions.value = emptyList()
         _directorSuggestions.value = emptyList()
         _state.emit(State.GlobalSearching)
@@ -944,8 +954,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                 (provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
 
                                 val result = try {
+                                    val found = when {
+                                        provider is TmdbProvider && filters.isActive ->
+                                            searchTmdbAdvanced(provider, query, advancedFilters, 1)
+                                        filters.isActive ->
+                                            searchProviderAdvanced(provider, query, advancedFilters, 1)
+                                        query.isBlank() -> browseProvider(provider, 1)
+                                        else -> searchProviderWithRecovery(provider, query, 1)
+                                    }
                                     val items = ParentalControlUtils.filterItems(
-                                        provider.search(query).onEach { item ->
+                                        found.onEach { item ->
                                             when (item) {
                                                 is Movie -> {
                                                     item.providerName = provider.name
