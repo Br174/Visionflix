@@ -19,7 +19,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 object WebSourceFallback {
     private const val TAG = "WebSourceFallback"
     private const val PLACEHOLDER_PREFIX = "visionflix-fallback://"
-    private const val CACHE_MS = 15 * 60 * 1000L
 
     suspend fun searchFallback(
         query: String,
@@ -222,18 +221,4 @@ object WebSourceFallback {
         .replace(Regex("\\p{M}+"), "")
         .lowercase()
         .replace(Regex("[^a-z0-9]+"), "")
-
-    private fun hostOf(raw: String): String {
-        if (raw.isBlank()) return ""
-        return runCatching {
-            val normalized = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
-            URI(normalized).host.orEmpty().lowercase().removePrefix("www.")
-        }.getOrDefault("")
-    }
-
-    private fun domainStem(host: String): String = host
-        .removePrefix("www.")
-        .substringBefore('.')
-        .lowercase()
-        .replace("-", "")
 }
