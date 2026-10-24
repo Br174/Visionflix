@@ -319,6 +319,34 @@ object ProviderEndpointRegistry {
         return RefreshResult(provider.name, true, "Link manuale verificato e salvato; protetto dagli aggiornamenti automatici")
     }
 
+    /** A deliberate, slow-path diagnostic; never called during normal playback. */
+    private suspend fun inspectOneFilmServer(provider: Provider): RefreshResult {
+        val film = withTimeoutOrNull(9_000L) {
+            runCatching { provider.getMovies(1).firstOrNull() }.getOrNull()
+                ?: runCatching { provider.search("Roma", 1).filterIsInstance<Movie>().firstOrNull() }.getOrNull()
+        } ?: return RefreshResult(provider.name, false, "Catalogo OK, nessun film disponibile per il test server")
+
+        val type = Video.Type.Movie(
+            film.id, film.title,
+            film.released?.get(Calendar.YEAR)?.toString().orEmpty(),
+            film.poster.orEmpty(), film.imdbId,
+        )
+        val servers = withTimeoutOrNull(12_000L) {
+            runCatching { provider.getServers(film.id, type) }.getOrDefault(emptyList())
+        }.orEmpty()
+        if (servers.isEmpty()) return RefreshResult(provider.name, false, "Catalogo OK, nessun server del film trovato")
+
+        for (server in servers.take(2)) {
+            val media = withTimeoutOrNull(6_000L) {
+                runCatching { provider.getVideo(server) }.getOrNull()
+            }
+            if (media?.source?.startsWith("https://") == true || media?.source?.startsWith("http://") == true) {
+                return RefreshResult(provider.name, true, "Catalogo e URL video recuperati; decodifica sul dispositivo non verificata")
+            }
+        }
+        return RefreshResult(provider.name, false, "Catalogo OK; server presenti, nessun URL video recuperabile")
+    }
+
     /** A single registry refresh, then bounded tests to avoid provider floods. */
     suspend fun refreshAll(providers: Collection<Provider>): List<RefreshResult> = coroutineScope {
         refreshIfNeeded(providers, force = true)
