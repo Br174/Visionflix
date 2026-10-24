@@ -246,14 +246,14 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 .take(12)
 
             coroutineScope {
-                people.map { person ->
+                people.mapIndexed { index, person ->
                     async {
-                        val image = person.profilePath?.w500 ?: runCatching {
+                        val image = person.profilePath?.w500 ?: if (index < 3) runCatching {
                             TMDb3.People.details(
                                 personId = person.id,
                                 language = language,
                             ).profilePath?.w500
-                        }.getOrNull()
+                        }.getOrNull() else null
                         People(
                             id = person.id.toString(),
                             name = person.name,
@@ -355,8 +355,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             else -> {
                 // Scan several real provider catalog pages before applying local year/type filters.
                 // Each explicit load-more advances by the same bounded page window.
-                val startPage = (page - 1) * 3 + 1
-                (startPage until startPage + 3).flatMap { sourcePage ->
+                val pages = Lab154SearchPacing.providerPages(page)
+                pages.flatMap { sourcePage ->
                     browseProvider(provider, sourcePage)
                 }.distinctBy { it.searchIdentityKey() }
             }
@@ -793,7 +793,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.year?.let { params["primary_release_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.lte"] = it }
-            val pages = ((page - 1) * 3 + 1)..(page * 3)
+            val pages = Lab154SearchPacing.metadataPages(page)
             pages.map { discoverPage -> async {
                 TMDb3.Discover.movie(params + ("page" to discoverPage.toString())).results
             } }.awaitAll().flatten()
@@ -822,7 +822,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.year?.let { params["first_air_date_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["first_air_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["first_air_date.lte"] = it }
-            val pages = ((page - 1) * 3 + 1)..(page * 3)
+            val pages = Lab154SearchPacing.metadataPages(page)
             pages.map { discoverPage -> async {
                 TMDb3.Discover.tv(params + ("page" to discoverPage.toString())).results
             } }.awaitAll().flatten()
@@ -1054,7 +1054,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                             advancedFilters.isActive ->
                                                 searchProviderAdvanced(
                                                     provider, query, advancedFilters, 1,
-                                                    sharedMetadata = metadataTask?.await(), candidateLimit = 48,
+                                                    sharedMetadata = metadataTask?.await(),
+                                                    candidateLimit = Lab154SearchPacing.candidateLimit(
+                                                        firstPage = true,
+                                                        originatingProvider = provider.name == UserPreferences.currentProvider?.name),
                                                 )
                                             query.isBlank() -> browseProvider(provider, 1)
                                             else -> searchProviderWithRecovery(provider, query, 1)
@@ -1168,7 +1171,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                             advancedFilters.isActive ->
                                                 searchProviderAdvanced(
                                                     engine, query, advancedFilters, nextPage,
-                                                    sharedMetadata = metadata, candidateLimit = 48,
+                                                    sharedMetadata = metadata, candidateLimit = Lab154SearchPacing.candidateLimit(firstPage = false, originatingProvider = false),
                                                 )
                                             query.isBlank() -> browseProvider(engine, nextPage)
                                             else -> searchProviderWithRecovery(engine, query, nextPage)
