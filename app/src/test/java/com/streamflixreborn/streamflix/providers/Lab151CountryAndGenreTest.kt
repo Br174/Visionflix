@@ -114,6 +114,14 @@ class Lab151CountryAndGenreTest {
         assertTrue(AdvancedSearchFilters().acceptsGenreIds(emptyList(), movie = true))
     }
 
+    @Test fun northernEuropeAndBeneluxCountriesHaveStableIsoCodes() {
+        assertEquals("SE", AdvancedSearchFilters.CountryFilter.SWEDEN.isoCode)
+        assertEquals("DK", AdvancedSearchFilters.CountryFilter.DENMARK.isoCode)
+        assertEquals("NO", AdvancedSearchFilters.CountryFilter.NORWAY.isoCode)
+        assertEquals("NL", AdvancedSearchFilters.CountryFilter.NETHERLANDS.isoCode)
+        assertEquals("BE", AdvancedSearchFilters.CountryFilter.BELGIUM.isoCode)
+    }
+
     @Test fun countryGenreMatrixKeepsSelection() {
         for (country in AdvancedSearchFilters.CountryFilter.entries) {
             for (genre in AdvancedSearchFilters.GenreFilter.entries) {
