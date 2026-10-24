@@ -3,6 +3,7 @@ package com.streamflixreborn.streamflix.fragments.search
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.streamflixreborn.streamflix.BuildConfig
 import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.models.Movie
@@ -246,6 +247,31 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             advancedFilters.copy(actorId = actorId, actorName = actorName),
         )
 
+    private fun tmdbConfigured(): Boolean =
+        UserPreferences.tmdbApiKey.takeIf { it.isNotBlank() && it != "dummy" } != null ||
+            BuildConfig.TMDB_API_KEY.takeIf { it.isNotBlank() && it != "dummy" } != null
+
+    private suspend fun browseProvider(provider: Provider, page: Int): List<AppAdapter.Item> = coroutineScope {
+        // Browse instead of asking providers to text-search an empty string.
+        val movies = async { runCatching { provider.getMovies(page) }.getOrDefault(emptyList()) }
+        val series = async { runCatching { provider.getTvShows(page) }.getOrDefault(emptyList()) }
+        (movies.await() + series.await()).distinctBy { it.searchIdentityKey() }
+    }
+
+    private suspend fun searchProviderWithRecovery(provider: Provider, text: String, page: Int): List<AppAdapter.Item> {
+        return try {
+            provider.search(text, page)
+        } catch (error: retrofit2.HttpException) {
+            Log.w("SearchViewModel", "Provider=${provider.name}, search HTTP=${error.code()}, page=$page")
+            if (error.code() != 404 || provider !is EndpointManagedProvider) throw error
+            val recovery = ProviderEndpointRegistry.refreshOne(provider)
+            if (!recovery.success) throw IllegalStateException(
+                "${provider.name}: HTTP 404, aggiornamento non riuscito (${recovery.message})", error
+            )
+            provider.search(text, page) // exactly one retry; never spin
+        }
+    }
+
     private suspend fun executeSearch(
         query: String,
         filters: AdvancedSearchFilters,
@@ -253,29 +279,25 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     ) {
         _state.emit(State.Searching)
         try {
-            val provider = UserPreferences.currentProvider!!
+            val provider = UserPreferences.currentProvider
+                ?: throw IllegalStateException("Seleziona prima un provider")
             usingWebFallback = false
-
+            if (provider is TmdbProvider && !tmdbConfigured()) {
+                throw IllegalStateException("TMDb richiede una chiave API gratuita valida nelle Impostazioni. La chiave 'dummy' non funziona.")
+            }
             val results = when {
                 provider is TmdbProvider && (filters.isActive || query.isNotBlank()) ->
                     searchTmdbAdvanced(provider, query, filters, targetPage)
-                filters.isActive ->
-                    searchProviderAdvanced(provider, query, filters, targetPage)
-                else ->
-                    provider.search(query, targetPage)
+                filters.isActive -> searchProviderAdvanced(provider, query, filters, targetPage)
+                query.isBlank() -> browseProvider(provider, targetPage)
+                else -> searchProviderWithRecovery(provider, query, targetPage)
             }
-
             this@SearchViewModel.query = query
             page = targetPage
             val filtered = ParentalControlUtils.filterItems(results)
-            _state.emit(
-                State.SuccessSearching(
-                    filtered,
-                    hasMore = !usingWebFallback && filtered.isNotEmpty(),
-                )
-            )
+            _state.emit(State.SuccessSearching(filtered, hasMore = !usingWebFallback && filtered.isNotEmpty()))
         } catch (e: Exception) {
-            Log.e("SearchViewModel", "executeSearch: ", e)
+            Log.e("SearchViewModel", "executeSearch", e)
             _state.emit(State.FailedSearching(e))
         }
     }
@@ -293,16 +315,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 filters.platform != AdvancedSearchFilters.PlatformFilter.ALL
 
         val directResults = if (query.isNotBlank()) {
-            runCatching { provider.search(query, page) }.getOrDefault(emptyList())
-        } else {
-            emptyList()
-        }
+            searchProviderWithRecovery(provider, query, page)
+        } else browseProvider(provider, page)
 
-        if (!needsTmdbMetadata) {
-            val source = if (query.isNotBlank()) directResults else {
-                runCatching { provider.search(query, page) }.getOrDefault(emptyList())
-            }
-            return@coroutineScope applyProviderFilters(source, filters)
+        if (!needsTmdbMetadata) return@coroutineScope applyProviderFilters(directResults, filters)
+        if (!tmdbConfigured()) {
+            throw IllegalStateException("Filtri lingua, attori, registi o piattaforma richiedono la chiave TMDb gratuita nelle Impostazioni")
         }
 
         val metadataMatches = runCatching {
@@ -459,10 +477,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 val results = when {
                     provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank()) ->
                         searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
-                    advancedFilters.isActive ->
-                        searchProviderAdvanced(provider, query, advancedFilters, nextPage)
-                    else ->
-                        provider.search(query, nextPage)
+                    advancedFilters.isActive -> searchProviderAdvanced(provider, query, advancedFilters, nextPage)
+                    query.isBlank() -> browseProvider(provider, nextPage)
+                    else -> searchProviderWithRecovery(provider, query, nextPage)
                 }
 
                 val filtered = ParentalControlUtils.filterItems(results)
