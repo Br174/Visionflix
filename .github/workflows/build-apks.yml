@@ -248,6 +248,22 @@ jobs:
           ./gradlew :app:testDebugUnitTest --tests '*Lab153NavigationTest' --tests '*Lab155SearchSafetyTest' --tests '*Lab156UnifiedSortTest' --tests '*Lab157FocusPolicyTest' --stacktrace
           echo "[LAB157_TESTS=PASS] Existing remote/search regressions and deferred-focus guard"
 
+      - name: LAB158 director-first cast and verified filmography regressions
+        if: github.ref == 'refs/heads/lab/visionflix-lab158-director-first-filmography-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest --tests '*Lab153NavigationTest' --tests '*Lab155SearchSafetyTest' --tests '*Lab156UnifiedSortTest' --tests '*Lab157FocusPolicyTest' --tests '*DirectorCreditsTest' --stacktrace
+          echo "[LAB158_TESTS=PASS] Director-role credits, cast order, no duplicates, focus and search regressions"
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
