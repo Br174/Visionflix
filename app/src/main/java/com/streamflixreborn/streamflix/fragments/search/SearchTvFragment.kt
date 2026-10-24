@@ -1052,7 +1052,7 @@ class SearchTvFragment : Fragment() {
                 requireContext(),
                 SavedSearchFilterState(
                     query = etSearch.text?.toString().orEmpty(),
-                    globalSearch = isGlobalSearchChecked,
+                    globalSearch = false,
                     type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
                     italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
                     year = yearSelector?.value,
@@ -1077,7 +1077,7 @@ class SearchTvFragment : Fragment() {
         try {
             val saved = SearchFilterPersistence.load(requireContext())
             etSearch.setText(saved.query)
-            isGlobalSearchChecked = saved.globalSearch
+            isGlobalSearchChecked = false
             updateGlobalSwitch()
             typeSelector?.selectValue(saved.type)
             italianSelector?.selectValue(saved.italian)
