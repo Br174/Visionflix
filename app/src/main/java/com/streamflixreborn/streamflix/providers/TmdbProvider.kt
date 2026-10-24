@@ -551,6 +551,7 @@ class TmdbProvider(override val language: String) : Provider {
                         genre.name,
                     )
                 },
+                directors = com.streamflixreborn.streamflix.utils.DirectorCredits.directorTiles(tv.credits?.crew),
                 cast = tv.credits?.cast?.map { cast ->
                     People(
                         id = com.streamflixreborn.streamflix.utils.DirectorCredits.actorIdentity(cast.id),
