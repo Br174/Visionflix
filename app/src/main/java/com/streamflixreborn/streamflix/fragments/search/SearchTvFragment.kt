@@ -1051,25 +1051,16 @@ class SearchTvFragment : Fragment() {
         val filters = currentFilters() ?: return true
         savePersistedFiltersSafely()
 
-        if (filters.isActive) {
-            isGlobalSearchChecked = false
-            updateGlobalSwitch()
-            stabilizeStandardResultGrid(query, advanced = true)
-            vm.searchAdvanced(query, filters)
-            collapseFiltersAndFocusResults()
-            return true
-        }
-
         if (isGlobalSearchChecked) {
-            if (query.isBlank()) {
+            if (query.isBlank() && !filters.isActive) {
                 showSafeToast(getString(R.string.search_empty_query))
                 return true
             }
-            vm.searchGlobal(query, UserPreferences.currentProvider?.language ?: "it")
+            vm.searchGlobal(query, UserPreferences.currentProvider?.language ?: "it", filters)
             collapseFiltersAndFocusResults()
         } else {
-            stabilizeStandardResultGrid(query, advanced = false)
-            vm.search(query)
+            stabilizeStandardResultGrid(query, advanced = filters.isActive)
+            if (filters.isActive) vm.searchAdvanced(query, filters) else vm.search(query)
             collapseFiltersAndFocusResults()
         }
         return true
