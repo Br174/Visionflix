@@ -112,6 +112,13 @@ class SearchTvFragment : Fragment() {
     private var returnPosterLayout: android.os.Parcelable? = null
     private val prefetchedPosterUrls = hashSetOf<String>()
     private var posterPrefetchJob: Job? = null
+    // Per-row, focusable upward shortcuts drawn in the unused edge of the
+    // search grid. No poster data or row order is mutated.
+    private var rowJumpRail: FrameLayout? = null
+    private val rowJumpArrows = mutableMapOf<Int, TextView>()
+    private var rowJumpResumePosition = RecyclerView.NO_POSITION
+    private var rowJumpResumeIdentity: String? = null
+    private var rowJumpResumeLayout: android.os.Parcelable? = null
 
     private val appAdapter by lazy {
         AppAdapter().apply {
@@ -217,6 +224,8 @@ class SearchTvFragment : Fragment() {
         btnApplyFilters = null
         btnResetFilters = null
         filterFocusSentinel = null
+        rowJumpArrows.clear()
+        rowJumpRail = null
         super.onDestroyView()
     }
 
@@ -230,6 +239,7 @@ class SearchTvFragment : Fragment() {
         llGlobalSearch = view.findViewById(R.id.ll_global_search_safe)
         ivGlobalSearchSwitch = view.findViewById(R.id.iv_global_search_switch_safe)
         filterContainer = view.findViewById(R.id.filter_container_safe)
+        rowJumpRail = view.findViewById(R.id.search_row_jump_rail)
     }
 
     private fun initializeBaseSearch() {
@@ -293,6 +303,11 @@ class SearchTvFragment : Fragment() {
                 stateRestorationPolicy = RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
             }
             setItemSpacing(resources.getDimension(R.dimen.search_spacing).toInt())
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    refreshRowJumpArrows()
+                }
+            })
             addOnChildViewHolderSelectedListener(object : OnChildViewHolderSelectedListener() {
                 override fun onChildViewHolderSelected(
                     parent: RecyclerView,
@@ -300,6 +315,7 @@ class SearchTvFragment : Fragment() {
                     position: Int,
                     subposition: Int,
                 ) {
+                    refreshRowJumpArrows()
                     if (position in 0 until currentGridColumns.coerceAtLeast(1)) {
                         val target = dropdownArrow?.id ?: btnApplyFilters?.id
                         if (target != null) child?.itemView?.nextFocusUpId = target
@@ -644,6 +660,12 @@ class SearchTvFragment : Fragment() {
                 isClickable = true
                 // Free arrow glyph: touch/focus hit target but NO visible surrounding button.
                 setOnClickListener { setFilterPanelExpanded(!filterPanelExpanded, true) }
+                setOnKeyListener { _, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN &&
+                        keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        restoreRowJumpPosition()
+                    } else false
+                }
                 setOnFocusChangeListener { _, focused ->
                     setTextColor(if (focused) Color.CYAN else Color.WHITE)
                 }
@@ -1221,7 +1243,11 @@ class SearchTvFragment : Fragment() {
             contentDescription = if (expanded) "Chiudi i filtri" else "Apri i filtri"
         }
         searchHeader.requestLayout()
-        searchHeader.post { updateGridTopPadding(); if (!expanded && pendingFocusFirstResult) focusFirstResultWhenReady() }
+        searchHeader.post {
+            updateGridTopPadding()
+            refreshRowJumpArrows()
+            if (!expanded && pendingFocusFirstResult) focusFirstResultWhenReady()
+        }
     }
 
     private fun openFiltersFromResults() {
@@ -1229,10 +1255,19 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun collapseFiltersAndFocusResults() {
-        pendingFocusFirstResult = true
+        // Keep the present catalog position if the user opens filters from
+        // the right-edge shortcut. If this is a first search, start at row 1.
+        val preferredPosition = rowJumpResumePosition
+            .takeIf { it != RecyclerView.NO_POSITION }
+            ?: vgvSearch.selectedPosition.takeIf { it > 0 }
+            ?: 0
+        rowJumpResumePosition = preferredPosition
+        rowJumpResumeLayout = vgvSearch.layoutManager?.onSaveInstanceState()
+        pendingFocusFirstResult = false
         returnPosterId = null
         setFilterPanelExpanded(false, true)
-        focusFirstResultWhenReady()
+        // Do not force the grid to position 0 or steal the remote's focus
+        // from the user's header selection.
     }
 
     private fun focusFirstResultWhenReady() {
@@ -1280,6 +1315,7 @@ class SearchTvFragment : Fragment() {
         searchHeader.post {
             updateGridTopPadding()
             restorePosterIfNeeded()
+            refreshRowJumpArrows()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
         }
     }
@@ -1304,6 +1340,114 @@ class SearchTvFragment : Fragment() {
             restorePosterIfNeeded()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
         }
+    }
+
+    private fun refreshRowJumpArrows() {
+        // Running after layout preserves a stable focus surface while scrolling.
+        if (!isAdded) return
+        rowJumpRail?.post { if (isAdded) updateVisibleRowJumpArrows() }
+    }
+
+    private fun updateVisibleRowJumpArrows() {
+        val rail = rowJumpRail ?: return
+        if (rail.height <= 0 || currentGridColumns <= 0) return
+        val activeRows = linkedMapOf<Int, Pair<Int, Int>>()
+        for (childIndex in 0 until vgvSearch.childCount) {
+            val child = vgvSearch.getChildAt(childIndex)
+            val position = vgvSearch.getChildAdapterPosition(child)
+            if (position !in appAdapter.items.indices) continue
+            val item = appAdapter.items[position]
+            if (item !is Movie && item !is TvShow) continue
+            val row = position / currentGridColumns
+            val centerY = vgvSearch.top + child.top + child.height / 2 - rail.top
+            // Never overlay the fixed header or display offscreen arrows.
+            if (centerY <= searchHeader.bottom + dp(26) || centerY >= rail.height - dp(20)) continue
+            activeRows[row] = centerY to position
+        }
+        for ((row, arrow) in rowJumpArrows.toMap()) {
+            if (row !in activeRows && !arrow.hasFocus()) {
+                rail.removeView(arrow)
+                rowJumpArrows.remove(row)
+            } else if (row !in activeRows) arrow.visibility = View.INVISIBLE
+        }
+        for ((row, candidate) in activeRows) {
+            val arrow = rowJumpArrows.getOrPut(row) {
+                TextView(requireContext()).apply {
+                    id = View.generateViewId()
+                    text = "⌃"
+                    textSize = 26f
+                    gravity = android.view.Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    isFocusable = true
+                    isClickable = true
+                    contentDescription = "Vai ai filtri della ricerca"
+                    setOnFocusChangeListener { _, focused ->
+                        setTextColor(if (focused) Color.CYAN else Color.WHITE)
+                    }
+                    setOnClickListener {
+                        rememberRowJump(row)
+                        // First OK only transfers focus to the top arrow.
+                        // The dropdown opens exclusively on the user's next OK.
+                        dropdownArrow?.requestFocus()
+                    }
+                    rail.addView(this, FrameLayout.LayoutParams(dp(48), dp(52)))
+                }
+            }
+            arrow.visibility = View.VISIBLE
+            val targetTop = (candidate.first - dp(26)).coerceIn(0, rail.height - dp(52))
+            val lp = arrow.layoutParams as FrameLayout.LayoutParams
+            if (lp.topMargin != targetTop) {
+                lp.topMargin = targetTop
+                arrow.layoutParams = lp
+            }
+            // Reuse native D-pad navigation for the rightmost poster in each
+            // row, including the final incomplete row.
+            for (childIndex in 0 until vgvSearch.childCount) {
+                val child = vgvSearch.getChildAt(childIndex)
+                val position = vgvSearch.getChildAdapterPosition(child)
+                if (position < 0 || position / currentGridColumns != row) continue
+                val lastInRow = (position + 1) % currentGridColumns == 0 ||
+                    position == appAdapter.items.lastIndex
+                if (lastInRow) child.nextFocusRightId = arrow.id
+            }
+        }
+    }
+
+    private fun rememberRowJump(row: Int) {
+        val preferred = (row * currentGridColumns + currentGridColumns - 1)
+            .coerceAtMost(appAdapter.items.lastIndex)
+        if (preferred < 0) return
+        rowJumpResumePosition = preferred
+        rowJumpResumeIdentity = when (val item = appAdapter.items[preferred]) {
+            is Movie -> "film:${item.id}"
+            is TvShow -> "series:${item.id}"
+            else -> null
+        }
+        rowJumpResumeLayout = vgvSearch.layoutManager?.onSaveInstanceState()
+    }
+
+    private fun restoreRowJumpPosition(): Boolean {
+        val requested = rowJumpResumePosition
+            .takeIf { it != RecyclerView.NO_POSITION }
+            ?: vgvSearch.selectedPosition
+        if (appAdapter.items.isEmpty() || requested < 0) return false
+        val byIdentity = appAdapter.items.indexOfFirst {
+            when (it) {
+                is Movie -> "film:${it.id}" == rowJumpResumeIdentity
+                is TvShow -> "series:${it.id}" == rowJumpResumeIdentity
+                else -> false
+            }
+        }
+        val position = (if (byIdentity >= 0) byIdentity else requested)
+            .coerceIn(0, appAdapter.items.lastIndex)
+        rowJumpResumeLayout?.let { vgvSearch.layoutManager?.onRestoreInstanceState(it) }
+        vgvSearch.setSelectedPosition(position)
+        vgvSearch.post {
+            if (!isAdded) return@post
+            vgvSearch.requestFocus()
+            refreshRowJumpArrows()
+        }
+        return true
     }
 
     private fun prefetchPosters(items: List<AppAdapter.Item>) {
