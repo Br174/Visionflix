@@ -8,6 +8,9 @@ import com.streamflixreborn.streamflix.models.Movie
 import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.utils.UserPreferences
+import com.streamflixreborn.streamflix.utils.DirectorCredits
+import com.streamflixreborn.streamflix.utils.TMDb3
+import com.streamflixreborn.streamflix.utils.TMDb3.w500
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -97,6 +100,31 @@ class PeopleViewModel(private val id: String, database: AppDatabase) : ViewModel
         _state.emit(State.Loading)
 
         try {
+            val verifiedDirectorId = DirectorCredits.directorPersonId(id)
+            if (verifiedDirectorId != null) {
+                // Distinct from the ordinary actor filmography: the TMDb
+                // MOVIE_CREDITS crew job must explicitly equal Director.
+                val language = UserPreferences.currentProvider?.language ?: "it"
+                val person = TMDb3.People.details(
+                    personId = verifiedDirectorId,
+                    appendToResponse = listOf(TMDb3.Params.AppendToResponse.Person.MOVIE_CREDITS),
+                    language = language,
+                )
+                val creditedMovies = DirectorCredits.directedMovies(person.movieCredits?.crew)
+                val director = People(
+                    id = id,
+                    name = person.name,
+                    image = person.profilePath?.w500,
+                    biography = person.biography,
+                    placeOfBirth = person.placeOfBirth,
+                    birthday = person.birthday,
+                    deathday = person.deathday,
+                    filmography = creditedMovies,
+                )
+                page = 1
+                _state.emit(State.SuccessLoading(director, false))
+                return@launch
+            }
             val people = UserPreferences.currentProvider!!.getPeople(id)
 
             page = 1
@@ -109,6 +137,8 @@ class PeopleViewModel(private val id: String, database: AppDatabase) : ViewModel
     }
 
     fun loadMorePeopleFilmography() = viewModelScope.launch(Dispatchers.IO) {
+        // Director credits arrive as a complete, deduplicated list.
+        if (DirectorCredits.directorPersonId(id) != null) return@launch
         val currentState = _state.value
         if (currentState is State.SuccessLoading) {
             _state.emit(State.LoadingMore)
