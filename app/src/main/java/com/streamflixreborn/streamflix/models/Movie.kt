@@ -38,6 +38,8 @@ class Movie(
     @Ignore
     val recommendations: List<Show> = listOf(),
     override var isFavorite: Boolean = false,
+    @Ignore
+    var providerEndpoint: String? = null,
 ) : Show, WatchItem, AppAdapter.Item {
 
     var released = released?.toCalendar()
@@ -93,6 +95,7 @@ class Movie(
         cast: List<People> = this.cast,
         recommendations: List<Show> = this.recommendations,
         isFavorite: Boolean = this.isFavorite,
+        providerEndpoint: String? = this.providerEndpoint,
     ) = Movie(
         id,
         title,
@@ -111,6 +114,7 @@ class Movie(
         cast,
         recommendations,
         isFavorite,
+        providerEndpoint,
     ).apply {
         lastPlayedAtMillis = this@Movie.lastPlayedAtMillis
     }
