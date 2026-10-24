@@ -47,6 +47,7 @@ import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.ProviderSelection
 import com.streamflixreborn.streamflix.providers.TmdbProvider
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.VoiceRecognitionHelper
@@ -102,13 +103,13 @@ class SearchTvFragment : Fragment() {
     private val appAdapter by lazy {
         AppAdapter().apply {
             onMovieClickListener = { movie ->
-                switchProviderIfNeeded(movie.providerName)
+                switchProviderIfNeeded(movie.providerName, movie.providerEndpoint)
                 findNavController().navigate(
                     SearchTvFragmentDirections.actionSearchToMovie(id = movie.id)
                 )
             }
             onTvShowClickListener = { tvShow ->
-                switchProviderIfNeeded(tvShow.providerName)
+                switchProviderIfNeeded(tvShow.providerName, tvShow.providerEndpoint)
                 findNavController().navigate(
                     SearchTvFragmentDirections.actionSearchToTvShow(
                         id = tvShow.id,
@@ -1274,12 +1275,12 @@ class SearchTvFragment : Fragment() {
         }
     }
 
-    private fun switchProviderIfNeeded(providerName: String?) {
-        val targetName = providerName?.takeIf { it.isNotBlank() } ?: return
-        if (targetName == UserPreferences.currentProvider?.name) return
-        val targetProvider = Provider.providers.keys.find { it.name == targetName } ?: return
-        UserPreferences.currentProvider = targetProvider
-        showSafeToast(getString(R.string.switching_to_provider, targetName))
+    private fun switchProviderIfNeeded(providerName: String?, endpoint: String?) {
+        val previousName = UserPreferences.currentProvider?.name
+        val target = ProviderSelection.select(providerName, endpoint) ?: return
+        if (previousName != target.name || !endpoint.isNullOrBlank()) {
+            showSafeToast(getString(R.string.switching_to_provider, target.name))
+        }
     }
 
     private fun <T> makeSelector(
