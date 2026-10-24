@@ -669,8 +669,8 @@ class SearchTvFragment : Fragment() {
         actor.nextFocusUpId = year.viewId
         actor.nextFocusDownId = director.id
 
-        sort.setNextFocus(right = platform.viewId, up = from.viewId, down = reset.id)
-        platform.setNextFocus(left = sort.viewId, right = director.id, up = to.viewId, down = apply.id)
+        sort.setNextFocus(right = platform.viewId, up = from.viewId, down = country.viewId)
+        platform.setNextFocus(left = sort.viewId, right = director.id, up = to.viewId, down = country.viewId)
         director.nextFocusLeftId = platform.viewId
         director.nextFocusUpId = actor.id
         director.nextFocusDownId = country.viewId
