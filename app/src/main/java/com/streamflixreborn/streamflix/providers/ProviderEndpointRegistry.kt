@@ -72,12 +72,29 @@ object ProviderEndpointRegistry {
             val p = prefs()
             p.getString(key("selected", providerName), null)
                 ?.takeIf { it.isNotBlank() }
+                ?: p.getString(key("manual", providerName), null)
+                    ?.takeIf { it.isNotBlank() }
                 ?: p.getString(key("auto", providerName), null)
                     ?.takeIf { it.isNotBlank() }
                 ?: p.getString(key("lastgood", providerName), null)
                     ?.takeIf { it.isNotBlank() }
                 ?: builtInBaseUrl
         }.getOrDefault(builtInBaseUrl).trimEnd('/')
+
+    /** A user-approved URL is independent of automatic mirror updates. */
+    fun manualEndpoint(providerName: String): String? =
+        runCatching { prefs().getString(key("manual", providerName), null) }.getOrNull()
+
+    fun clearManualEndpoint(providerName: String) {
+        runCatching { prefs().edit().remove(key("manual", providerName)).apply() }
+    }
+
+    fun saveManualEndpoint(providerName: String, rawUrl: String): Boolean {
+        val url = normalizeUrl(rawUrl) ?: return false
+        return runCatching {
+            prefs().edit().putString(key("manual", providerName), url).commit()
+        }.getOrDefault(false)
+    }
 
     fun selectOriginal(providerName: String) {
         runCatching { prefs().edit().remove(key("selected", providerName)).apply() }
@@ -258,7 +275,13 @@ object ProviderEndpointRegistry {
         }
         val functional = runCatching {
             // A real search tests the provider engine, not just its HTTP homepage.
-            withTimeoutOrNull(15_000) { provider.search("Roma", 1).isNotEmpty() } == true
+            withTimeoutOrNull(15_000) {
+                // A single arbitrary word can return zero results on a healthy catalog.
+                runCatching { provider.search("Roma", 1).isNotEmpty() }.getOrDefault(false) ||
+                    runCatching { provider.search("Amore", 1).isNotEmpty() }.getOrDefault(false) ||
+                    runCatching { provider.getMovies(1).isNotEmpty() }.getOrDefault(false) ||
+                    runCatching { provider.getTvShows(1).isNotEmpty() }.getOrDefault(false)
+            } == true
         }.getOrDefault(false)
         if (functional) {
             RefreshResult(provider.name, true, "Ricerca di prova riuscita")
@@ -271,6 +294,23 @@ object ProviderEndpointRegistry {
                 managed?.onEndpointSelectionChanged()
             }
         }
+    }
+
+    /** Keep a manual address only after a genuine engine check, without replacing prior settings on failure. */
+    suspend fun verifyAndSaveManual(provider: Provider, url: String): RefreshResult {
+        if (provider !is EndpointManagedProvider) return RefreshResult(
+            provider.name, false, "Questo provider non supporta ancora il cambio di indirizzo: serve adattare il motore"
+        )
+        val normalized = normalizeUrl(url) ?: return RefreshResult(
+            provider.name, false, "Inserisci un indirizzo http/https valido"
+        )
+        val checked = refreshOne(provider, refreshRegistry = false, requestedEndpoint = normalized)
+        if (!checked.success) return checked
+        if (!saveManualEndpoint(provider.name, normalized)) return RefreshResult(
+            provider.name, false, "Impossibile salvare il link manuale"
+        )
+        provider.onEndpointSelectionChanged()
+        return RefreshResult(provider.name, true, "Link manuale verificato e salvato; protetto dagli aggiornamenti automatici")
     }
 
     /** A single registry refresh, then bounded tests to avoid provider floods. */
