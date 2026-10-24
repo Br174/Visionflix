@@ -1358,7 +1358,7 @@ class SearchTvFragment : Fragment() {
             if (position !in appAdapter.items.indices) continue
             val item = appAdapter.items[position]
             if (item !is Movie && item !is TvShow) continue
-            val row = position / currentGridColumns
+            val row = SearchRowShortcut.rowOf(position, currentGridColumns)
             val centerY = vgvSearch.top + child.top + child.height / 2 - rail.top
             // Never overlay the fixed header or display offscreen arrows.
             if (centerY <= searchHeader.bottom + dp(26) || centerY >= rail.height - dp(20)) continue
@@ -1406,16 +1406,16 @@ class SearchTvFragment : Fragment() {
                 val child = vgvSearch.getChildAt(childIndex)
                 val position = vgvSearch.getChildAdapterPosition(child)
                 if (position < 0 || position / currentGridColumns != row) continue
-                val lastInRow = (position + 1) % currentGridColumns == 0 ||
-                    position == appAdapter.items.lastIndex
+                val lastInRow = SearchRowShortcut.isRowEnd(position, currentGridColumns,
+                    appAdapter.items.size)
                 if (lastInRow) child.nextFocusRightId = arrow.id
             }
         }
     }
 
     private fun rememberRowJump(row: Int) {
-        val preferred = (row * currentGridColumns + currentGridColumns - 1)
-            .coerceAtMost(appAdapter.items.lastIndex)
+        val preferred = SearchRowShortcut.lastIndex(row, currentGridColumns,
+            appAdapter.items.size)
         if (preferred < 0) return
         rowJumpResumePosition = preferred
         rowJumpResumeIdentity = when (val item = appAdapter.items[preferred]) {
@@ -1438,8 +1438,8 @@ class SearchTvFragment : Fragment() {
                 else -> false
             }
         }
-        val position = (if (byIdentity >= 0) byIdentity else requested)
-            .coerceIn(0, appAdapter.items.lastIndex)
+        val position = SearchRowShortcut.clampToAvailable(
+            if (byIdentity >= 0) byIdentity else requested, appAdapter.items.size)
         rowJumpResumeLayout?.let { vgvSearch.layoutManager?.onRestoreInstanceState(it) }
         vgvSearch.setSelectedPosition(position)
         vgvSearch.post {

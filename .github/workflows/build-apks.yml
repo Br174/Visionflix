@@ -168,6 +168,22 @@ jobs:
           ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --tests '*Lab152GlobalCatalogTest' --stacktrace
           echo "[LAB152_TESTS=PASS] Unified catalog, country and genres"
 
+      - name: LAB153 TV remote, country, catalog and sorting regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab153-sticky-filter-fast-global-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --tests '*Lab152GlobalCatalogTest' --tests '*Lab153NavigationTest' --stacktrace
+          echo "[LAB153_TESTS=PASS] Native poster-row shortcuts, source priority, catalog and filters"
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
