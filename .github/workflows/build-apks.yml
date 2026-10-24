@@ -232,6 +232,22 @@ jobs:
           ./gradlew :app:testDebugUnitTest --tests '*Lab150AdvancedFiltersTest' --tests '*Lab151CountryAndGenreTest' --tests '*Lab152GlobalCatalogTest' --tests '*Lab153NavigationTest' --tests '*Lab154SearchPacingTest' --tests '*Lab155SearchSafetyTest' --tests '*Lab156UnifiedSortTest' --stacktrace
           echo "[LAB156_TESTS=PASS] One-sort menu and circle focus with preserved TV search regressions"
 
+      - name: LAB157 remote focus and compact filter regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab157-focus-compact-20261024'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          ./gradlew :app:testDebugUnitTest --tests '*Lab153NavigationTest' --tests '*Lab155SearchSafetyTest' --tests '*Lab156UnifiedSortTest' --tests '*Lab157FocusPolicyTest' --stacktrace
+          echo "[LAB157_TESTS=PASS] Existing remote/search regressions and deferred-focus guard"
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
