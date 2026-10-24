@@ -74,6 +74,46 @@ class Lab151CountryAndGenreTest {
         assertEquals("IT", filters.country.isoCode)
     }
 
+    @Test fun animationWithRomanceRequiresBothGenres() {
+        val filters = AdvancedSearchFilters(
+            type = AdvancedSearchFilters.ContentType.CARTOON,
+            genre = AdvancedSearchFilters.GenreFilter.ROMANCE,
+        )
+        assertFalse(filters.acceptsGenreIds(listOf(16), movie = true))
+        assertFalse(filters.acceptsGenreIds(listOf(10749), movie = true))
+        assertTrue(filters.acceptsGenreIds(listOf(16, 10749), movie = true))
+        assertFalse(filters.acceptsGenreIds(listOf(16, 35), movie = true))
+    }
+
+    @Test fun genreSelectionsUseOrWithinTheSameMedium() {
+        val filters = AdvancedSearchFilters(
+            genres = setOf(
+                AdvancedSearchFilters.GenreFilter.ROMANCE,
+                AdvancedSearchFilters.GenreFilter.COMEDY,
+            ),
+        )
+        assertTrue(filters.acceptsGenreIds(listOf(10749), movie = true))
+        assertTrue(filters.acceptsGenreIds(listOf(35), movie = true))
+        assertFalse(filters.acceptsGenreIds(listOf(28), movie = true))
+        assertTrue(filters.acceptsGenreIds(listOf(35), movie = false))
+        assertFalse(filters.acceptsGenreIds(listOf(28), movie = false))
+    }
+
+    @Test fun movieOnlyGenreDoesNotMatchTvWithUnrelatedGenreId() {
+        val filters = AdvancedSearchFilters(genre = AdvancedSearchFilters.GenreFilter.HORROR)
+        assertTrue(filters.acceptsGenreIds(listOf(27), movie = true))
+        assertFalse(filters.acceptsGenreIds(listOf(27), movie = false))
+        assertFalse(filters.acceptsGenreIds(emptyList(), movie = true))
+    }
+
+    @Test fun allGenreSelectionRetainsAnimationTypeConstraint() {
+        val cartoons = AdvancedSearchFilters(type = AdvancedSearchFilters.ContentType.CARTOON)
+        assertFalse(cartoons.acceptsGenreIds(emptyList(), movie = true))
+        assertFalse(cartoons.acceptsGenreIds(listOf(35), movie = true))
+        assertTrue(cartoons.acceptsGenreIds(listOf(16), movie = true))
+        assertTrue(AdvancedSearchFilters().acceptsGenreIds(emptyList(), movie = true))
+    }
+
     @Test fun countryGenreMatrixKeepsSelection() {
         for (country in AdvancedSearchFilters.CountryFilter.entries) {
             for (genre in AdvancedSearchFilters.GenreFilter.entries) {
