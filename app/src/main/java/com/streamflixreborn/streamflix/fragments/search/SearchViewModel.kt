@@ -45,7 +45,11 @@ sealed class State {
     data class SuccessSearching(val results: List<AppAdapter.Item>, val hasMore: Boolean) : State()
     data class FailedSearching(val error: Exception) : State()
     data object GlobalSearching : State()
-    data class SuccessGlobalSearching(val providerResults: List<ProviderResult>) : State()
+    data class SuccessGlobalSearching(
+        val providerResults: List<ProviderResult>,
+        val hasMore: Boolean = true,
+        val catalog: GlobalCatalogMerger.Catalog = GlobalCatalogMerger.merge(providerResults),
+    ) : State()
 }
 
 data class ProviderResult(
@@ -138,6 +142,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
     private var page = 1
     private var usingWebFallback = false
+    private var globalTargets: List<GlobalSearchTarget> = emptyList()
+    private var globalPage = 1
+    private var globalLoadingMore = false
 
     fun search(query: String) = viewModelScope.launch(Dispatchers.IO) {
         advancedFilters = AdvancedSearchFilters()
@@ -932,6 +939,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
 
         val targets = originals + remotes
+        globalTargets = targets
+        globalPage = 1
+        globalLoadingMore = false
         if (targets.isEmpty()) {
             _state.emit(State.SuccessGlobalSearching(emptyList()))
             return@launch
@@ -981,6 +991,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
         val resultsMutex = Mutex()
         val globalProviderGate = Semaphore(3)
+        var completedTargets = 0
 
         coroutineScope {
             targets.withIndex()
@@ -1043,11 +1054,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
                                 resultsMutex.withLock {
                                     mutableResults[index] = result
-                                    _state.emit(
-                                        State.SuccessGlobalSearching(
-                                            mutableResults.toList().sortedWith(stateComparator)
-                                        )
-                                    )
+                                    completedTargets++
+                                    // Batch UI updates for a fluid poster wall instead of rebuilding
+                                    // RecyclerView on every individual provider completion.
+                                    if (completedTargets == 1 || completedTargets % 3 == 0 || completedTargets == targets.size) {
+                                        _state.emit(State.SuccessGlobalSearching(mutableResults.toList().sortedWith(stateComparator)))
+                                    }
                                 }
                             }
                         } finally {
@@ -1056,6 +1068,105 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         }
                     }
                 }
+        }
+    }
+
+    /** LAB152: independently page all global sources while preserving the existing wall. */
+    fun loadMoreGlobal() = viewModelScope.launch(Dispatchers.IO) {
+        if (globalLoadingMore || globalTargets.isEmpty()) return@launch
+        val existing = _state.value as? State.SuccessGlobalSearching ?: return@launch
+        if (!existing.hasMore) return@launch
+        globalLoadingMore = true
+        try {
+            val currentTargets = globalTargets.toList()
+            val nextPage = globalPage + 1
+            val currentLanguage = currentTargets.firstOrNull()?.provider?.language ?: "it"
+            val needsMetadata = advancedFilters.isActive && (
+                advancedFilters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
+                advancedFilters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+                advancedFilters.effectiveGenres.isNotEmpty() ||
+                advancedFilters.type == AdvancedSearchFilters.ContentType.CARTOON ||
+                advancedFilters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+                !advancedFilters.actorId.isNullOrBlank() ||
+                !advancedFilters.directorId.isNullOrBlank() ||
+                (tmdbConfigured() && (advancedFilters.year != null ||
+                    !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
+            )
+            val metadata = if (needsMetadata && tmdbConfigured()) {
+                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, nextPage)
+            } else null
+            val latest = existing.providerResults.associateBy { it.displayName }
+            val updated = currentTargets.map { target ->
+                latest[target.displayName] ?: ProviderResult(target.provider, ProviderResult.State.Loading, target.displayName)
+            }.toMutableList()
+            val gate = Semaphore(3)
+            val mergeMutex = Mutex()
+            var addedCount = 0
+            coroutineScope {
+                currentTargets.withIndex().groupBy { it.value.provider.name }.values.forEach { group ->
+                    launch {
+                        val engine = group.first().value.provider
+                        val saved = ProviderEndpointRegistry.selectedOverride(engine.name)
+                        try {
+                            for ((index, target) in group) {
+                                if (target.endpoint.isNullOrBlank()) ProviderEndpointRegistry.selectOriginal(engine.name)
+                                else ProviderEndpointRegistry.selectRemote(engine.name, target.endpoint)
+                                (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+                                val found = try {
+                                    gate.withPermit {
+                                        when {
+                                            engine is TmdbProvider && advancedFilters.isActive ->
+                                                searchTmdbAdvanced(engine, query, advancedFilters, nextPage)
+                                            advancedFilters.isActive ->
+                                                searchProviderAdvanced(
+                                                    engine, query, advancedFilters, nextPage,
+                                                    sharedMetadata = metadata, candidateLimit = 24,
+                                                )
+                                            query.isBlank() -> browseProvider(engine, nextPage)
+                                            else -> searchProviderWithRecovery(engine, query, nextPage)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w("SearchViewModel", "Global next page: ${engine.name}: ${e.message}")
+                                    emptyList()
+                                }
+                                val tagged = ParentalControlUtils.filterItems(found.onEach { item ->
+                                    when (item) {
+                                        is Movie -> {
+                                            item.providerName = engine.name
+                                            item.providerEndpoint = target.endpoint
+                                        }
+                                        is TvShow -> {
+                                            item.providerName = engine.name
+                                            item.providerEndpoint = target.endpoint
+                                        }
+                                    }
+                                })
+                                mergeMutex.withLock {
+                                    val prior = (updated[index].state as? ProviderResult.State.Success)?.results.orEmpty()
+                                    val known = prior.map { it.searchIdentityKey() }.toHashSet()
+                                    val fresh = tagged.filter { it.searchIdentityKey() !in known }
+                                    addedCount += fresh.size
+                                    updated[index] = ProviderResult(
+                                        engine, ProviderResult.State.Success(prior + fresh), target.displayName
+                                    )
+                                }
+                            }
+                        } finally {
+                            ProviderEndpointRegistry.restoreSelection(engine.name, saved)
+                            (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+                        }
+                    }
+                }
+            }
+            globalPage = nextPage
+            // If all sources produced nothing, stop automatic paging to avoid endless calls.
+            _state.emit(State.SuccessGlobalSearching(updated, hasMore = addedCount > 0))
+        } catch (e: Exception) {
+            Log.e("SearchViewModel", "loadMoreGlobal", e)
+            _state.emit(existing.copy(hasMore = false))
+        } finally {
+            globalLoadingMore = false
         }
     }
 }
