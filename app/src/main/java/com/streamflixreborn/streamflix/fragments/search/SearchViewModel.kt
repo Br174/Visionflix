@@ -290,6 +290,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             provider.search(text, page)
         } catch (error: retrofit2.HttpException) {
             Log.w("SearchViewModel", "Provider=${provider.name}, search HTTP=${error.code()}, page=$page")
+            if (error.code() == 451) {
+                throw IllegalStateException(
+                    "Il provider ${provider.name} non consente questa ricerca (HTTP 451). " +
+                        "Cerca resta aperta: prova un altro provider.", error
+                )
+            }
             if (error.code() != 404 || provider !is EndpointManagedProvider) throw error
             val recovery = ProviderEndpointRegistry.refreshOne(provider)
             if (!recovery.success) throw IllegalStateException(
@@ -1012,8 +1018,19 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
         // Discover metadata concurrently rather than blocking the local provider's
         // immediate text results. All displayed items still pass their filters.
+        var metadataLookupError: Exception? = null
         val metadataTask = if (needsGlobalMetadata) async {
-            searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
+            // An HTTP 451 / blocked metadata endpoint is NOT an unhandled
+            // child-coroutine failure. Keep the app-level Cerca screen alive.
+            try {
+                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                metadataLookupError = error
+                Log.w("SearchViewModel", "LAB155 filtered metadata unavailable, continuing safely", error)
+                emptyList()
+            }
         } else null
 
         val mutableResults = targets.map { target ->
@@ -1110,6 +1127,15 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 }
         }
         if (generation == activeGlobalGeneration) {
+            if (metadataLookupError != null &&
+                (_state.value as? State.SuccessGlobalSearching)?.catalog?.posters?.isEmpty() == true) {
+                _state.emit(State.FailedSearching(IllegalStateException(
+                    "Filtri non disponibili: metadati bloccati o non raggiungibili. " +
+                        "La schermata Cerca resta aperta; riprova senza questi filtri.",
+                    metadataLookupError
+                )))
+                return@launch
+            }
             // Continue filling the catalog without a remote-control scroll event.
             // Two more page windows, bounded to avoid monopolizing provider quotas.
             repeat(2) {
