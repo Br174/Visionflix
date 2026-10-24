@@ -1,0 +1,93 @@
+name: Publish Verlezza Vision TV LAB150 as separate verified prerelease
+
+on:
+  push:
+    branches:
+      - lab/visionflix-lab150-recovery-20261024
+    paths:
+      - .github/workflows/publish-tv-lab150.yml
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: visionflix-lab150-tv-single-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish only previously verified TV LAB150 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.repository == 'Br174/Visionflix' && github.ref == 'refs/heads/lab/visionflix-lab150-recovery-20261024'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORIGINAL_RUN_ID: '40055175514'
+      ORIGINAL_SOURCE_SHA: d6e5606922be1bba75332814b20760a796803bcb
+      ARTIFACT_NAME: Verlezza-Vision-LAB-151
+      TV_SHA256: 500c6620840269fc5f2dbe5e68e1c9654eae0047206c8ecb7891917e6cb9cbd1
+      MOBILE_SHA256: 073b237c29d0a9366e4fec41312fd5fe179d6294c4439b8b1ca9ae5029c1f1bb
+      RELEASE_TAG: visionflix-tv-lab150-20261024
+      TV_ASSET: Verlezza-Vision-TV-LAB150.apk
+    steps:
+      - name: Verify immutable original build, authorized scope, and no existing tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN_ID" --jq '.head_sha + " " + .head_branch + " " + (.conclusion // "")')"
+          test "$actual" = "$ORIGINAL_SOURCE_SHA lab/visionflix-lab150-recovery-20261024 success" || {
+            echo "::error::Verified LAB150 source or status mismatch"; exit 67;
+          }
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::LAB150 prerelease exists, no overwrite allowed"; exit 68
+          fi
+
+      - name: Download exact verified APKs and check immutability
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/lab150"
+          gh run download "$ORIGINAL_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "$ARTIFACT_NAME" --dir "$RUNNER_TEMP/lab150"
+          echo "$TV_SHA256  $RUNNER_TEMP/lab150/Verlezza-Vision-TV.apk" | sha256sum --check -
+          echo "$MOBILE_SHA256  $RUNNER_TEMP/lab150/Verlezza-Vision-Mobile.apk" | sha256sum --check -
+          test "$(cat "$RUNNER_TEMP/lab150/signing-mode.txt")" = permanent-v1
+          grep -Fq ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6 "$RUNNER_TEMP/lab150/signature-info.txt"
+          cp "$RUNNER_TEMP/lab150/Verlezza-Vision-TV.apk" "$RUNNER_TEMP/lab150/$TV_ASSET"
+
+      - name: Publish public TV test release without changing latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/lab150/NOTES.md" <<EOF
+          Verlezza Vision TV LAB150 (test only), version 1.7.408, versionCode 337.
+          Public GitHub prerelease containing ONLY the verified TV APK.
+          Source LAB: https://github.com/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN_ID
+          Source commit: $ORIGINAL_SOURCE_SHA
+          APK SHA-256: $TV_SHA256
+          Signing certificate SHA-256: ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6
+          Not validated on a physical TV for live provider functionality.
+          Existing Downloader 3875230 and LAB149 code 4768904 unchanged.
+          Do not overwrite old-cert installs without prior data backup.
+          EOF
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/lab150/$TV_ASSET" \
+            --repo "$GITHUB_REPOSITORY" --target "$ORIGINAL_SOURCE_SHA" \
+            --title "Verlezza Vision TV LAB150 - 1.7.408 test" \
+            --notes-file "$RUNNER_TEMP/lab150/NOTES.md" \
+            --prerelease --latest=false
+
+      - name: Verify only one asset, public prerelease, and protected latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq '{tag:.tag_name, draft:.draft, prerelease:.prerelease, assets:[.assets[] | {name:.name,digest:.digest,url:.browser_download_url}]}' \
+            | tee "$RUNNER_TEMP/prerelease-readback.json"
+          jq -e --arg name "$TV_ASSET" --arg hash "sha256:$TV_SHA256" \
+            '.prerelease == true and .draft == false and (.assets | length) == 1 and .assets[0].name == $name and .assets[0].digest == $hash' \
+            "$RUNNER_TEMP/prerelease-readback.json"
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          test "$latest" != "$RELEASE_TAG"
+          echo "Latest release remains $latest; no main/MADRE/production mutations." >> "$GITHUB_STEP_SUMMARY"
+          echo "TV LAB150 prerelease confirmed and immutable; numeric Downloader code must be generated externally." >> "$GITHUB_STEP_SUMMARY"
