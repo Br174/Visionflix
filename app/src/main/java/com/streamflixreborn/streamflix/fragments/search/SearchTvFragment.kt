@@ -101,16 +101,26 @@ class SearchTvFragment : Fragment() {
     private var btnApplyFilters: TextView? = null
     private var btnResetFilters: TextView? = null
     private var filterFocusSentinel: View? = null
+    private var dropdownArrow: TextView? = null
+    private var quickAll: TextView? = null
+    private var quickFilm: TextView? = null
+    private var quickSeries: TextView? = null
+    private var quickDate: TextView? = null
+    private var returnPosterId: String? = null
+    private var returnPosterPosition = RecyclerView.NO_POSITION
+    private var returnPosterLayout: android.os.Parcelable? = null
 
     private val appAdapter by lazy {
         AppAdapter().apply {
             onMovieClickListener = { movie ->
+                rememberPoster(movie.id, "film")
                 switchProviderIfNeeded(movie.providerName, movie.providerEndpoint)
                 findNavController().navigate(
                     SearchTvFragmentDirections.actionSearchToMovie(id = movie.id)
                 )
             }
             onTvShowClickListener = { tvShow ->
+                rememberPoster(tvShow.id, "series")
                 switchProviderIfNeeded(tvShow.providerName, tvShow.providerEndpoint)
                 findNavController().navigate(
                     SearchTvFragmentDirections.actionSearchToTvShow(
@@ -170,7 +180,7 @@ class SearchTvFragment : Fragment() {
             restorePersistedFiltersSafely()
             initializeScrollableHeader()
             updateGridTopPadding()
-            etSearch.requestFocus()
+            if (returnPosterId == null) etSearch.requestFocus()
         }
     }
 
@@ -287,14 +297,13 @@ class SearchTvFragment : Fragment() {
                     subposition: Int,
                 ) {
                     if (position in 0 until currentGridColumns.coerceAtLeast(1)) {
-                        val target = filterFocusSentinel?.id ?: btnApplyFilters?.id
+                        val target = dropdownArrow?.id ?: btnApplyFilters?.id
                         if (target != null) child?.itemView?.nextFocusUpId = target
                         child?.itemView?.setOnKeyListener { _, keyCode, event ->
                             if (event.action == KeyEvent.ACTION_DOWN &&
                                 keyCode == KeyEvent.KEYCODE_DPAD_UP &&
                                 !filterPanelExpanded) {
-                                openFiltersFromResults()
-                                true
+                                dropdownArrow?.requestFocus() == true
                             } else false
                         }
                     }
@@ -409,26 +418,19 @@ class SearchTvFragment : Fragment() {
                 setBackgroundResource(R.drawable.bg_filter_panel_tv)
             }
             filterPanelBody = panel
-            filterContainer.addView(
-                panel,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-            )
+            val dropdown = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundResource(R.drawable.bg_filter_panel_tv)
+            }
+            filterContainer.addView(dropdown, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            dropdown.addView(panel, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
             // TV only: search bar + clear + mic + Ricerca globale now belong to the same box.
             val searchBar = etSearch.parent as? View
             (searchBar?.parent as? ViewGroup)?.removeView(searchBar)
-            if (searchBar != null) {
-                panel.addView(
-                    searchBar,
-                    LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ),
-                )
-            }
+            // Keep the original search box intact; place it in the dropdown's bottom lip.
             (llGlobalSearch.parent as? ViewGroup)?.removeView(llGlobalSearch)
             panel.addView(
                 llGlobalSearch,
@@ -597,27 +599,56 @@ class SearchTvFragment : Fragment() {
                 button.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
             }
 
-            // Nessuna barra visibile quando i filtri sono chiusi. Questo piccolo
-            // sentinel trasparente serve soltanto al focus D-pad per riaprire il pannello.
-            filterFocusSentinel = View(requireContext()).apply {
-                id = View.generateViewId()
-                isFocusable = true
-                isFocusableInTouchMode = true
-                alpha = 0f
-                visibility = View.GONE
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                setOnFocusChangeListener { _, hasFocus ->
-                    if (hasFocus && !filterPanelExpanded) openFiltersFromResults()
-                }
+            // Always-visible bottom lip. The filters above are still the exact
+            // existing components with unchanged labels and arrangement.
+            val lip = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(4), dp(12), dp(6))
             }
-            filterContainer.addView(
-                filterFocusSentinel,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)),
-            )
-
+            dropdown.addView(lip, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            searchBar?.let {
+                lip.addView(it, LinearLayout.LayoutParams(0, dp(54), 5f).apply { marginEnd = dp(8) })
+            }
+            fun quickButton(label: String, width: Int, callback: () -> Unit): TextView =
+                makeActionButton(label, primary = false).apply {
+                    textSize = 14f
+                    setOnClickListener { callback() }
+                    lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(48)).apply { marginEnd = dp(5) })
+                }
+            fun quickType(type: AdvancedSearchFilters.ContentType) {
+                typeSelector?.selectValue(type)
+                updateQuickBar()
+                submitSearch()
+            }
+            quickAll = quickButton("Tutti", 82) { quickType(AdvancedSearchFilters.ContentType.ALL) }
+            quickFilm = quickButton("Film", 82) { quickType(AdvancedSearchFilters.ContentType.MOVIE) }
+            quickSeries = quickButton("Serie", 82) { quickType(AdvancedSearchFilters.ContentType.TV) }
+            quickDate = quickButton("Più nuovi", 104) {
+                sortSelector?.selectValue(if (sortSelector?.value == AdvancedSearchFilters.SortFilter.OLDEST)
+                    AdvancedSearchFilters.SortFilter.DATE else AdvancedSearchFilters.SortFilter.OLDEST)
+                updateQuickBar()
+                submitSearch()
+            }
+            dropdownArrow = TextView(requireContext()).apply {
+                id = View.generateViewId()
+                textSize = 30f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(Color.WHITE)
+                isFocusable = true
+                isClickable = true
+                // Free arrow glyph: touch/focus hit target but NO visible surrounding button.
+                setOnClickListener { setFilterPanelExpanded(!filterPanelExpanded, true) }
+                setOnFocusChangeListener { _, focused ->
+                    setTextColor(if (focused) Color.CYAN else Color.WHITE)
+                }
+                lip.addView(this, LinearLayout.LayoutParams(dp(45), dp(50)))
+            }
+            updateQuickBar()
             configureFilterFocus()
             searchHeader.post {
-                setFilterPanelExpanded(true, false)
+                setFilterPanelExpanded(false, false)
                 updateGridTopPadding()
             }
         } catch (error: Throwable) {
@@ -684,7 +715,9 @@ class SearchTvFragment : Fragment() {
         apply.nextFocusUpId = country.viewId
         apply.nextFocusLeftId = reset.id
         apply.nextFocusDownId = vgvSearch.id
-        vgvSearch.nextFocusUpId = filterFocusSentinel?.id ?: apply.id
+        vgvSearch.nextFocusUpId = dropdownArrow?.id ?: apply.id
+        dropdownArrow?.nextFocusDownId = vgvSearch.id
+        dropdownArrow?.nextFocusLeftId = quickDate?.id ?: etSearch.id
     }
 
     private fun setupActorTextSearch() {
@@ -1118,12 +1151,15 @@ class SearchTvFragment : Fragment() {
             isGlobalSearchChecked = false
             updateGlobalSwitch()
             typeSelector?.selectValue(saved.type)
+            updateQuickBar()
             italianSelector?.selectValue(saved.italian)
             yearSelector?.selectValue(saved.year)
             fromSelector?.selectValue(saved.fromYear)
             toSelector?.selectValue(saved.toYear)
             genreSelector?.selectValue(saved.genre)
-            sortSelector?.selectValue(saved.sort)
+            sortSelector?.selectValue(if (saved.sort == AdvancedSearchFilters.SortFilter.POPULARITY)
+                AdvancedSearchFilters.SortFilter.DATE else saved.sort)
+            updateQuickBar()
             platformSelector?.selectValue(saved.platform)
             countrySelector?.selectValue(saved.country)
             selectedGenres.clear()
@@ -1152,13 +1188,12 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun initializeScrollableHeader() {
-        vgvSearch.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus && filterPanelExpanded) setFilterPanelExpanded(false, true)
-        }
+        // DPAD never toggles the dropdown implicitly: only the visible arrow does.
         vgvSearch.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP &&
-                !filterPanelExpanded && vgvSearch.selectedPosition in 0 until currentGridColumns.coerceAtLeast(1)) {
-                openFiltersFromResults(); true
+            if (event.action == KeyEvent.ACTION_DOWN &&
+                keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+                vgvSearch.selectedPosition in 0 until currentGridColumns.coerceAtLeast(1)) {
+                dropdownArrow?.requestFocus() == true
             } else false
         }
     }
@@ -1177,25 +1212,27 @@ class SearchTvFragment : Fragment() {
         filterPanelExpanded = expanded
         searchHeader.animate().cancel(); searchHeader.translationY = 0f
         filterPanelBody?.visibility = if (expanded) View.VISIBLE else View.GONE
-        filterFocusSentinel?.visibility = if (expanded) View.GONE else View.VISIBLE
+        dropdownArrow?.apply {
+            text = if (expanded) "⌃" else "⌄"
+            contentDescription = if (expanded) "Chiudi i filtri" else "Apri i filtri"
+        }
         searchHeader.requestLayout()
         searchHeader.post { updateGridTopPadding(); if (!expanded && pendingFocusFirstResult) focusFirstResultWhenReady() }
     }
 
     private fun openFiltersFromResults() {
-        setFilterPanelExpanded(true, false)
-        searchHeader.post { btnApplyFilters?.requestFocus() ?: etSearch.requestFocus() }
+        dropdownArrow?.requestFocus()
     }
 
     private fun collapseFiltersAndFocusResults() {
         pendingFocusFirstResult = true
+        returnPosterId = null
         setFilterPanelExpanded(false, true)
         focusFirstResultWhenReady()
     }
 
     private fun focusFirstResultWhenReady() {
         if (appAdapter.items.isEmpty()) return
-        vgvSearch.scrollToPosition(0)
         vgvSearch.setSelectedPosition(0)
         vgvSearch.post {
             if (vgvSearch.requestFocus()) pendingFocusFirstResult = false
@@ -1203,7 +1240,7 @@ class SearchTvFragment : Fragment() {
     }
 
     private fun revealSearchHeader() {
-        setFilterPanelExpanded(true, true)
+        // Dropdown state is solely user-controlled by the arrow.
     }
 
     private fun focusSearchContent(): Boolean {
@@ -1215,7 +1252,7 @@ class SearchTvFragment : Fragment() {
         if (appAdapter.itemCount > 0) return vgvSearch.requestFocus()
         actorEdit?.let { if (it.visibility == View.VISIBLE) return it.requestFocus() }
         btnApplyFilters?.let { return it.requestFocus() }
-        return llGlobalSearch.requestFocus()
+        return dropdownArrow?.requestFocus() ?: llGlobalSearch.requestFocus()
     }
 
     private fun displaySearch(list: List<AppAdapter.Item>, hasMore: Boolean) {
@@ -1237,6 +1274,7 @@ class SearchTvFragment : Fragment() {
         }
         searchHeader.post {
             updateGridTopPadding()
+            restorePosterIfNeeded()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
         }
     }
@@ -1257,7 +1295,46 @@ class SearchTvFragment : Fragment() {
         else appAdapter.setOnLoadMoreListener(null)
         searchHeader.post {
             updateGridTopPadding()
+            restorePosterIfNeeded()
             if (pendingFocusFirstResult) focusFirstResultWhenReady()
+        }
+    }
+
+    private fun updateQuickBar() {
+        val type = typeSelector?.value
+        quickAll?.isActivated = type == AdvancedSearchFilters.ContentType.ALL
+        quickFilm?.isActivated = type == AdvancedSearchFilters.ContentType.MOVIE
+        quickSeries?.isActivated = type == AdvancedSearchFilters.ContentType.TV
+        quickDate?.text = if (sortSelector?.value == AdvancedSearchFilters.SortFilter.OLDEST)
+            "Più vecchi" else "Più nuovi"
+    }
+
+    private fun rememberPoster(id: String, kind: String) {
+        returnPosterId = "$kind:$id"
+        returnPosterPosition = vgvSearch.selectedPosition
+        returnPosterLayout = vgvSearch.layoutManager?.onSaveInstanceState()
+    }
+
+    private fun restorePosterIfNeeded() {
+        val anchor = returnPosterId ?: return
+        if (appAdapter.items.isEmpty()) return
+        val index = appAdapter.items.indexOfFirst {
+            when (it) {
+                is Movie -> "film:${it.id}" == anchor
+                is TvShow -> "series:${it.id}" == anchor
+                else -> false
+            }
+        }.takeIf { it >= 0 } ?: returnPosterPosition
+        if (index !in appAdapter.items.indices) return
+        returnPosterLayout?.let { vgvSearch.layoutManager?.onRestoreInstanceState(it) }
+        vgvSearch.setSelectedPosition(index)
+        vgvSearch.post {
+            if (!isAdded) return@post
+            vgvSearch.requestFocus()
+            returnPosterId = null
+            returnPosterPosition = RecyclerView.NO_POSITION
+            returnPosterLayout = null
+            pendingFocusFirstResult = false
         }
     }
 
