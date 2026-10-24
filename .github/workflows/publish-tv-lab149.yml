@@ -1,0 +1,97 @@
+name: Publish Verlezza Vision TV LAB149 prerelease only
+
+on:
+  push:
+    branches:
+      - lab/visionflix-signing-v1-20261024
+    paths:
+      - .github/workflows/publish-tv-lab149.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: visionflix-tv-lab149-prerelease-once
+  cancel-in-progress: false
+
+jobs:
+  publish_tv_lab149:
+    name: Publish verified TV only to a separate prerelease
+    if: github.repository == 'Br174/Visionflix' && github.ref == 'refs/heads/lab/visionflix-signing-v1-20261024'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN: "40050782289"
+      SOURCE_SHA: "b14a222037fb634005a348cbdb2fee88c5c80fba"
+      TV_SHA256: "521e542b0a8e4dc52162963145baf8266cf602732b54e87105a3157680e49fc0"
+      RELEASE_TAG: "visionflix-tv-lab149-20261024"
+      RELEASE_ASSET: "Verlezza-Vision-TV-LAB149.apk"
+    steps:
+      - name: Verify approved LAB source and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "lab/visionflix-signing-v1-20261024"
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" \
+            --jq '.head_sha + " " + .head_branch + " " + (.conclusion // "")')"
+          test "$actual" = "$SOURCE_SHA lab/visionflix-signing-v1-20261024 success" || {
+            echo "::error::Original verified build mismatch. Prerelease blocked."; exit 61;
+          }
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::LAB149 release tag already exists. No overwrite permitted."; exit 62
+          fi
+
+      - name: Download exact TV APK from the verified LAB149 artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/lab149"
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "Verlezza-Vision-LAB-149" --dir "$RUNNER_TEMP/lab149"
+          test -f "$RUNNER_TEMP/lab149/Verlezza-Vision-TV.apk"
+          test -f "$RUNNER_TEMP/lab149/Verlezza-Vision-Mobile.apk"
+          echo "$TV_SHA256  $RUNNER_TEMP/lab149/Verlezza-Vision-TV.apk" | sha256sum --check -
+          cp "$RUNNER_TEMP/lab149/Verlezza-Vision-TV.apk" "$RUNNER_TEMP/lab149/$RELEASE_ASSET"
+          echo "Verified TV SHA256 $TV_SHA256" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish separate public prerelease without affecting latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/lab149/RELEASE_NOTES.md" <<EOF
+          Verlezza Vision TV - LAB149 test build (1.7.406 / versionCode 335).
+          
+          Only the Android TV APK is published as a separate public GitHub prerelease.
+          Original immutable source run: https://github.com/Br174/Visionflix/actions/runs/$SOURCE_RUN
+          Original application SHA: $SOURCE_SHA
+          TV APK SHA-256: $TV_SHA256
+          Signing cert SHA-256: ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6
+          
+          Warning: this new signing certificate differs from earlier installations.
+          Back up important app data before any future uninstall and reinstall.
+          Existing MADRE, production, Downloader code 3875230 and stable latest release are unchanged.
+          EOF
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/lab149/$RELEASE_ASSET" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+            --title "Verlezza Vision TV - LAB149 (test only)" \
+            --notes-file "$RUNNER_TEMP/lab149/RELEASE_NOTES.md" \
+            --prerelease --latest=false
+
+      - name: Independent readback of prerelease and latest safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          echo "$release" | jq -e '.prerelease == true and .draft == false and (.assets | length) == 1' >/dev/null
+          url="$(echo "$release" | jq -r --arg name "$RELEASE_ASSET" '.assets[] | select(.name==$name) | .browser_download_url')"
+          test -n "$url"
+          test "$url" != "null"
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+          test "$latest" != "$RELEASE_TAG" || {
+            echo "::error::LAB149 was unexpectedly selected as latest. Stop."; exit 65
+          }
+          echo "Published prerelease verified: $url" >> "$GITHUB_STEP_SUMMARY"
+          echo "Latest unchanged to LAB149: $latest" >> "$GITHUB_STEP_SUMMARY"
+          echo "No writes to main, MADRE, production, or Br174/streamflix-BV." >> "$GITHUB_STEP_SUMMARY"
