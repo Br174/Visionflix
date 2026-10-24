@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.Toast
 import android.widget.PopupMenu
 import android.widget.ImageView
+import android.widget.EditText
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewbinding.ViewBinding
 import com.bumptech.glide.Glide
@@ -80,7 +81,7 @@ class ProviderViewHolder(
         loadProviderLogo(binding.ivProviderLogo)
 
         binding.tvProviderName.text = provider.name + "  ⟳"
-        binding.root.contentDescription = "${provider.name}. Tieni premuto per Aggiorna provider, Aggiorna tutti o Preferiti"
+        binding.root.contentDescription = "${provider.name}. Tieni premuto per Aggiorna provider, Inserisci link manuale, Ripristina link, Aggiorna tutti o Preferiti"
 
         binding.tvProviderLanguage.text = Locale.forLanguageTag(provider.language)
             .let { it.getDisplayLanguage(it) }
@@ -122,7 +123,7 @@ class ProviderViewHolder(
         loadProviderLogo(binding.ivProviderLogo)
 
         binding.tvProviderName.text = provider.name + "  ⟳"
-        binding.root.contentDescription = "${provider.name}. Tieni premuto per Aggiorna provider, Aggiorna tutti o Preferiti"
+        binding.root.contentDescription = "${provider.name}. Tieni premuto per Aggiorna provider, Inserisci link manuale, Ripristina link, Aggiorna tutti o Preferiti"
 
         binding.tvProviderLanguage.text = Locale.forLanguageTag(provider.language)
             .let { it.getDisplayLanguage(it) }
@@ -135,6 +136,8 @@ class ProviderViewHolder(
             menu.add(0, 1, 0, "Aggiorna provider")
             menu.add(0, 2, 1, "Aggiorna tutti")
             menu.add(0, 3, 2, if (item.isFavorite) "Rimuovi dai preferiti" else "Aggiungi ai preferiti")
+            menu.add(0, 4, 3, "Inserisci / modifica link")
+            menu.add(0, 5, 4, "Ripristina indirizzo automatico")
             setOnMenuItemClickListener { menuItem ->
                 when (menuItem.itemId) {
                     1 -> {
@@ -191,11 +194,76 @@ class ProviderViewHolder(
                         }
                         true
                     }
+                    4 -> {
+                        showManualLinkDialog(item)
+                        true
+                    }
+                    5 -> {
+                        ProviderEndpointRegistry.clearManualEndpoint(item.provider.name)
+                        ProviderEndpointRegistry.selectOriginal(item.provider.name)
+                        (item.provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+                        android.app.AlertDialog.Builder(context)
+                            .setTitle("Indirizzo ripristinato")
+                            .setMessage("Rimosso il link manuale di ${item.provider.name}. Gli aggiornamenti automatici possono essere riutilizzati.")
+                            .setPositiveButton("Chiudi", null)
+                            .show()
+                        true
+                    }
                     else -> false
                 }
             }
             show()
         }
+    }
+
+    private fun showManualLinkDialog(item: Provider) {
+        val engine = item.provider
+        if (engine !is EndpointManagedProvider) {
+            android.app.AlertDialog.Builder(context)
+                .setTitle("Provider non compatibile")
+                .setMessage("Per questo sito il cambio del solo indirizzo non basta: occorre integrare un motore di ricerca compatibile.")
+                .setPositiveButton("Chiudi", null)
+                .show()
+            return
+        }
+        val field = EditText(context).apply {
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            hint = "https://sito.example"
+            setText(ProviderEndpointRegistry.manualEndpoint(engine.name) ?: engine.baseUrl)
+            selectAll()
+            setPadding(30, 24, 30, 24)
+        }
+        val dialog = android.app.AlertDialog.Builder(context)
+            .setTitle("Link manuale · ${engine.name}")
+            .setMessage("Verlezza Vision verificherà il catalogo prima di salvare. Il link precedente resta attivo se la prova fallisce.")
+            .setView(field)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Verifica e salva", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val raw = field.text?.toString().orEmpty().trim()
+                if (!raw.startsWith("https://") && !raw.startsWith("http://")) {
+                    field.error = "Inserisci un URL http/https valido"
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                Toast.makeText(context, "Verifica effettiva di ${engine.name} in corso", Toast.LENGTH_SHORT).show()
+                val owner = context.toActivity() as? LifecycleOwner
+                val scope = owner?.lifecycleScope ?: CoroutineScope(Dispatchers.Main)
+                scope.launch {
+                    val result = runCatching { ProviderEndpointRegistry.verifyAndSaveManual(engine, raw) }
+                        .getOrElse { ProviderEndpointRegistry.RefreshResult(engine.name, false, it.message ?: "Errore durante la verifica") }
+                    android.app.AlertDialog.Builder(context)
+                        .setTitle(if (result.success) "Link salvato" else "Link non applicato")
+                        .setMessage(result.message)
+                        .setPositiveButton("Chiudi", null)
+                        .show()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun loadProviderLogo(imageView: ImageView) {
