@@ -1,0 +1,16 @@
+MOTORLAB OPERATION CHECKPOINT
+OPERATION_ID=VV-LAB164-SPEED-FILTER-RECOVERY-20261024
+CORE_RELEASE=2026.10.22-r38
+PROJECT=Br174/Visionflix
+APPROVED_BY_USER=YES
+APPROVED_SCOPE=search_speed;combined_filters;regression_tests;signed_mobile_tv_apks;zip
+ISOLATED_BRANCH=lab/visionflix-lab164-search-speed-filter-recovery-20261024
+BASE_SHA=c9f50455cdcac8c44819736db5354e16743c0af8
+SOURCE_BASE_BRANCH=lab/visionflix-lab163-permanent-downloader-20261024
+ROOT_CAUSE_EVIDENCE=LAB154_candidate_truncation;filtered_empty_page_termination;metadata_year_mismatch;global_permit_held_while_metadata_await;tv_eager_180_poster_prefetch
+CHANGES=bounded_candidate_coverage_24_12_32;metadata_tolerance_years_1_movie_3_tv;metadata_trust_year;filtered_local_global_sparse_paging;metadata_await_before_permit;poster_prefetch_36;LAB164_ci_test_gate;version_code_min_459
+APP_SIGNING=preserve_permanent_v1
+APP_IDS=preserve_both_mobile_tv
+PROTECTED=main,MADRE,production,player,provider-engines,UI_layout
+CURRENT_STATUS=SOURCE_PATCHES_IN_PROGRESS_TESTS_PENDING
+NEXT=verify_single LAB CI run and signed build APKs+ZIP; only then read back immutables/checksums and send download links; follow on-device functional testing
