@@ -506,12 +506,6 @@ class SearchMobileFragment : Fragment() {
 
         if (filters.isActive) {
             binding.swGlobalSearch.isChecked = false
-            if (UserPreferences.currentProvider !is TmdbProvider) {
-                val language = UserPreferences.currentProvider?.language
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "it"
-                UserPreferences.currentProvider = TmdbProvider(language)
-            }
             viewModel.searchAdvanced(query, filters)
             return true
         }
