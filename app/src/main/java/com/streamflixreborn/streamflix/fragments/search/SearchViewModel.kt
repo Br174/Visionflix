@@ -11,6 +11,8 @@ import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
+import com.streamflixreborn.streamflix.providers.EndpointManagedProvider
+import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
 import com.streamflixreborn.streamflix.providers.TmdbProvider
 import com.streamflixreborn.streamflix.utils.ParentalControlUtils
 import com.streamflixreborn.streamflix.utils.TMDb3
@@ -30,6 +32,8 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 
 sealed class State {
@@ -44,6 +48,7 @@ sealed class State {
 data class ProviderResult(
     val provider: Provider,
     val state: State,
+    val displayName: String = provider.name,
 ) {
     sealed class State {
         data object Loading : State()
@@ -51,6 +56,12 @@ data class ProviderResult(
         data class Error(val error: Exception) : State()
     }
 }
+
+private data class GlobalSearchTarget(
+    val provider: Provider,
+    val displayName: String,
+    val endpoint: String?,
+)
 
 class SearchViewModel(database: AppDatabase) : ViewModel() {
 
@@ -737,21 +748,41 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         _state.emit(State.GlobalSearching)
 
         val isCurrentProviderIptv = UserPreferences.currentProvider is IptvProvider
-        val targetProviders = Provider.providers.keys
+        val originals = Provider.providers.keys
             .filter { it.language == currentLanguage && (it is IptvProvider) == isCurrentProviderIptv }
-            .toList()
+            .map { GlobalSearchTarget(it, "Originale · ${it.name}", null) }
 
-        if (targetProviders.isEmpty()) {
+        val remotes = if (!isCurrentProviderIptv) {
+            ProviderEndpointRegistry.refreshIfNeeded(Provider.providers.keys)
+                .filter { it.language == currentLanguage && it.healthy }
+                .mapNotNull { entry ->
+                    val engine = Provider.providers.keys.firstOrNull { it.name == entry.engineName }
+                        as? EndpointManagedProvider ?: return@mapNotNull null
+                    GlobalSearchTarget(
+                        provider = engine,
+                        displayName = "Pastebin · ${entry.displayName}",
+                        endpoint = entry.url,
+                    )
+                }
+        } else {
+            emptyList()
+        }
+
+        val targets = originals + remotes
+        if (targets.isEmpty()) {
             _state.emit(State.SuccessGlobalSearching(emptyList()))
             return@launch
         }
 
-        val initialResults = targetProviders.map { provider ->
-            ProviderResult(provider, ProviderResult.State.Loading)
-        }
-        _state.emit(State.SuccessGlobalSearching(initialResults))
+        val mutableResults = targets.map { target ->
+            ProviderResult(
+                provider = target.provider,
+                state = ProviderResult.State.Loading,
+                displayName = target.displayName,
+            )
+        }.toMutableList()
+        _state.emit(State.SuccessGlobalSearching(mutableResults.toList()))
 
-        val mutableResults = initialResults.toMutableList()
         val stateComparator = compareBy<ProviderResult> { providerResult ->
             when (val state = providerResult.state) {
                 is ProviderResult.State.Success -> if (state.results.isNotEmpty()) 1 else 3
@@ -759,24 +790,69 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 is ProviderResult.State.Error -> 4
             }
         }
+        val resultsMutex = Mutex()
 
-        targetProviders.forEachIndexed { index, provider ->
-            launch {
-                try {
-                    val results = ParentalControlUtils.filterItems(provider.search(query).onEach { item ->
-                        when (item) {
-                            is Movie -> item.providerName = provider.name
-                            is TvShow -> item.providerName = provider.name
+        coroutineScope {
+            targets.withIndex()
+                .groupBy { it.value.provider.name }
+                .values
+                .forEach { group ->
+                    launch {
+                        val provider = group.first().value.provider
+                        val previousSelection = ProviderEndpointRegistry.selectedOverride(provider.name)
+                        try {
+                            for ((index, target) in group) {
+                                if (target.endpoint.isNullOrBlank()) {
+                                    ProviderEndpointRegistry.selectOriginal(provider.name)
+                                } else {
+                                    ProviderEndpointRegistry.selectRemote(provider.name, target.endpoint)
+                                }
+                                (provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+
+                                val result = try {
+                                    val items = ParentalControlUtils.filterItems(
+                                        provider.search(query).onEach { item ->
+                                            when (item) {
+                                                is Movie -> {
+                                                    item.providerName = provider.name
+                                                    item.providerEndpoint = target.endpoint
+                                                }
+                                                is TvShow -> {
+                                                    item.providerName = provider.name
+                                                    item.providerEndpoint = target.endpoint
+                                                }
+                                            }
+                                        }
+                                    )
+                                    ProviderResult(
+                                        provider = provider,
+                                        state = ProviderResult.State.Success(items),
+                                        displayName = target.displayName,
+                                    )
+                                } catch (e: Exception) {
+                                    Log.e("SearchViewModel", "searchGlobal for ${target.displayName}: ", e)
+                                    ProviderResult(
+                                        provider = provider,
+                                        state = ProviderResult.State.Error(e),
+                                        displayName = target.displayName,
+                                    )
+                                }
+
+                                resultsMutex.withLock {
+                                    mutableResults[index] = result
+                                    _state.emit(
+                                        State.SuccessGlobalSearching(
+                                            mutableResults.toList().sortedWith(stateComparator)
+                                        )
+                                    )
+                                }
+                            }
+                        } finally {
+                            ProviderEndpointRegistry.restoreSelection(provider.name, previousSelection)
+                            (provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
                         }
-                    })
-                    mutableResults[index] = ProviderResult(provider, ProviderResult.State.Success(results))
-                } catch (e: Exception) {
-                    Log.e("SearchViewModel", "searchGlobal for ${provider.name}: ", e)
-                    mutableResults[index] = ProviderResult(provider, ProviderResult.State.Error(e))
+                    }
                 }
-
-                _state.emit(State.SuccessGlobalSearching(mutableResults.sortedWith(stateComparator)))
-            }
         }
     }
 }
