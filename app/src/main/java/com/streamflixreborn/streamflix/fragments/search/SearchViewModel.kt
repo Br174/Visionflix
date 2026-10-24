@@ -686,8 +686,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         if (!includeMovies) return@mapNotNull null
                         if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
                         if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
-                        if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
-                        if (selectedGenres.isNotEmpty() && selectedGenres.none { it.movieId in multi.genresIds }) return@mapNotNull null
+                        if (!filters.acceptsGenreIds(multi.genresIds, movie = true)) return@mapNotNull null
                         if (restrictToActor && multi.id.toString() !in actorMovieIds) return@mapNotNull null
                         if (restrictToDirector && multi.id.toString() !in directorMovieIds) return@mapNotNull null
                         if (constrainedMovieIds != null && multi.id.toString() !in constrainedMovieIds) return@mapNotNull null
@@ -708,8 +707,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         if (!includeTv) return@mapNotNull null
                         if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
                         if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
-                        if (cartoonOnly && 16 !in multi.genresIds) return@mapNotNull null
-                        if (selectedGenres.isNotEmpty() && selectedGenres.none { it.tvId in multi.genresIds }) return@mapNotNull null
+                        if (!filters.acceptsGenreIds(multi.genresIds, movie = false)) return@mapNotNull null
                         if (restrictToActor && multi.id.toString() !in actorTvIds) return@mapNotNull null
                         if (restrictToDirector && multi.id.toString() !in directorTvIds) return@mapNotNull null
                         if (constrainedTvIds != null && multi.id.toString() !in constrainedTvIds) return@mapNotNull null
@@ -802,8 +800,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
-            .filter { !cartoonOnly || 16 in it.genresIds }
-            .filter { selectedGenres.isEmpty() || selectedGenres.any { genre -> genre.movieId in it.genresIds } }
+            .filter { filters.acceptsGenreIds(it.genresIds, movie = true) }
             .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
             .map { movie ->
                 Movie(
@@ -821,8 +818,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val tvItems = tvDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
-            .filter { !cartoonOnly || 16 in it.genresIds }
-            .filter { selectedGenres.isEmpty() || selectedGenres.any { genre -> genre.tvId in it.genresIds } }
+            .filter { filters.acceptsGenreIds(it.genresIds, movie = false) }
             .filter { directorId == null || it.id.toString() in blankDirectorTvIds }
             .map { tv ->
                 TvShow(
