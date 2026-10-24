@@ -225,15 +225,31 @@ object ProviderEndpointRegistry {
     )
 
     /** Manual refresh is scoped to a single provider; a reachable homepage is not proof. */
-    suspend fun refreshOne(provider: Provider, refreshRegistry: Boolean = true): RefreshResult = withContext(Dispatchers.IO) {
+    suspend fun refreshOne(
+        provider: Provider,
+        refreshRegistry: Boolean = true,
+        requestedEndpoint: String? = null,
+    ): RefreshResult = withContext(Dispatchers.IO) {
         val managed = provider as? EndpointManagedProvider
+        val originalSelection = selectedOverride(provider.name)
+        try {
+        // Check the exact remote source the user requested, not a different engine homepage.
+        if (!requestedEndpoint.isNullOrBlank()) {
+            if (!probe(requestedEndpoint).first) return@withContext RefreshResult(
+                provider.name, false, "Fonte selezionata non raggiungibile"
+            )
+        }
         val configured = selectedOverride(provider.name)
         if (configured != null && !probe(configured).first) {
             selectOriginal(provider.name)
             managed?.onEndpointSelectionChanged()
         }
         if (managed != null && refreshRegistry) refreshIfNeeded(listOf(provider), force = true)
-        if (provider is ProviderConfigUrl) {
+        if (!requestedEndpoint.isNullOrBlank()) {
+            selectRemote(provider.name, requestedEndpoint)
+            managed?.onEndpointSelectionChanged()
+        }
+        if (requestedEndpoint.isNullOrBlank() && provider is ProviderConfigUrl) {
             runCatching { provider.onChangeUrl(forceRefresh = true) }
         }
         val url = provider.baseUrl
@@ -242,12 +258,18 @@ object ProviderEndpointRegistry {
         }
         val functional = runCatching {
             // A real search tests the provider engine, not just its HTTP homepage.
-            provider.search("Roma", 1).isNotEmpty()
+            withTimeoutOrNull(15_000) { provider.search("Roma", 1).isNotEmpty() } == true
         }.getOrDefault(false)
         if (functional) {
             RefreshResult(provider.name, true, "Ricerca di prova riuscita")
         } else {
-            RefreshResult(provider.name, false, "Sito raggiungibile ma ricerca non verificata")
+            RefreshResult(provider.name, false, "Sito raggiungibile ma ricerca non verificata: nessun risultato o timeout")
+        }
+        } finally {
+            if (!requestedEndpoint.isNullOrBlank()) {
+                restoreSelection(provider.name, originalSelection)
+                managed?.onEndpointSelectionChanged()
+            }
         }
     }
 
