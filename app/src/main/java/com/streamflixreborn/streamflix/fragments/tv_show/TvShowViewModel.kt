@@ -10,6 +10,10 @@ import com.streamflixreborn.streamflix.models.Season
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.utils.ArtworkRepair
 import com.streamflixreborn.streamflix.utils.UserPreferences
+import com.streamflixreborn.streamflix.utils.DirectorCredits
+import com.streamflixreborn.streamflix.utils.TmdbUtils
+import com.streamflixreborn.streamflix.providers.TmdbProvider
+import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +31,8 @@ class TvShowViewModel(
     private val fallbackPoster: String? = null,
     private val fallbackBanner: String? = null,
 ) : ViewModel() {
+
+    private val tmdbSeriesId = DirectorCredits.catalogTvId(id)
 
     private fun episodeSeasonKey(episode: Episode): String? {
         return episode.id.substringBeforeLast("/", "")
@@ -227,7 +233,11 @@ class TvShowViewModel(
         _state.emit(State.Loading)
 
         try {
-            val tvShow = UserPreferences.currentProvider!!.getTvShow(id)
+            // Actor filmographies from TMDb retain their original series IDs.
+            val tvShow = if (tmdbSeriesId != null) {
+                TmdbProvider(UserPreferences.currentProvider?.language ?: "it")
+                    .getTvShow(tmdbSeriesId.toString())
+            } else UserPreferences.currentProvider!!.getTvShow(id)
 
             if (!ArtworkRepair.isRemoteArtworkUrl(tvShow.poster) && ArtworkRepair.isRemoteArtworkUrl(fallbackPoster)) {
                 tvShow.poster = fallbackPoster
@@ -254,6 +264,24 @@ class TvShowViewModel(
             database.seasonDao().insertAll(orderedTvShow.seasons)
 
             _state.emit(State.SuccessLoading(orderedTvShow))
+
+            // Enrich every ordinary series detail, regardless of entry tab.
+            // Only validated director crew can become a clickable tile.
+            if (tmdbSeriesId == null && UserPreferences.enableTmdb &&
+                orderedTvShow.directors.none { DirectorCredits.directorPersonId(it.id) != null }) {
+                val year = orderedTvShow.released?.get(Calendar.YEAR)
+                val metadata = TmdbUtils.getTvShow(
+                    orderedTvShow.title, year, UserPreferences.currentProvider?.language ?: "it")
+                if (metadata != null && DirectorCredits.matchesSourceMovie(
+                        orderedTvShow.imdbId, metadata.imdbId, year,
+                        metadata.released?.get(Calendar.YEAR))) {
+                    val directors = DirectorCredits.reconcileWithSource(
+                        orderedTvShow.directors, metadata.directors)
+                    if (directors.isNotEmpty()) {
+                        _state.emit(State.SuccessLoading(orderedTvShow.copy(directors = directors)))
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e("TvShowViewModel", "getTvShow: ", e)
             _state.emit(State.FailedLoading(e))
@@ -264,7 +292,10 @@ class TvShowViewModel(
         _seasonState.emit(SeasonState.Loading)
 
         try {
-            val episodes = UserPreferences.currentProvider!!.getEpisodesBySeason(season.id)
+            val episodes = if (tmdbSeriesId != null) {
+                TmdbProvider(UserPreferences.currentProvider?.language ?: "it")
+                    .getEpisodesBySeason(season.id)
+            } else UserPreferences.currentProvider!!.getEpisodesBySeason(season.id)
             val ids = episodes.map { it.id }
             val episodeMap = episodes.associateBy { it.id }
 
