@@ -16,6 +16,7 @@ import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.databinding.FragmentMovieTvBinding
 import com.streamflixreborn.streamflix.models.Movie
+import com.streamflixreborn.streamflix.utils.DirectorCredits
 import com.streamflixreborn.streamflix.utils.LoggingUtils
 import com.streamflixreborn.streamflix.utils.loadMovieBanner
 import com.streamflixreborn.streamflix.utils.viewModelsFactory
@@ -102,15 +103,21 @@ class MovieTvFragment : Fragment() {
             transition(DrawableTransitionOptions.withCrossFade())
         }
 
+        val verifiedDirectors = movie.directors.filter {
+            DirectorCredits.directorPersonId(it.id) != null
+        }
+        val unifiedCast = DirectorCredits.castFirst(verifiedDirectors, movie.cast)
         appAdapter.submitList(listOfNotNull(
             movie.apply { itemType = AppAdapter.Type.MOVIE_TV },
 
-            movie.takeIf { it.directors.isNotEmpty() }
+            // Preserve the previous text fallback only when director IDs
+            // cannot be independently verified as TMDb directing credits.
+            movie.takeIf { verifiedDirectors.isEmpty() && it.directors.isNotEmpty() }
                 ?.copy()
                 ?.apply { itemType = AppAdapter.Type.MOVIE_DIRECTORS_TV },
 
-            movie.takeIf { it.cast.isNotEmpty() }
-                ?.copy()
+            movie.takeIf { unifiedCast.isNotEmpty() }
+                ?.copy(cast = unifiedCast)
                 ?.apply { itemType = AppAdapter.Type.MOVIE_CAST_TV },
 
             movie.takeIf { it.recommendations.isNotEmpty() }
