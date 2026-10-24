@@ -802,6 +802,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
+            .filter { !cartoonOnly || 16 in it.genresIds }
+            .filter { selectedGenres.isEmpty() || selectedGenres.any { genre -> genre.movieId in it.genresIds } }
             .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
             .map { movie ->
                 Movie(
@@ -819,6 +821,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val tvItems = tvDeferred?.await().orEmpty()
             .asSequence()
             .filter { !excludeItalian || it.originalLanguage != "it" }
+            .filter { !cartoonOnly || 16 in it.genresIds }
+            .filter { selectedGenres.isEmpty() || selectedGenres.any { genre -> genre.tvId in it.genresIds } }
             .filter { directorId == null || it.id.toString() in blankDirectorTvIds }
             .map { tv ->
                 TvShow(
@@ -980,6 +984,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             }
         }
         val resultsMutex = Mutex()
+        val globalProviderGate = Semaphore(3)
 
         coroutineScope {
             targets.withIndex()
@@ -999,16 +1004,18 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                 (provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
 
                                 val result = try {
-                                    val found = when {
-                                        provider is TmdbProvider && filters.isActive ->
-                                            searchTmdbAdvanced(provider, query, advancedFilters, 1)
-                                        filters.isActive ->
-                                            searchProviderAdvanced(
-                                                provider, query, advancedFilters, 1,
-                                                sharedMetadata = globalMetadata, candidateLimit = 24,
-                                            )
-                                        query.isBlank() -> browseProvider(provider, 1)
-                                        else -> searchProviderWithRecovery(provider, query, 1)
+                                    val found = globalProviderGate.withPermit {
+                                        when {
+                                            provider is TmdbProvider && filters.isActive ->
+                                                searchTmdbAdvanced(provider, query, advancedFilters, 1)
+                                            filters.isActive ->
+                                                searchProviderAdvanced(
+                                                    provider, query, advancedFilters, 1,
+                                                    sharedMetadata = globalMetadata, candidateLimit = 24,
+                                                )
+                                            query.isBlank() -> browseProvider(provider, 1)
+                                            else -> searchProviderWithRecovery(provider, query, 1)
+                                        }
                                     }
                                     val items = ParentalControlUtils.filterItems(
                                         found.onEach { item ->
