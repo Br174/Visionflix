@@ -18,11 +18,14 @@ object GlobalCatalogMerger {
         val alternatives: Map<String, List<AppAdapter.Item>>,
     )
 
-    fun merge(results: List<ProviderResult>, previous: Catalog? = null): Catalog =
-        mergeItems(results.mapNotNull { (it.state as? ProviderResult.State.Success)?.results }, previous)
+    fun merge(results: List<ProviderResult>, previous: Catalog? = null,
+              preferredProviderName: String? = null): Catalog =
+        mergeItems(results.mapNotNull { (it.state as? ProviderResult.State.Success)?.results },
+            previous, preferredProviderName)
 
     /** Pure entry point used by deterministic no-network unit tests. */
-    fun mergeItems(groups: List<List<AppAdapter.Item>>, previous: Catalog? = null): Catalog {
+    fun mergeItems(groups: List<List<AppAdapter.Item>>, previous: Catalog? = null,
+                   preferredProviderName: String? = null): Catalog {
         val buckets = linkedMapOf<String, MutableList<AppAdapter.Item>>()
         groups.forEach { items ->
             items.forEach { item ->
@@ -51,7 +54,19 @@ object GlobalCatalogMerger {
             val sameSource = entries.firstOrNull {
                 itemId(it) == prior?.let(::itemId) && provider(it) == prior?.let(::provider)
             }
-            if (sameSource != null && posterQuality(best) - posterQuality(sameSource) < 20) sameSource else best
+            val retained = entries.firstOrNull { preferredProviderName != null &&
+                provider(it) == preferredProviderName }
+                ?: sameSource?.takeIf { posterQuality(best) - posterQuality(it) < 20 }
+                ?: best
+            // Preserve playable source identity while displaying the best verified
+            // poster artwork when the preferred provider has lower-quality imagery.
+            if (retained !== best && posterQuality(best) > posterQuality(retained) + 20) {
+                when (retained) {
+                    is Movie -> retained.copy(poster = (best as Movie).poster)
+                    is TvShow -> retained.copy(poster = (best as TvShow).poster)
+                    else -> retained
+                }
+            } else retained
         }
         return Catalog(selected, buckets.mapValues { it.value.toList() })
     }
