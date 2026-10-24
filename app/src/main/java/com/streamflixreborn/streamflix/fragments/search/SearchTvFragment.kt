@@ -1732,7 +1732,7 @@ class SearchTvFragment : Fragment() {
                 else -> null
             }
         }.filter { it.startsWith("https://") || it.startsWith("http://") }
-            .distinct().take(180).filterNot { it in prefetchedPosterUrls }.toList()
+            .distinct().take(36).filterNot { it in prefetchedPosterUrls }.toList()
         if (candidates.isEmpty()) return
         posterPrefetchJob?.cancel()
         posterPrefetchJob = viewLifecycleOwner.lifecycleScope.launch {
