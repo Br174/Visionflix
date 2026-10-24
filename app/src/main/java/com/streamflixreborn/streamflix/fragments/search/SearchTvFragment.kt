@@ -207,7 +207,9 @@ class SearchTvFragment : Fragment() {
             initStep("remote-control") { initializeScrollableHeader() }
             initStep("grid-measurement") { updateGridTopPadding() }
             initStep("initial-focus") {
-                if (returnPosterId == null && this.view === view) etSearch.requestFocus()
+                // Opening the app's Search menu must not open Android TV's
+                // keyboard automatically. Start at the user-approved X control.
+                if (returnPosterId == null && this.view === view) btnSearchClear.requestFocus()
             }
         }
     }
