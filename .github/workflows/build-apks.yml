@@ -195,6 +195,21 @@ jobs:
           sha256sum /tmp/Visionflix_BV_TV.apk | sed 's#/tmp/##' > /tmp/SHA256SUMS.txt
           echo "[UAB_PROGRESS=85] Firma, package, versione, launcher e checksum verificati"
 
+      - name: Bundle signed LAB APKs with integrity proofs
+        if: steps.stage.outputs.stage == 'LAB'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum /tmp/Verlezza-Vision-TV.apk /tmp/Verlezza-Vision-Mobile.apk \
+            | sed 's#/tmp/##' > /tmp/LAB-APK-SHA256SUMS.txt
+          cd /tmp
+          zip -q -j Verlezza-Vision-LAB.zip \
+            Verlezza-Vision-TV.apk Verlezza-Vision-Mobile.apk \
+            LAB-APK-SHA256SUMS.txt apk-info.txt signature-info.txt \
+            mobile-signature-info.txt signing-mode.txt
+          unzip -t -q /tmp/Verlezza-Vision-LAB.zip
+          test -s /tmp/Verlezza-Vision-LAB.zip
+
       - name: Upload temporary build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -207,6 +222,8 @@ jobs:
             /tmp/signature-info.txt
             /tmp/mobile-signature-info.txt
             /tmp/signing-mode.txt
+            /tmp/LAB-APK-SHA256SUMS.txt
+            /tmp/Verlezza-Vision-LAB.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -231,6 +248,7 @@ jobs:
           test "${VISIONFLIX_SIGNING_MODE:-}" = "permanent-v1"
           test -s /tmp/Verlezza-Vision-TV.apk
           test -s /tmp/Verlezza-Vision-Mobile.apk
+          test -s /tmp/Verlezza-Vision-LAB.zip
           test -s /tmp/signature-info.txt
           grep -Fq "ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6" /tmp/signature-info.txt
           tag="visionflix-lab-ci-${GITHUB_RUN_ID}"
@@ -255,6 +273,7 @@ jobs:
           gh release create "$tag" \
             /tmp/Verlezza-Vision-TV.apk#Verlezza-Vision-TV-LAB.apk \
             /tmp/Verlezza-Vision-Mobile.apk#Verlezza-Vision-Mobile-LAB.apk \
+            /tmp/Verlezza-Vision-LAB.zip#Verlezza-Vision-LAB.zip \
             --repo "$GITHUB_REPOSITORY" \
             --target "main" \
             --title "Verlezza Vision LAB - $APP_VERSION_NAME (build $APP_VERSION_CODE)" \
