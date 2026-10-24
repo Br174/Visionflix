@@ -145,12 +145,23 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private var globalTargets: List<GlobalSearchTarget> = emptyList()
     private var globalPage = 1
     private var globalLoadingMore = false
+    private var globalEmptyPages = 0
+    private var activeGlobalGeneration = 0
 
     private fun globalWallState(results: List<ProviderResult>, hasMore: Boolean = true): State.SuccessGlobalSearching {
         val previous = (_state.value as? State.SuccessGlobalSearching)?.catalog
-        return State.SuccessGlobalSearching(
-            results, hasMore, GlobalCatalogMerger.merge(results, previous)
-        )
+        val catalog = GlobalCatalogMerger.merge(results, previous,
+            preferredProviderName = UserPreferences.currentProvider?.name)
+        val newestFirst = advancedFilters.sort != AdvancedSearchFilters.SortFilter.OLDEST
+        val ordered = catalog.posters.sortedWith(compareBy<AppAdapter.Item> {
+            val release = when (it) {
+                is Movie -> it.released?.timeInMillis
+                is TvShow -> it.released?.timeInMillis
+                else -> null
+            }
+            if (release == null) Long.MAX_VALUE else if (newestFirst) -release else release
+        })
+        return State.SuccessGlobalSearching(results, hasMore, catalog.copy(posters = ordered))
     }
 
     fun search(query: String) = viewModelScope.launch(Dispatchers.IO) {
@@ -475,6 +486,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
 
         return when (filters.sort) {
+            AdvancedSearchFilters.SortFilter.OLDEST -> filtered.sortedBy {
+                when (it) {
+                    is Movie -> it.released
+                    is TvShow -> it.released
+                    else -> null
+                }
+            }
             AdvancedSearchFilters.SortFilter.DATE -> filtered.sortedByDescending {
                 when (it) {
                     is Movie -> it.released
@@ -585,11 +603,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
         val movieSort = when (filters.sort) {
             AdvancedSearchFilters.SortFilter.DATE -> "primary_release_date.desc"
+            AdvancedSearchFilters.SortFilter.OLDEST -> "primary_release_date.asc"
             AdvancedSearchFilters.SortFilter.VOTE -> "vote_average.desc"
             AdvancedSearchFilters.SortFilter.POPULARITY -> "popularity.desc"
         }
         val tvSort = when (filters.sort) {
             AdvancedSearchFilters.SortFilter.DATE -> "first_air_date.desc"
+            AdvancedSearchFilters.SortFilter.OLDEST -> "first_air_date.asc"
             AdvancedSearchFilters.SortFilter.VOTE -> "vote_average.desc"
             AdvancedSearchFilters.SortFilter.POPULARITY -> "popularity.desc"
         }
@@ -671,6 +691,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val constrainedMovieIds = movieConstraintDeferred?.await()
             val constrainedTvIds = tvConstraintDeferred?.await()
             val sortedSearchResults = when (filters.sort) {
+                AdvancedSearchFilters.SortFilter.OLDEST -> searchResults.sortedBy {
+                    when (it) {
+                        is TMDb3.Movie -> it.releaseDate.orEmpty()
+                        is TMDb3.Tv -> it.firstAirDate.orEmpty()
+                        else -> ""
+                    }
+                }
                 AdvancedSearchFilters.SortFilter.DATE -> searchResults.sortedByDescending {
                     when (it) {
                         is TMDb3.Movie -> it.releaseDate.orEmpty()
@@ -850,6 +877,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val combined = (movieItems + tvItems)
             .distinctBy { it.searchIdentityKey() }
         when (filters.sort) {
+            AdvancedSearchFilters.SortFilter.OLDEST -> combined.sortedBy {
+                when (it) {
+                    is Movie -> it.released?.timeInMillis ?: Long.MAX_VALUE
+                    is TvShow -> it.released?.timeInMillis ?: Long.MAX_VALUE
+                    else -> Long.MAX_VALUE
+                }
+            }
             AdvancedSearchFilters.SortFilter.DATE -> combined.sortedByDescending {
                 when (it) {
                     is Movie -> it.released?.timeInMillis ?: Long.MIN_VALUE
@@ -923,15 +957,20 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         _actorSuggestions.value = emptyList()
         _directorSuggestions.value = emptyList()
         _state.emit(State.GlobalSearching)
+        val generation = ++activeGlobalGeneration
+        globalEmptyPages = 0
 
         val isCurrentProviderIptv = UserPreferences.currentProvider is IptvProvider
         val originals = Provider.providers.keys
             .filter { it.language == currentLanguage && (it is IptvProvider) == isCurrentProviderIptv }
+            .sortedBy { it.name != UserPreferences.currentProvider?.name }
             .map { GlobalSearchTarget(it, "Originale · ${it.name}", null) }
 
         val remotes = if (!isCurrentProviderIptv) {
-            ProviderEndpointRegistry.refreshIfNeeded(Provider.providers.keys)
-                .filter { it.language == currentLanguage && it.healthy }
+            // Use cached known-good mirrors immediately; network registry refresh no longer
+            // holds the first screen hostage before the current provider can search.
+            ProviderEndpointRegistry.cachedRemoteEntries(currentLanguage)
+                .filter { it.healthy }
                 .mapNotNull { entry ->
                     val engine = Provider.providers.keys.firstOrNull { it.name == entry.engineName }
                         as? EndpointManagedProvider ?: return@mapNotNull null
@@ -965,19 +1004,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             (tmdbConfigured() && (advancedFilters.year != null ||
                 !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
         )
-        val globalMetadata = if (needsGlobalMetadata) {
-            if (!tmdbConfigured()) {
-                _state.emit(State.FailedSearching(IllegalStateException(
-                    "I filtri globali per Paese, genere, lingua e metadati richiedono una chiave TMDb valida"
-                )))
-                return@launch
-            }
-            try {
-                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
-            } catch (error: Exception) {
-                _state.emit(State.FailedSearching(error))
-                return@launch
-            }
+        if (needsGlobalMetadata && !tmdbConfigured()) {
+            _state.emit(State.FailedSearching(IllegalStateException(
+                "I filtri globali per Paese, genere, lingua e metadati richiedono una chiave TMDb valida"
+            )))
+            return@launch
+        }
+        // Discover metadata concurrently rather than blocking the local provider's
+        // immediate text results. All displayed items still pass their filters.
+        val metadataTask = if (needsGlobalMetadata) async {
+            searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1)
         } else null
 
         val mutableResults = targets.map { target ->
@@ -989,13 +1025,6 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }.toMutableList()
         _state.emit(globalWallState(mutableResults.toList(), hasMore = false))
 
-        val stateComparator = compareBy<ProviderResult> { providerResult ->
-            when (val state = providerResult.state) {
-                is ProviderResult.State.Success -> if (state.results.isNotEmpty()) 1 else 3
-                is ProviderResult.State.Loading -> 2
-                is ProviderResult.State.Error -> 4
-            }
-        }
         val resultsMutex = Mutex()
         val globalProviderGate = Semaphore(3)
         var completedTargets = 0
@@ -1020,12 +1049,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                 val result = try {
                                     val found = globalProviderGate.withPermit {
                                         when {
-                                            provider is TmdbProvider && filters.isActive ->
+                                            provider is TmdbProvider && advancedFilters.isActive ->
                                                 searchTmdbAdvanced(provider, query, advancedFilters, 1)
-                                            filters.isActive ->
+                                            advancedFilters.isActive ->
                                                 searchProviderAdvanced(
                                                     provider, query, advancedFilters, 1,
-                                                    sharedMetadata = globalMetadata, candidateLimit = 24,
+                                                    sharedMetadata = metadataTask?.await(), candidateLimit = 48,
                                                 )
                                             query.isBlank() -> browseProvider(provider, 1)
                                             else -> searchProviderWithRecovery(provider, query, 1)
@@ -1060,6 +1089,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                 }
 
                                 resultsMutex.withLock {
+                                    if (generation != activeGlobalGeneration) return@withLock
                                     mutableResults[index] = result
                                     completedTargets++
                                     // Batch UI updates for a fluid poster wall instead of rebuilding
@@ -1075,6 +1105,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                         }
                     }
                 }
+        }
+        if (generation == activeGlobalGeneration) {
+            // Continue filling the catalog without a remote-control scroll event.
+            // Two more page windows, bounded to avoid monopolizing provider quotas.
+            repeat(2) {
+                kotlinx.coroutines.delay(450)
+                if (generation != activeGlobalGeneration ||
+                    (_state.value as? State.SuccessGlobalSearching)?.hasMore != true) return@repeat
+                loadMoreGlobal().join()
+            }
         }
     }
 
@@ -1128,7 +1168,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                             advancedFilters.isActive ->
                                                 searchProviderAdvanced(
                                                     engine, query, advancedFilters, nextPage,
-                                                    sharedMetadata = metadata, candidateLimit = 24,
+                                                    sharedMetadata = metadata, candidateLimit = 48,
                                                 )
                                             query.isBlank() -> browseProvider(engine, nextPage)
                                             else -> searchProviderWithRecovery(engine, query, nextPage)
@@ -1169,7 +1209,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             }
             globalPage = nextPage
             // If all sources produced nothing, stop automatic paging to avoid endless calls.
-            _state.emit(globalWallState(updated, hasMore = addedCount > 0))
+            globalEmptyPages = if (addedCount == 0) globalEmptyPages + 1 else 0
+            _state.emit(globalWallState(updated,
+                hasMore = nextPage < 15 && globalEmptyPages < 2))
         } catch (e: Exception) {
             Log.e("SearchViewModel", "loadMoreGlobal", e)
             _state.emit(existing.copy(hasMore = false))
