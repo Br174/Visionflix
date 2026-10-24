@@ -256,10 +256,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val provider = UserPreferences.currentProvider!!
             usingWebFallback = false
 
-            val results = if (provider is TmdbProvider && (filters.isActive || query.isNotBlank())) {
-                searchTmdbAdvanced(provider, query, filters, targetPage)
-            } else {
-                applyProviderFilters(provider.search(query, targetPage), filters)
+            val results = when {
+                provider is TmdbProvider && (filters.isActive || query.isNotBlank()) ->
+                    searchTmdbAdvanced(provider, query, filters, targetPage)
+                filters.isActive ->
+                    searchProviderAdvanced(provider, query, filters, targetPage)
+                else ->
+                    provider.search(query, targetPage)
             }
 
             this@SearchViewModel.query = query
@@ -276,6 +279,110 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             _state.emit(State.FailedSearching(e))
         }
     }
+
+    private suspend fun searchProviderAdvanced(
+        provider: Provider,
+        query: String,
+        filters: AdvancedSearchFilters,
+        page: Int,
+    ): List<AppAdapter.Item> = coroutineScope {
+        val needsTmdbMetadata =
+            filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
+                !filters.actorId.isNullOrBlank() ||
+                !filters.directorId.isNullOrBlank() ||
+                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL
+
+        val directResults = if (query.isNotBlank()) {
+            runCatching { provider.search(query, page) }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+
+        if (!needsTmdbMetadata) {
+            val source = if (query.isNotBlank()) directResults else {
+                runCatching { provider.search(query, page) }.getOrDefault(emptyList())
+            }
+            return@coroutineScope applyProviderFilters(source, filters)
+        }
+
+        val metadataMatches = runCatching {
+            searchTmdbAdvanced(
+                TmdbProvider(provider.language),
+                query,
+                filters,
+                page,
+            )
+        }.getOrDefault(emptyList())
+
+        if (metadataMatches.isEmpty()) return@coroutineScope emptyList()
+
+        val metadataKeys = metadataMatches
+            .mapNotNull(::filterMatchKey)
+            .toSet()
+
+        if (query.isNotBlank()) {
+            return@coroutineScope applyProviderFilters(directResults, filters)
+                .filter { itemMatchesMetadata(it, metadataKeys) }
+        }
+
+        val discovered = metadataMatches
+            .take(8)
+            .map { candidate ->
+                async(Dispatchers.IO) {
+                    val title = when (candidate) {
+                        is Movie -> candidate.title
+                        is TvShow -> candidate.title
+                        else -> ""
+                    }
+                    if (title.isBlank()) emptyList()
+                    else runCatching { provider.search(title, 1) }.getOrDefault(emptyList())
+                }
+            }
+            .awaitAll()
+            .flatten()
+            .distinctBy { it.searchIdentityKey() }
+
+        applyProviderFilters(discovered, filters)
+            .filter { itemMatchesMetadata(it, metadataKeys) }
+    }
+
+    private fun filterMatchKey(item: AppAdapter.Item): String? {
+        val title = when (item) {
+            is Movie -> item.title
+            is TvShow -> item.title
+            else -> return null
+        }
+        val year = when (item) {
+            is Movie -> item.released?.get(java.util.Calendar.YEAR)
+            is TvShow -> item.released?.get(java.util.Calendar.YEAR)
+            else -> null
+        }
+        return "${normalizeFilterTitle(title)}|${year ?: ""}"
+    }
+
+    private fun itemMatchesMetadata(
+        item: AppAdapter.Item,
+        metadataKeys: Set<String>,
+    ): Boolean {
+        val exact = filterMatchKey(item) ?: return false
+        if (exact in metadataKeys) return true
+
+        val title = when (item) {
+            is Movie -> item.title
+            is TvShow -> item.title
+            else -> return false
+        }
+        val normalizedTitle = normalizeFilterTitle(title)
+        return metadataKeys.any { key ->
+            key.substringBefore('|') == normalizedTitle
+        }
+    }
+
+    private fun normalizeFilterTitle(value: String): String =
+        java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z0-9]+"), "")
 
     private fun applyProviderFilters(
         results: List<AppAdapter.Item>,
@@ -349,10 +456,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             try {
                 val provider = UserPreferences.currentProvider!!
                 val nextPage = page + 1
-                val results = if (provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank())) {
-                    searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
-                } else {
-                    applyProviderFilters(provider.search(query, nextPage), advancedFilters)
+                val results = when {
+                    provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank()) ->
+                        searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
+                    advancedFilters.isActive ->
+                        searchProviderAdvanced(provider, query, advancedFilters, nextPage)
+                    else ->
+                        provider.search(query, nextPage)
                 }
 
                 val filtered = ParentalControlUtils.filterItems(results)
