@@ -33,9 +33,10 @@ import org.json.JSONObject
 import com.tanasi.retrofit_jsoup.converter.JsoupConverterFactory
 import java.util.concurrent.TimeUnit
 
-object AnimeUnityProvider : Provider {
+object AnimeUnityProvider : EndpointManagedProvider {
     override val name = "AnimeUnity"
-    override val baseUrl = "https://www.animeunity.so"
+    override val builtInBaseUrl = "https://www.animeunity.so"
+    override val baseUrl: String get() = ProviderEndpointRegistry.effectiveBaseUrl(name, builtInBaseUrl)
     override val logo: String get() = "$baseUrl/images/scritta2.png"
     override val language = "it"
     
@@ -222,7 +223,22 @@ object AnimeUnityProvider : Provider {
         }
     }
 
-    private val service = AnimeUnityService.build(baseUrl)
+    private var serviceUrl: String? = null
+    private var serviceCache: AnimeUnityService? = null
+    private val service: AnimeUnityService
+        get() {
+            val currentUrl = baseUrl
+            if (serviceCache == null || serviceUrl != currentUrl) {
+                serviceUrl = currentUrl
+                serviceCache = AnimeUnityService.build(currentUrl)
+            }
+            return serviceCache!!
+        }
+
+    override fun onEndpointSelectionChanged() {
+        serviceUrl = null
+        serviceCache = null
+    }
 
 
     override suspend fun getHome(): List<Category> {
