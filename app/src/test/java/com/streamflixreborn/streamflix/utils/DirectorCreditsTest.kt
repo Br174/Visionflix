@@ -94,6 +94,14 @@ class DirectorCreditsTest {
         assertEquals(unrelated, DirectorCredits.reconcileWithSource(emptyList(), unrelated))
     }
 
+    @Test fun mismatchedImdbOrReleaseYearNeverPromotesWrongDirector() {
+        assertFalse(DirectorCredits.matchesSourceMovie("tt1234567", "tt7654321", 2020, 2020))
+        assertFalse(DirectorCredits.matchesSourceMovie("tt1234567", null, 2020, 2020))
+        assertFalse(DirectorCredits.matchesSourceMovie(null, null, 2020, 2024))
+        assertTrue(DirectorCredits.matchesSourceMovie("tt1234567", "tt1234567", 2020, 2021))
+        assertTrue(DirectorCredits.matchesSourceMovie(null, null, 2020, 2020))
+    }
+
     @Test fun malformedAndUnverifiedIdsAreRejected() {
         assertNull(DirectorCredits.directorPersonId("director-abc"))
         assertNull(DirectorCredits.directorPersonId("tmdb-director:0"))
