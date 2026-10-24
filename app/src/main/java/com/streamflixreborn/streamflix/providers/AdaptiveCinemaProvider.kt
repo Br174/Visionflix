@@ -80,6 +80,13 @@ object AdaptiveCinemaProvider : EndpointManagedProvider {
         }.distinctBy { it.id }.take(MAX_CARDS)
     }
 
+    /** A homepage returning HTTP 200 is not enough: require a usable media catalogue. */
+    suspend fun recognizesSite(site: String): Boolean {
+        val doc = page(site) ?: return false
+        return cards(doc).isNotEmpty() ||
+            doc.selectFirst("video[src], video source[src]") != null
+    }
+
     private suspend fun scan(site: String, query: String?, pageNumber: Int): List<Movie> {
         val candidate = if (query.isNullOrBlank()) {
             if (pageNumber > 1) site.trimEnd('/') + "/page/$pageNumber/" else site
