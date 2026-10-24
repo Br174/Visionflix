@@ -176,7 +176,14 @@ object ProviderEndpointRegistry {
             parsed.map { entry ->
                 async {
                     val probe = probe(entry.url)
-                    entry.copy(url = probe.second ?: entry.url, healthy = probe.first)
+                    // Unknown sites must expose a recognizable public catalogue,
+                    // not just an HTTP 200 landing page.
+                    val compatible = if (probe.first && entry.engineName == AdaptiveCinemaProvider.name) {
+                        withTimeoutOrNull(6_000L) {
+                            AdaptiveCinemaProvider.recognizesSite(probe.second ?: entry.url)
+                        } == true
+                    } else probe.first
+                    entry.copy(url = probe.second ?: entry.url, healthy = compatible)
                 }
             }.awaitAll()
         }
