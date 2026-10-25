@@ -107,6 +107,10 @@ import com.streamflixreborn.streamflix.utils.QrUtils
 import com.streamflixreborn.streamflix.utils.UserDataCache.toEpisode
 import com.streamflixreborn.streamflix.utils.UserDataCache.toMovie
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -153,6 +157,16 @@ class PlayerTvFragment : Fragment() {
 
     private var currentVideo: Video? = null
     private var currentServer: Video.Server? = null
+    // LAB166: each ExoPlayer has exactly one listener. Previous revisions
+    // registered another listener for every server/source and every retry.
+    private var observedPlaybackPlayer: ExoPlayer? = null
+    private val playbackPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val playbackPersistenceMutex = Mutex()
+    private val bufferingWatchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var bufferingWatchRunnable: Runnable? = null
+    private var bufferingRecoveryAttempts = 0
+    private var lastRecoveryPositionMs = 0L
+    private var resumePositionAfterRecovery: Long? = null
     private var waitingForBypass = false
     private var bypassDone = false
     private var activeBypassSession: BypassSession? = null
@@ -1033,6 +1047,10 @@ class PlayerTvFragment : Fragment() {
             startPositionMs: Long? = null,
             shouldPlay: Boolean = true,
         ) {
+            bufferingRecoveryAttempts = 0
+            cancelBufferingWatch()
+            val effectiveStartPositionMs = startPositionMs ?: resumePositionAfterRecovery
+            resumePositionAfterRecovery = null
             currentVideo = video
             currentServer = server
             updatePlayerHeader()
@@ -1053,7 +1071,7 @@ class PlayerTvFragment : Fragment() {
                     .build()
             }
 
-            val currentPosition = startPositionMs ?: player.currentPosition
+            val currentPosition = effectiveStartPositionMs ?: player.currentPosition
 
             httpDataSource.setDefaultRequestProperties(
                 mapOf(
@@ -1181,14 +1199,30 @@ class PlayerTvFragment : Fragment() {
                 }
             }
 
-            player.addListener(object : Player.Listener {
+            // Keep a single listener per player, including server failover.
+            if (observedPlaybackPlayer !== player) {
+                observedPlaybackPlayer = player
+                player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     super.onPlaybackStateChanged(playbackState)
 
+                    if (playbackState == Player.STATE_BUFFERING && player.playWhenReady) {
+                        scheduleBufferingWatch()
+                    } else if (playbackState != Player.STATE_BUFFERING) {
+                        cancelBufferingWatch()
+                    }
                     if (playbackState == Player.STATE_READY) {
                         binding.pvPlayer.controller.binding.exoPlayPause.nextFocusDownId = -1
                         val videoFormat = player.videoFormat
                         updatePlayerScale()
+                    }
+                }
+
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    if (playWhenReady && player.playbackState == Player.STATE_BUFFERING) {
+                        scheduleBufferingWatch()
+                    } else if (!playWhenReady) {
+                        cancelBufferingWatch()
                     }
                 }
 
@@ -1214,95 +1248,110 @@ class PlayerTvFragment : Fragment() {
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     binding.pvPlayer.keepScreenOn = isPlaying
-
                     if (isPlaying) {
-                        recordRecentlyWatchedStart()
+                        // Database/cache updates MUST NOT block ExoPlayer's main-thread listener.
+                        val playingType = currentVideoTypeForUi()
+                        playbackPersistenceScope.launch {
+                            playbackPersistenceMutex.withLock {
+                                runCatching { recordRecentlyWatchedStart(playingType) }
+                                    .onFailure { Log.w("PlayerTvFragment", "Recently watched save failed", it) }
+                            }
+                        }
                         startProgressHandler()
                     } else {
                         stopProgressHandler()
                     }
-                    val hasUri = player.currentMediaItem?.localConfiguration?.uri
-                        ?.toString()?.isNotEmpty()
-                        ?: false
+                    val hasUri = !player.currentMediaItem?.localConfiguration?.uri
+                        ?.toString().isNullOrBlank()
+                    if (!Lab166TvPlaybackRecoveryPolicy.shouldPersistProgress(
+                            isPlaying, player.playWhenReady, player.playbackState, hasUri
+                        )) return
 
-                    if (!isPlaying && hasUri) {
-                        val videoType = args.videoType
-                        val watchItem: WatchItem? = when (videoType) {
-                            is Video.Type.Movie -> database.movieDao().getById(videoType.id)
-                            is Video.Type.Episode -> database.episodeDao().getById(videoType.id)
-                        }
-
-                        when {
-                            player.hasStarted() && !player.hasFinished() -> {
-                                watchItem?.isWatched = false
-                                watchItem?.watchedDate = null
-                                watchItem?.watchHistory = WatchItem.WatchHistory(
-                                    lastEngagementTimeUtcMillis = System.currentTimeMillis(),
-                                    lastPlaybackPositionMillis = player.currentPosition,
-                                    durationMillis = player.duration,
-                                )
-                            }
-
-                            player.hasFinished() -> {
-                                watchItem?.isWatched = true
-                                watchItem?.watchedDate = Calendar.getInstance()
-                                watchItem?.watchHistory = null
-
-
-                            }
-                        }
-
-                        when (videoType) {
-                            is Video.Type.Movie -> {
-                                val provider = UserPreferences.currentProvider ?: return
-                                (watchItem as? Movie)?.let {
-                                    database.movieDao().update(it)
-                                    UserDataCache.syncMovieToCache(requireContext(), provider, it)
-                                }
-                            }
-
-                            is Video.Type.Episode -> {
-                                val provider = UserPreferences.currentProvider ?: return
-                                (watchItem as? Episode)?.let { episode ->
-                                    if (player.hasFinished()) {
-                                        database.episodeDao()
-                                            .resetProgressionFromEpisode(videoType.id)
-                                        UserDataCache.removeEpisodeFromContinueWatching(requireContext(), provider, episode.id)
-                                        queueNextEpisodeForContinueWatching(provider)
-                                    }
-                                    database.episodeDao().update(episode)
-                                    if (!player.hasFinished()) {
-                                        UserDataCache.syncEpisodeToCache(requireContext(), provider, episode)
-                                    }
-
-                                    episode.tvShow?.let { tvShow ->
-                                        database.tvShowDao().getById(tvShow.id)
-                                    }?.let { tvShow ->
-                                        val episodeDao = database.episodeDao()
-                                        val isStillWatching =
-                                            episodeDao.hasAnyWatchHistoryForTvShow(tvShow.id)
-
-                                        val updatedTvShow = tvShow.copy().apply {
-                                            merge(tvShow)
-                                            isWatching =
-                                                !player.hasReallyFinished() || isStillWatching
+                    val videoType = args.videoType
+                    val provider = UserPreferences.currentProvider ?: return
+                    val context = requireContext().applicationContext
+                    val position = player.currentPosition
+                    val duration = player.duration
+                    val started = player.hasStarted()
+                    val finished = player.hasFinished()
+                    val reallyFinished = player.hasReallyFinished()
+                    when (videoType) {
+                        is Video.Type.Movie -> {
+                            if (started || finished) {
+                                playbackPersistenceScope.launch {
+                                    playbackPersistenceMutex.withLock {
+                                        runCatching {
+                                            database.movieDao().getById(videoType.id)?.let { movie ->
+                                                if (started && !finished) {
+                                                    movie.isWatched = false
+                                                    movie.watchedDate = null
+                                                    movie.watchHistory = WatchItem.WatchHistory(
+                                                        lastEngagementTimeUtcMillis = System.currentTimeMillis(),
+                                                        lastPlaybackPositionMillis = position,
+                                                        durationMillis = duration,
+                                                    )
+                                                } else if (finished) {
+                                                    movie.isWatched = true
+                                                    movie.watchedDate = Calendar.getInstance()
+                                                    movie.watchHistory = null
+                                                }
+                                                database.movieDao().update(movie)
+                                                UserDataCache.syncMovieToCache(context, provider, movie)
+                                            }
+                                        }.onFailure {
+                                            Log.e("PlayerTvFragment", "Movie playback progress save failed", it)
                                         }
-                                        database.tvShowDao().update(updatedTvShow)
-                                        CloudSyncHooks.tvShow(
-                                            requireContext(),
-                                            provider,
-                                            updatedTvShow,
-                                        )
                                     }
                                 }
                             }
-
                         }
-                        if (player.hasReallyFinished()) {
-                            if (UserPreferences.autoplay) {
-                                playNextEpisodeAcrossSeasons(autoplay = true)
+                        is Video.Type.Episode -> {
+                            // LAB166 leaves the established episode progression /
+                            // next-episode / Matrioska workflow intact.
+                            val watchItem = database.episodeDao().getById(videoType.id)
+                            when {
+                                started && !finished -> {
+                                    watchItem?.isWatched = false
+                                    watchItem?.watchedDate = null
+                                    watchItem?.watchHistory = WatchItem.WatchHistory(
+                                        lastEngagementTimeUtcMillis = System.currentTimeMillis(),
+                                        lastPlaybackPositionMillis = position,
+                                        durationMillis = duration,
+                                    )
+                                }
+                                finished -> {
+                                    watchItem?.isWatched = true
+                                    watchItem?.watchedDate = Calendar.getInstance()
+                                    watchItem?.watchHistory = null
+                                }
+                            }
+                            (watchItem as? Episode)?.let { episode ->
+                                if (finished) {
+                                    database.episodeDao().resetProgressionFromEpisode(videoType.id)
+                                    UserDataCache.removeEpisodeFromContinueWatching(context, provider, episode.id)
+                                    queueNextEpisodeForContinueWatching(provider)
+                                }
+                                database.episodeDao().update(episode)
+                                if (!finished) {
+                                    UserDataCache.syncEpisodeToCache(context, provider, episode)
+                                }
+                                episode.tvShow?.let { tvShow ->
+                                    database.tvShowDao().getById(tvShow.id)
+                                }?.let { tvShow ->
+                                    val isStillWatching = database.episodeDao()
+                                        .hasAnyWatchHistoryForTvShow(tvShow.id)
+                                    val updatedTvShow = tvShow.copy().apply {
+                                        merge(tvShow)
+                                        isWatching = !reallyFinished || isStillWatching
+                                    }
+                                    database.tvShowDao().update(updatedTvShow)
+                                    CloudSyncHooks.tvShow(context, provider, updatedTvShow)
+                                }
                             }
                         }
+                    }
+                    if (reallyFinished && UserPreferences.autoplay) {
+                        playNextEpisodeAcrossSeasons(autoplay = true)
                     }
                 }
 
@@ -1310,16 +1359,23 @@ class PlayerTvFragment : Fragment() {
                     super.onPlayerError(error)
                     Log.e("PlayerTvFragment", "onPlayerError: ", error)
 
+                    cancelBufferingWatch()
                     val nextServer = servers.getOrNull(servers.indexOf(currentServer) + 1)
                     if (nextServer != null) {
+                        resumePositionAfterRecovery = player.currentPosition.coerceAtLeast(0L)
                         Log.i("PlayerTvFragment", "Playback failed, trying next server: ${nextServer.name}")
                         viewModel.getVideo(nextServer)
+                    } else if (isAdded) {
+                        Toast.makeText(requireContext(),
+                            "Riproduzione interrotta: nessun altro server disponibile.",
+                            Toast.LENGTH_LONG).show()
                     }
                 }
-            })
+                })
+            }
 
-            if (startPositionMs != null) {
-                player.seekTo(startPositionMs)
+            if (effectiveStartPositionMs != null) {
+                player.seekTo(effectiveStartPositionMs)
             } else if (currentPosition == 0L) {
                 val videoType = args.videoType
                 val provider = UserPreferences.currentProvider
@@ -1356,13 +1412,77 @@ class PlayerTvFragment : Fragment() {
         }
 
 
+        private fun cancelBufferingWatch() {
+            bufferingWatchRunnable?.let { bufferingWatchHandler.removeCallbacks(it) }
+            bufferingWatchRunnable = null
+        }
+
+        private fun scheduleBufferingWatch() {
+            cancelBufferingWatch()
+            if (_binding == null || !::player.isInitialized ||
+                player.playbackState != Player.STATE_BUFFERING || !player.playWhenReady ||
+                player.currentMediaItem == null) return
+
+            val observed = player
+            val watchdog = Runnable {
+                bufferingWatchRunnable = null
+                if (!isAdded || _binding == null || observed !== player ||
+                    player.playbackState != Player.STATE_BUFFERING || !player.playWhenReady) return@Runnable
+
+                val currentPosition = player.currentPosition.coerceAtLeast(0L)
+                if (Lab166TvPlaybackRecoveryPolicy.mayResetRecoveryAfterProgress(
+                        currentPosition, lastRecoveryPositionMs
+                    )) bufferingRecoveryAttempts = 0
+                val nextServer = servers.getOrNull(servers.indexOf(currentServer) + 1)
+                val next = Lab166TvPlaybackRecoveryPolicy.actionForBuffering(
+                    buffering = true,
+                    playWhenReady = player.playWhenReady,
+                    hasMediaUri = player.currentMediaItem != null,
+                    attempts = bufferingRecoveryAttempts,
+                    hasNextServer = nextServer != null,
+                )
+                when (next) {
+                    Lab166TvPlaybackRecoveryPolicy.Action.RESTART_SOURCE -> {
+                        bufferingRecoveryAttempts = 1
+                        lastRecoveryPositionMs = currentPosition
+                        Log.w("PlayerTvFragment", "Buffering prolonged: restarting current source once")
+                        // prepare() alone is a no-op in STATE_BUFFERING; stop first.
+                        player.stop()
+                        player.seekTo(currentPosition)
+                        player.prepare()
+                        player.playWhenReady = true
+                    }
+                    Lab166TvPlaybackRecoveryPolicy.Action.NEXT_SERVER -> {
+                        bufferingRecoveryAttempts = 2
+                        lastRecoveryPositionMs = currentPosition
+                        resumePositionAfterRecovery = currentPosition
+                        Log.w("PlayerTvFragment", "Second prolonged buffering: trying another server")
+                        if (nextServer != null) viewModel.getVideo(nextServer)
+                    }
+                    Lab166TvPlaybackRecoveryPolicy.Action.STOP -> {
+                        bufferingRecoveryAttempts = 2
+                        Log.e("PlayerTvFragment", "Prolonged buffering: no further automatic retries")
+                        player.pause()
+                        Toast.makeText(requireContext(),
+                            "Video bloccato. Prova un altro server o riprendi manualmente.",
+                            Toast.LENGTH_LONG).show()
+                    }
+                    null -> Unit
+                }
+            }
+            bufferingWatchRunnable = watchdog
+            bufferingWatchHandler.postDelayed(
+                watchdog, Lab166TvPlaybackRecoveryPolicy.BUFFERING_TIMEOUT_MS
+            )
+        }
+
         private fun ExoPlayer.hasStarted(): Boolean {
             return (this.currentPosition > (this.duration * 0.005) || this.currentPosition > 20.seconds.inWholeMilliseconds)
         }
 
-        private fun recordRecentlyWatchedStart() {
+        private fun recordRecentlyWatchedStart(videoType: Video.Type = currentVideoTypeForUi()) {
             val playedAtMillis = System.currentTimeMillis()
-            when (val videoType = currentVideoTypeForUi()) {
+            when (videoType) {
                 is Video.Type.Movie -> {
                     if (database.movieDao().markRecentlyWatched(videoType.id, playedAtMillis) == 0) {
                         database.movieDao().insert(
@@ -1788,6 +1908,8 @@ class PlayerTvFragment : Fragment() {
         }
 
         private fun releasePlayer() {
+            cancelBufferingWatch()
+            observedPlaybackPlayer = null
             stopProgressHandler()
             binding.pvPlayer.player = null
             binding.settings.player = null
