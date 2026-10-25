@@ -121,40 +121,10 @@ abstract class Extractor {
             VidxGoExtractor()
         )
 
-        suspend fun extract(link: String, server: Video.Server? = null): Video {
-            var finalLink = link
-            
-            // 1. RISOLUZIONE BRIDGE UNIVERSALE (StreamHG/Sync/Cuevana)
-            // Facciamo questo PRIMA di cercare l'estrattore perché il link bridge (es. mysync.mov)
-            // non appartiene a nessun estrattore specifico, ma il link risolto sì (es. filemoon).
-            if (link.contains("mysync.mov/stream/")) {
-                try {
-                    val client = okhttp3.OkHttpClient.Builder()
-                        .followRedirects(true)
-                        .followSslRedirects(true)
-                        .build()
-                    
-                    val responseBody = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        val request = okhttp3.Request.Builder()
-                            .url(link)
-                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-                            .build()
-                        client.newCall(request).execute().use { it.body?.string() }
-                    } ?: ""
-                    
-                    val redirectUrl = responseBody.substringAfter("window.location.replace(\"", "").substringBefore("\"")
-                        .ifEmpty { responseBody.substringAfter("window.location.href = \"", "").substringBefore("\"") }
-                        .ifEmpty { responseBody.substringAfter("src=\"", "").substringBefore("\"") }
-                    
-                    if (redirectUrl.isNotEmpty() && redirectUrl.startsWith("http")) {
-                        Log.d("Extractor", "Universal Bridge resolved: $link -> $redirectUrl")
-                        finalLink = redirectUrl
-                    }
-                } catch (e: Exception) {
-                    Log.e("Extractor", "Universal Bridge error: ${e.message}")
-                }
-            }
+        /** Tests URL compatibility using the existing extractor list, without executing a request. */
+        fun canExtractUrl(link: String): Boolean = findExtractor(link, null) != null
 
+        private fun findExtractor(finalLink: String, server: Video.Server?): Extractor? {
             val urlRegex = Regex("^(https?://)?(www\\.)?")
             val compareUrl = finalLink.lowercase().replace(urlRegex, "")
 
@@ -221,6 +191,45 @@ abstract class Extractor {
                     }
                 }
             }
+
+            return foundExtractor
+        }
+
+        suspend fun extract(link: String, server: Video.Server? = null): Video {
+            var finalLink = link
+            
+            // 1. RISOLUZIONE BRIDGE UNIVERSALE (StreamHG/Sync/Cuevana)
+            // Facciamo questo PRIMA di cercare l'estrattore perché il link bridge (es. mysync.mov)
+            // non appartiene a nessun estrattore specifico, ma il link risolto sì (es. filemoon).
+            if (link.contains("mysync.mov/stream/")) {
+                try {
+                    val client = okhttp3.OkHttpClient.Builder()
+                        .followRedirects(true)
+                        .followSslRedirects(true)
+                        .build()
+                    
+                    val responseBody = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val request = okhttp3.Request.Builder()
+                            .url(link)
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                            .build()
+                        client.newCall(request).execute().use { it.body?.string() }
+                    } ?: ""
+                    
+                    val redirectUrl = responseBody.substringAfter("window.location.replace(\"", "").substringBefore("\"")
+                        .ifEmpty { responseBody.substringAfter("window.location.href = \"", "").substringBefore("\"") }
+                        .ifEmpty { responseBody.substringAfter("src=\"", "").substringBefore("\"") }
+                    
+                    if (redirectUrl.isNotEmpty() && redirectUrl.startsWith("http")) {
+                        Log.d("Extractor", "Universal Bridge resolved: $link -> $redirectUrl")
+                        finalLink = redirectUrl
+                    }
+                } catch (e: Exception) {
+                    Log.e("Extractor", "Universal Bridge error: ${e.message}")
+                }
+            }
+
+            val foundExtractor = findExtractor(finalLink, server)
 
             if (foundExtractor != null) {
                 Log.i("StreamFlixES", "[EXTRACTOR] -> Starting: ${foundExtractor.name} (URL: $finalLink)")

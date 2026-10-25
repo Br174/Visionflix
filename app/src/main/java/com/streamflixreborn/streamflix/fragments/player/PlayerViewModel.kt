@@ -125,6 +125,7 @@ class PlayerViewModel(
                 .getOrDefault(emptyList())
         }
 
+        cb01NativeServers = if (provider.name == "CB01") primaryServers else emptyList()
         val servers = (primaryServers + fallbackServers).distinctBy { it.id }
         if (servers.isEmpty()) {
             _state.emit(
@@ -149,15 +150,33 @@ class PlayerViewModel(
         _state.emit(State.LoadingVideo(server))
         try {
             val provider = UserPreferences.currentProvider ?: throw Exception("Provider non disponibile")
-            val video = if (WebSourceFallback.isFallbackPlaceholder(server)) {
-                val type = lastVideoType ?: throw Exception("Contenuto non disponibile per il fallback")
-                WebSourceFallback.resolveFallbackVideo(server, type)
-            } else {
-                provider.getVideo(server)
+            val candidates = if (provider.name == "CB01" && !WebSourceFallback.isFallbackPlaceholder(server)) {
+                (listOf(server) + cb01NativeServers.filter { it.id != server.id }.take(4))
+                    .distinctBy { it.id }
+            } else listOf(server)
+            var selectedServer = server
+            var resolvedVideo: Video? = null
+            var lastError: Exception? = null
+            for (candidate in candidates) {
+                try {
+                    val candidateVideo = if (WebSourceFallback.isFallbackPlaceholder(candidate)) {
+                        val type = lastVideoType ?: throw Exception("Contenuto non disponibile per il fallback")
+                        WebSourceFallback.resolveFallbackVideo(candidate, type)
+                    } else {
+                        provider.getVideo(candidate)
+                    }
+                    if (candidateVideo.source.isBlank()) throw Exception("No source found")
+                    AudioLanguageGuard.requireCompatibleAudio(candidateVideo, provider.language)
+                    resolvedVideo = candidateVideo
+                    selectedServer = candidate
+                    break
+                } catch (error: Exception) {
+                    lastError = error
+                    Log.w("PlayerViewModel", provider.name + ": server " + candidate.name +
+                        " non utilizzabile (" + error.javaClass.simpleName + ")")
+                }
             }
-            if (video.source.isEmpty()) throw Exception("No source found")
-
-            AudioLanguageGuard.requireCompatibleAudio(video, provider.language)
+            val video = resolvedVideo ?: throw lastError ?: Exception("Nessun server CB01 disponibile")
 
             val currentProviderLang = provider.language
             val hasDefaultAlready = video.subtitles.any { it.default }
@@ -171,7 +190,7 @@ class PlayerViewModel(
             }
 
             Log.d("PlayerViewModel", "Estrazione video completata con successo")
-            _state.emit(State.SuccessLoadingVideo(video, server))
+            _state.emit(State.SuccessLoadingVideo(video, selectedServer))
         } catch (e: Exception) {
             Log.e("PlayerViewModel", "Errore estrazione video: ", e)
             _state.emit(State.FailedLoadingVideo(e, server))
@@ -284,6 +303,7 @@ class PlayerViewModel(
         data class SuccessDownloadingSubDLSubtitle(val subtitle: SubDL.Subtitle, val uri: Uri) : SubtitleState()
         data class FailedDownloadingSubDLSubtitle(val error: Exception, val subtitle: SubDL.Subtitle) : SubtitleState()
     }
+    private var cb01NativeServers: List<Video.Server> = emptyList()
     private var lastVideoType: Video.Type? = null
     private var lastId: String? = null
     fun reloadServersAfterBypass() {

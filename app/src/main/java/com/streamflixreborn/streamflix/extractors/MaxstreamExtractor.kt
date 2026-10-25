@@ -8,7 +8,6 @@ import retrofit2.Retrofit
 import retrofit2.http.GET
 import retrofit2.http.Headers
 import retrofit2.http.Url
-import java.util.regex.Pattern
 
 class MaxstreamExtractor : Extractor() {
     override val name = "Maxstream"
@@ -19,17 +18,31 @@ class MaxstreamExtractor : Extractor() {
         val document = service.get(link)
         val html = document.toString()
 
-        val srcRegex = Pattern.compile("sources\\s*:\\s*\\[\\s*\\{\\s*[sS]rc\\s*:\\s*[\"']([^\"']+)[\"']")
-        val matcher = srcRegex.matcher(html)
+        val source = sourceFromHtml(html)
+            ?: throw Exception("Maxstream source not found in page")
+        return Video(source = source, extraBuffering = true)
+    }
 
-        if (matcher.find()) {
-            val src = matcher.group(1) ?: throw Exception("Could not extract src from Maxstream player")
-            return Video(
-                source = src
+    companion object {
+        /** Accept already exposed video URLs from common Maxstream player source shapes. */
+        internal fun sourceFromHtml(html: String): String? {
+            val patterns = listOf(
+                Regex("""(?is)\bsources\s*:\s*\[\s*\{.{0,320}?["']?(?:src|file)["']?\s*:\s*["']([^"']+)["']"""),
+                Regex("""(?is)\bfile\s*:\s*["'](https?:\\?/\\?/[^"']+)["']""")
             )
+            for (pattern in patterns) {
+                for (match in pattern.findAll(html)) {
+                    val raw = match.groupValues[1].replace("\\/", "/").replace("&amp;", "&")
+                    val result = when {
+                        raw.startsWith("//") -> "https:$raw"
+                        raw.startsWith("https://") || raw.startsWith("http://") -> raw
+                        else -> continue
+                    }
+                    return result
+                }
+            }
+            return null
         }
-
-        throw Exception("Maxstream source not found in page")
     }
 
     private interface Service {
