@@ -1,6 +1,6 @@
 package com.streamflixreborn.streamflix.providers
 
-import com.streamflixreborn.streamflix.extractors.MaxstreamExtractor
+import com.streamflixreborn.streamflix.extractors.MaxstreamSourcePolicy
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -23,9 +23,9 @@ class CB01PlaybackPolicyTest {
 
     @Test fun maxstreamSourceParsingSupportsQuotedAndUnquotedKeys() {
         assertEquals("https://cdn.example/video.m3u8",
-            MaxstreamExtractor.sourceFromHtml("sources: [{src: 'https://cdn.example/video.m3u8'}]"))
+            MaxstreamSourcePolicy.sourceFromHtml("sources: [{src: 'https://cdn.example/video.m3u8'}]"))
         assertEquals("https://cdn.example/video.mp4",
-            MaxstreamExtractor.sourceFromHtml("sources: [{\"file\":\"https://cdn.example/video.mp4\"}]"))
-        assertNull(MaxstreamExtractor.sourceFromHtml("<html><h1>Not found</h1></html>"))
+            MaxstreamSourcePolicy.sourceFromHtml("sources: [{\"file\":\"https://cdn.example/video.mp4\"}]"))
+        assertNull(MaxstreamSourcePolicy.sourceFromHtml("<html><h1>Not found</h1></html>"))
     }
 }
