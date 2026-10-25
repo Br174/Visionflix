@@ -36,6 +36,19 @@ class Lab166TvPlaybackRecoveryPolicyTest {
         assertNull(policy.actionForBuffering(true, true, false, 0, true))
     }
 
+    @Test fun transientBufferingWithoutPlaybackIntentNeverConsumesRecoveryBudget() {
+        for (attempts in 0..5) {
+            assertNull(policy.actionForBuffering(
+                buffering = true, playWhenReady = false,
+                hasMediaUri = true, attempts = attempts, hasNextServer = true
+            ))
+            assertNull(policy.actionForBuffering(
+                buffering = false, playWhenReady = true,
+                hasMediaUri = true, attempts = attempts, hasNextServer = true
+            ))
+        }
+    }
+
     @Test fun recoveryBudgetOnlyResetsAfterStableContentProgress() {
         assertFalse(policy.mayResetRecoveryAfterProgress(25_000L, 12_000L))
         assertTrue(policy.mayResetRecoveryAfterProgress(105_000L, 12_000L))
