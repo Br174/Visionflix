@@ -108,6 +108,11 @@ jobs:
               if [ "$APP_VERSION_CODE" -le 456 ]; then APP_VERSION_CODE=457; fi
               test "$APP_VERSION_CODE" -gt 456
             fi
+            # LAB166 keeps the signed TV/Mobile update family over LAB165 (465).
+            if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab166-tv-player-stall-recovery-20261025' ]; then
+              if [ "$APP_VERSION_CODE" -le 465 ]; then APP_VERSION_CODE=466; fi
+              test "$APP_VERSION_CODE" -gt 465
+            fi
             # LAB164 must update LAB163's second signed installer (code 458) in place.
             if [ "$GITHUB_REF_NAME" = 'lab/visionflix-lab164-search-speed-filter-recovery-20261024' ]; then
               if [ "$APP_VERSION_CODE" -le 458 ]; then APP_VERSION_CODE=459; fi
@@ -466,6 +471,48 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab161AdaptivePlaybackTest' --stacktrace
           echo '[LAB165_TESTS=PASS] popularity-first availability, requested display sort, director/actor/Cineblog protection'
+
+      - name: LAB166 TV playback freeze and protected LAB165 search regression tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab166-tv-player-stall-recovery-20261025'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          player = Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/player/PlayerTvFragment.kt').read_text()
+          assert player.count('player.addListener(object : Player.Listener') == 1
+          assert 'if (observedPlaybackPlayer !== player)' in player
+          assert 'Lab166TvPlaybackRecoveryPolicy.shouldPersistProgress' in player
+          assert 'playbackPersistenceScope.launch' in player
+          assert 'private fun scheduleBufferingWatch()' in player
+          assert 'queueNextEpisodeForContinueWatching(provider)' in player
+          print('[LAB166_GUARDS=PASS] one listener, no buffering DB writes, bounded buffering retries, episode navigation')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' \
+            --tests '*Lab165FastDiscoveryPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab164TmdbCredentialRoutingTest' \
+            --tests '*Lab150AdvancedFiltersTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*Lab153NavigationTest' \
+            --tests '*Lab155SearchSafetyTest' \
+            --tests '*Lab156UnifiedSortTest' \
+            --tests '*Lab157FocusPolicyTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*Lab161AdaptivePlaybackTest' \
+            --tests '*DirectorCreditsTest' --stacktrace
+          echo '[LAB166_TESTS=PASS] TV freeze watchdog and saved progress, previous Matrioska/search/player regressions'
 
       - name: Build Android mobile debug APK
         env:
