@@ -20,13 +20,13 @@ class Lab166TvPlaybackRecoveryPolicyTest {
     }
 
     @Test fun stallRecoveryIsFiniteAndCanUseAnotherServer() {
-        assertEquals(policy.Action.RESTART_SOURCE,
+        assertEquals(Lab166TvPlaybackRecoveryPolicy.Action.RESTART_SOURCE,
             policy.actionForBuffering(true, true, true, 0, true))
-        assertEquals(policy.Action.NEXT_SERVER,
+        assertEquals(Lab166TvPlaybackRecoveryPolicy.Action.NEXT_SERVER,
             policy.actionForBuffering(true, true, true, 1, true))
-        assertEquals(policy.Action.STOP,
+        assertEquals(Lab166TvPlaybackRecoveryPolicy.Action.STOP,
             policy.actionForBuffering(true, true, true, 2, true))
-        assertEquals(policy.Action.STOP,
+        assertEquals(Lab166TvPlaybackRecoveryPolicy.Action.STOP,
             policy.actionForBuffering(true, true, true, 1, false))
     }
 
