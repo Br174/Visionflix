@@ -34,6 +34,30 @@ internal class Lab175AvailabilityIndex(context: Context) :
 
     data class Progress(val nextPage: Int, val due: Long)
 
+    /** Counts are real observed catalogue data, not a guessed total-film percentage. */
+    data class Statistics(
+        val indexedTitles: Int,
+        val providersStarted: Int,
+        val providerTotal: Int,
+        val pagesIndexed: Int,
+    )
+
+    @Synchronized fun statistics(sources: List<SourceKey>, now: Long): Statistics {
+        var uniqueTitles = 0
+        readableDatabase.rawQuery(
+            """SELECT COUNT(DISTINCT kind || ':' || normalized || ':' || COALESCE(year, -1))
+               FROM availability WHERE seen_at >= ?""",
+            arrayOf((now - 30L * 24 * 60 * 60 * 1000).toString()),
+        ).use { c -> if (c.moveToFirst()) uniqueTitles = c.getInt(0) }
+        val states = sources.map { progress(it) }
+        return Statistics(
+            indexedTitles = uniqueTitles,
+            providersStarted = states.count { it.nextPage > 1 },
+            providerTotal = sources.size,
+            pagesIndexed = states.sumOf { (it.nextPage - 1).coerceAtLeast(0) },
+        )
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE availability (
@@ -76,6 +100,11 @@ internal class Lab175AvailabilityIndex(context: Context) :
             return if (cursor.moveToFirst()) Progress(cursor.getInt(0), cursor.getLong(1))
             else Progress(1, 0)
         }
+    }
+
+    @Synchronized fun nextWakeDelay(sources: List<SourceKey>, now: Long): Long {
+        val soonest = sources.minOfOrNull { progress(it).due }
+        return Lab175AvailabilityPolicy.boundedIdleDelayMillis(soonest, now)
     }
 
     @Synchronized fun chooseSources(

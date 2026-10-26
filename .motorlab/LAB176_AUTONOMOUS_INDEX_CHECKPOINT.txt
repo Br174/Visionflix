@@ -1,0 +1,11 @@
+MOTORLAB VISIONFLIX LAB176 AUTONOMOUS INDEX CHECKPOINT
+CORE=2026.10.22-r38
+APPROVAL=2026-10-26 explicit 'Ok procedi' after user-approved plan to make TMDb provider index autonomous while Search active, persistent resume and progress indicator, all without re-scanning on each query
+SOURCE_VERIFIED_LAB175=468fe5ac06854d2b870abc1ccd5749334fcae82d
+SOURCE_BUILD=1.7.554 / versionCode 483
+BRANCH=lab/visionflix-lab176-autonomous-index-20261026
+SOURCE_POLICY=LAB176 continues LAB175 indexed catalog architecture. Two concurrent native provider-page fetches per batch; retry/cooldown persisted in SQLiteOpenHelper independent database. Cooperative delay between batches, idle throttling. Pause/cancel on TV Search.onPause, resume on Search.onResume and view initialization. Provider extraction/player unchanged.
+PROGRESS=read-only non-focusable TextView with exact distinct titles, sources that have at least one positive page, total configured sources, pages indexed, updating/paused; never invent 100 percent complete because provider catalog sizes unknown.
+SAFETY=never modify main, MADRE, production, older LABs, signing, package IDs, playback, provider adapters, and older Room DBs. No paid services.
+TEST_SCOPE=LAB176 policy schedule/resume/idle tests plus LAB175 full regression, CI compilation TV/Mobile, sign/hash/ZIP and fixed lab release. Real provider catalog completeness and streaming playback not verified without TV.
+CURRENT_STATUS=CI_PENDING

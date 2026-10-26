@@ -841,8 +841,8 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB174_TESTS=PASS] TV single/combo source filters and strict metadata'
-      - name: LAB175 TV catalogue-index integration and no-rescan tests
-        if: github.ref == 'refs/heads/lab/visionflix-lab175-availability-index-tv-20261026'
+      - name: LAB175/LAB176 TV catalogue-index and autonomous-resume tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab175-availability-index-tv-20261026' || github.ref == 'refs/heads/lab/visionflix-lab176-autonomous-index-20261026'
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
         shell: bash
@@ -870,6 +870,21 @@ jobs:
           assert '5L * 60 * 1000' in idx and 'seen_at >= ?' in idx
           assert '(engine as? EndpointManagedProvider)?.baseUrl.orEmpty()' in vm
           assert 'availabilityMaintenance?.isActive == true' in vm
+          if '${{ github.ref_name }}' == 'lab/visionflix-lab176-autonomous-index-20261026':
+              layout=Path('app/src/main/res/layout/fragment_search_tv_safe.xml').read_text()
+              assert 'while (isActive && generation == maintenanceGeneration)' in vm
+              assert 'index.chooseSources(keys, now, 2)' in vm
+              assert 'delay(1_500L)' in vm
+              assert 'index.nextWakeDelay(keys, now)' in vm
+              assert 'fun stopAvailabilityMaintenance()' in vm
+              assert 'searchViewModel?.stopAvailabilityMaintenance()' in tv
+              assert 'collectIndexProgressSafely()' in tv
+              assert 'tv_index_progress_safe' in layout
+              assert 'statistics(sources:' in idx and 'fun nextWakeDelay(' in idx
+              assert 'fun progressLabel(' in pol and 'fun boundedIdleDelayMillis(' in pol
+              assert 'val nextPage = if (cards.isEmpty()) requestedPage else requestedPage + 1' in idx
+              assert 'val planned = index.chooseSources(keys, System.currentTimeMillis(), 18)' not in vm
+              print('[LAB176_AUTONOMOUS_INDEX_SOURCE=PASS] bounded loop, persisted progress, TV status, onPause cancel, no scan per search')
           assert 'Unsupported availability index schema, not deleting user data' in idx
           assert 'getMovies' not in idx and 'getServers' not in idx and 'getVideo' not in idx
           assert 'startAvailabilityMaintenance' in vm
@@ -894,6 +909,7 @@ jobs:
           ./gradlew :app:testDebugUnitTest \
             --tests '*Lab175AvailabilityPolicyTest' \
             --tests '*Lab175IndexRotationTest' \
+            --tests '*Lab176AutonomousIndexPolicyTest' \
             --tests '*Lab175ProviderIntegrationFixtureTest' \
             --tests '*Lab174FilteredSourcePolicyTest' \
             --tests '*Lab173TvCombinedFilterPolicyTest' \

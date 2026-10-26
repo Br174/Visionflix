@@ -25,6 +25,8 @@ import com.streamflixreborn.streamflix.utils.TMDb3.w500
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.format
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -160,6 +162,23 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     // the historical search path until TV end-to-end acceptance is verified.
     private val availabilityIndex = availabilityContext?.let { Lab175AvailabilityIndex(it) }
     private var availabilityMaintenance: Job? = null
+    private var maintenanceGeneration = 0
+
+    data class AvailabilityProgress(
+        val indexedTitles: Int = 0,
+        val providersStarted: Int = 0,
+        val providerTotal: Int = 0,
+        val pagesIndexed: Int = 0,
+        val running: Boolean = false,
+    ) {
+        val description: String get() = Lab175AvailabilityPolicy.progressLabel(
+            indexedTitles, providersStarted, providerTotal, pagesIndexed, running
+        )
+    }
+
+    private val _availabilityProgress = MutableStateFlow(AvailabilityProgress())
+    val availabilityProgress: Flow<AvailabilityProgress> = _availabilityProgress
+    private var activeIndexedSearchGeneration = 0
     private var indexedGlobalEnabled = false
     private var indexedMetadataReady = false
     private var indexedPage = 1
@@ -168,12 +187,14 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     private val INDEXED_MAX_TMDB_PAGES = 12
 
     /**
-     * One bounded maintenance session per TV Search view model. Never launched
-     * by the Cerca/filters/Sort buttons. Provider pages are cached to disk.
+     * LAB176: autonomous while the TV Search screen is visible, cooperative
+     * and bounded, never triggered by Cerca/Sort/tapping a film. Page
+     * checkpoints and cooldowns survive app restarts. No paid workers.
      */
     fun startAvailabilityMaintenance(language: String) {
         val index = availabilityIndex ?: return
         if (availabilityMaintenance?.isActive == true) return
+        val generation = ++maintenanceGeneration
         availabilityMaintenance = viewModelScope.launch(Dispatchers.IO) {
             val providers = Provider.providers.keys.filter {
                 it.language == language && it !is IptvProvider && it !is TmdbProvider
@@ -184,33 +205,77 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                     (engine as? EndpointManagedProvider)?.baseUrl.orEmpty(),
                 )
             }
-            // Fair cross-provider round robin, never a repeated full-site scan.
-            val planned = index.chooseSources(keys, System.currentTimeMillis(), 18)
-            val permits = Semaphore(2)
-            coroutineScope {
-                planned.map { (key, pageToLoad) -> async {
-                    permits.withPermit {
-                        val provider = providers[key.name] ?: return@withPermit
-                        try {
-                            val cards = withTimeoutOrNull(8000L) {
-                                browseProvider(provider, pageToLoad)
-                            }
-                            if (cards == null) {
-                                index.markFailure(key, pageToLoad, System.currentTimeMillis())
-                            } else {
-                                index.recordPage(key, pageToLoad, cards, System.currentTimeMillis())
-                                if (indexedGlobalEnabled) refreshIndexedWall()
-                            }
-                        } catch (cancel: kotlinx.coroutines.CancellationException) {
-                            throw cancel
-                        } catch (error: Exception) {
-                            Log.w("SearchViewModel", "LAB175 index provider " + key.name, error)
-                            index.markFailure(key, pageToLoad, System.currentTimeMillis())
-                        }
+            suspend fun report(running: Boolean) {
+                val statistics = index.statistics(keys, System.currentTimeMillis())
+                if (generation == maintenanceGeneration) {
+                    _availabilityProgress.value = AvailabilityProgress(
+                        statistics.indexedTitles, statistics.providersStarted,
+                        statistics.providerTotal, statistics.pagesIndexed, running,
+                    )
+                }
+            }
+            try {
+                report(true)
+                while (isActive && generation == maintenanceGeneration) {
+                    // Exactly two native catalogue pages per batch, never a
+                    // wall-sized burst of dozens of simultaneous requests.
+                    val now = System.currentTimeMillis()
+                    val planned = index.chooseSources(keys, now, 2)
+                    if (planned.isEmpty()) {
+                        report(true)
+                        delay(index.nextWakeDelay(keys, now))
+                        continue
                     }
-                } }.awaitAll()
+                    coroutineScope {
+                        planned.map { (key, pageToLoad) -> async {
+                            val engine = providers[key.name] ?: return@async
+                            try {
+                                val cards = withTimeoutOrNull(8_000L) {
+                                    fetchAvailabilityPage(engine, pageToLoad)
+                                }
+                                if (cards == null) {
+                                    index.markFailure(key, pageToLoad, System.currentTimeMillis())
+                                } else {
+                                    index.recordPage(key, pageToLoad, cards, System.currentTimeMillis())
+                                }
+                            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                                throw cancel
+                            } catch (error: Exception) {
+                                Log.w("SearchViewModel", "LAB176 provider catalogue " + key.name, error)
+                                index.markFailure(key, pageToLoad, System.currentTimeMillis())
+                            }
+                        } }.awaitAll()
+                    }
+                    report(true)
+                    if (indexedGlobalEnabled && indexedMetadataReady) refreshIndexedWall()
+                    // Always yield the main app time and network bandwidth.
+                    delay(1_500L)
+                }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } finally {
+                if (generation == maintenanceGeneration) report(false)
             }
         }
+    }
+
+    fun stopAvailabilityMaintenance() {
+        ++maintenanceGeneration
+        availabilityMaintenance?.cancel()
+        availabilityMaintenance = null
+        _availabilityProgress.value = _availabilityProgress.value.copy(running = false)
+    }
+
+    /** A provider failure is not a valid empty page. Let the caller retry. */
+    private suspend fun fetchAvailabilityPage(
+        provider: Provider, page: Int,
+    ): List<AppAdapter.Item> = coroutineScope {
+        val movies = if (Provider.supportsMovies(provider)) async { provider.getMovies(page) } else null
+        val series = if (Provider.supportsTvShows(provider)) async { provider.getTvShows(page) } else null
+        val combined = mutableListOf<AppAdapter.Item>()
+        movies?.await()?.let { combined.addAll(it) }
+        series?.await()?.let { combined.addAll(it) }
+        combined.distinctBy { it.searchIdentityKey() }
     }
 
     /** TMDb filters the universe; the offline index proves provider presence. */
@@ -218,6 +283,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         searchText: String, language: String, filters: AdvancedSearchFilters,
     ) {
         val index = availabilityIndex ?: return
+        val generation = ++activeIndexedSearchGeneration
         indexedGlobalEnabled = true
         indexedMetadataReady = false
         indexedLanguage = language
@@ -233,7 +299,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             return
         }
         try {
-            indexedMetadata = withTimeoutOrNull(15000L) {
+            val results = withTimeoutOrNull(15000L) {
                 searchTmdbAdvanced(
                     TmdbProvider(language), searchText, advancedFilters, 1,
                     candidateSelection = false,
@@ -241,6 +307,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             } ?: throw IllegalStateException(
                 "TheMovieDB non risponde entro il limite previsto; nessuna scansione infinita dei provider."
             )
+            if (generation != activeIndexedSearchGeneration || !indexedGlobalEnabled) return
+            indexedMetadata = results
             indexedMetadataReady = true
             refreshIndexedWall()
             // Partial indexes are common on first run: try two extra
@@ -250,11 +318,14 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 if (wall == null || wall.catalog.posters.isNotEmpty() ||
                     !wall.hasMore) break
                 loadMoreIndexedGlobal()
+                if (generation != activeIndexedSearchGeneration) return
             }
         } catch (cancel: kotlinx.coroutines.CancellationException) {
             throw cancel
         } catch (error: Exception) {
-            _state.emit(State.FailedSearching(error))
+            if (generation == activeIndexedSearchGeneration && indexedGlobalEnabled) {
+                _state.emit(State.FailedSearching(error))
+            }
         }
     }
 
@@ -278,6 +349,10 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                     "Indicizzato · " + name)
             }
         }
+        val prior = _state.value as? State.SuccessGlobalSearching
+        if (prior != null && prior.catalog.posters.map { it.searchIdentityKey() } ==
+            posters.map { it.searchIdentityKey() } && prior.hasMore ==
+            (indexedPage < INDEXED_MAX_TMDB_PAGES)) return
         _state.value = State.SuccessGlobalSearching(
             groups, hasMore = indexedPage < INDEXED_MAX_TMDB_PAGES,
             catalog = catalog.copy(posters = posters),
@@ -288,12 +363,14 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     private suspend fun loadMoreIndexedGlobal() {
         if (!indexedGlobalEnabled || indexedPage >= INDEXED_MAX_TMDB_PAGES) return
         val next = indexedPage + 1
+        val generation = activeIndexedSearchGeneration
         val prior = _state.value
         try {
             val extra = searchTmdbAdvanced(
                 TmdbProvider(indexedLanguage), query, advancedFilters, next,
                 candidateSelection = false,
             )
+            if (generation != activeIndexedSearchGeneration || !indexedGlobalEnabled) return
             indexedPage = next
             indexedMetadata = (indexedMetadata + extra)
                 .distinctBy { item -> filterMatchKey(item) ?: item.toString() }
@@ -528,6 +605,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         filters: AdvancedSearchFilters,
         targetPage: Int,
     ) {
+        ++activeIndexedSearchGeneration
         indexedGlobalEnabled = false
         indexedMetadataReady = false
         _state.emit(State.Searching)
@@ -1318,6 +1396,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             searchIndexedGlobal(query, currentLanguage, filters)
             return@launch
         }
+        ++activeIndexedSearchGeneration
         indexedGlobalEnabled = false
         advancedFilters = normalizeFilters(filters)
         this@SearchViewModel.query = query

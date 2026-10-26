@@ -42,6 +42,17 @@ internal object Lab175AvailabilityPolicy {
         available.any { matches(it, id) }
     }.map { it.second }
 
+    // An index may grow on its own only while the TV Search surface is active.
+    // In a quiet interval do not busy-spin: wake periodically and consult
+    // persisted per-source due times without re-scanning each search.
+    fun boundedIdleDelayMillis(earliestDue: Long?, now: Long): Long =
+        ((earliestDue ?: (now + 15_000L)) - now).coerceIn(1_000L, 15_000L)
+
+    fun progressLabel(titles: Int, reached: Int, total: Int, pages: Int,
+                      running: Boolean): String =
+        "Catalogo provider: $titles titoli · $reached/$total fonti · " +
+        "$pages pagine · " + if (running) "aggiornamento in corso" else "in pausa"
+
     fun chooseNext(
         candidates: List<Pair<String, Long>>,
         now: Long,

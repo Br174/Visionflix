@@ -64,6 +64,7 @@ class SearchTvFragment : Fragment() {
     private lateinit var rootView: View
     private lateinit var vgvSearch: VerticalGridView
     private lateinit var pbSearch: ProgressBar
+    private lateinit var tvIndexProgress: TextView
     private lateinit var searchHeader: LinearLayout
     private lateinit var etSearch: SearchEditText
     private lateinit var btnSearchClear: ImageView
@@ -211,7 +212,15 @@ class SearchTvFragment : Fragment() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        searchViewModel?.startAvailabilityMaintenance(
+            UserPreferences.currentProvider?.language ?: "it"
+        )
+    }
+
     override fun onPause() {
+        searchViewModel?.stopAvailabilityMaintenance()
         savePersistedFiltersSafely()
         super.onPause()
     }
@@ -255,6 +264,7 @@ class SearchTvFragment : Fragment() {
     private fun bindBaseViews(view: View) {
         vgvSearch = view.findViewById(R.id.vgv_search_safe)
         pbSearch = view.findViewById(R.id.pb_search_safe)
+        tvIndexProgress = view.findViewById(R.id.tv_index_progress_safe)
         searchHeader = view.findViewById(R.id.search_header_safe)
         etSearch = view.findViewById(R.id.et_search_safe)
         btnSearchClear = view.findViewById(R.id.btn_search_clear_safe)
@@ -405,12 +415,26 @@ class SearchTvFragment : Fragment() {
             collectSearchStateSafely()
             collectActorSuggestionsSafely()
             collectDirectorSuggestionsSafely()
+            collectIndexProgressSafely()
             searchViewModel?.startAvailabilityMaintenance(
                 UserPreferences.currentProvider?.language ?: "it"
             )
         } catch (error: Exception) {
             Log.e(TAG, "LAB155 Search ViewModel/collector binding failed", error)
             showSafeToast("Cerca aperta, motore temporaneamente non disponibile")
+        }
+    }
+
+    private fun collectIndexProgressSafely() {
+        val vm = searchViewModel ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            vm.availabilityProgress
+                .flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
+                .collect { progress ->
+                    tvIndexProgress.visibility =
+                        if (progress.providerTotal > 0) View.VISIBLE else View.GONE
+                    tvIndexProgress.text = progress.description
+                }
         }
     }
 

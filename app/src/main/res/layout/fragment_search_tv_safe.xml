@@ -144,6 +144,22 @@
             android:layout_marginTop="3dp"
             android:orientation="vertical" />
 
+        <!-- LAB176: read-only, unfocusable progress, exact observed counts. -->
+        <TextView
+            android:id="@+id/tv_index_progress_safe"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:focusable="false"
+            android:importantForAccessibility="yes"
+            android:textColor="#BDBDBD"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
     </LinearLayout>
 
     <!-- LAB153: narrow blank edge for the icon-only, per-row jump control. -->
