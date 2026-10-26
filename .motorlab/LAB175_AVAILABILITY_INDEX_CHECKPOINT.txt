@@ -1,0 +1,13 @@
+MOTORLAB VISIONFLIX LAB175 CHECKPOINT
+CORE=2026.10.22-r38
+APPROVAL=explicit user approval for TV index architecture, shared TMDb filters, cache, TV unified content dropdown, tests before APK and zip, no production/main/MADRE.
+BASE_VERIFIED_LAB174=6b242efc8bba0ef43c775c098a3c6f785f4ad99a
+BRANCH=lab/visionflix-lab175-availability-index-tv-20261026
+TV_ARCHITECTURE=TV VM only uses new lab175_availability_v1.db (SQLiteOpenHelper), original provider-specific Room databases untouched. Mobile stays old path.
+INDEX=records only provider native catalog evidence, preserving provider endpoint/source ID, media kind/title/year, poster and rating. No playback success claim. Never fabricate video playable status. Unknown years are not treated as availability confirmation.
+MAINTENANCE=bounded 18 provider native pages per Android TV Search ViewModel lifetime, at most two concurrent; 8-second timeout each, progressive SQLite persistence/backoff. Not launched by Cerca, filter, Sort or scrolling.
+TMDB=existing user-configured key, TMDb Discover for filtering, then indexed source-title/year matching. No per-title provider checks and no global provider fetch fan-out during search.
+TV_UI=single pinned dropdown content type (Tutti/Film/Serie/Cartoni), no duplicate Tipo in expanded drawer, one sort dropdown, D-pad focus preserved. Playback untouched.
+SAFETY=main, MADRE, production, older LABs, signatures, Android ID, existing DB, provider extraction and playback protected. No paid services.
+ACCEPTANCE=unit+source regression checks before GitHub CI signed TV/Mobile and immutable ZIP. Real-TV/provider coverage and actual stream availability remain unverified until physical testing. Index incomplete on first run.
+STATUS=CI_PENDING

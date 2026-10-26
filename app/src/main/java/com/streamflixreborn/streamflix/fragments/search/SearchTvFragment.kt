@@ -90,7 +90,7 @@ class SearchTvFragment : Fragment() {
     private val selectedGenres = linkedSetOf<AdvancedSearchFilters.GenreFilter>()
     private var fromSelector: DropdownSelector<Int?>? = null
     private var toSelector: DropdownSelector<Int?>? = null
-    private var selectedSort: AdvancedSearchFilters.SortFilter = AdvancedSearchFilters.SortFilter.DATE
+    private var selectedSort: AdvancedSearchFilters.SortFilter = AdvancedSearchFilters.SortFilter.POPULARITY
     private var platformSelector: DropdownSelector<AdvancedSearchFilters.PlatformFilter>? = null
     private var countrySelector: DropdownSelector<AdvancedSearchFilters.CountryFilter>? = null
     private var actorEdit: EditText? = null
@@ -109,8 +109,7 @@ class SearchTvFragment : Fragment() {
     private var filterFocusSentinel: View? = null
     private var dropdownArrow: TextView? = null
     private var quickAll: TextView? = null
-    private var quickFilm: TextView? = null
-    private var quickSeries: TextView? = null
+    private var hasShownPartialIndexNotice = false
     private var quickDate: TextView? = null
     private var returnPosterId: String? = null
     private var returnPosterPosition = RecyclerView.NO_POSITION
@@ -396,7 +395,7 @@ class SearchTvFragment : Fragment() {
                         if (!modelClass.isAssignableFrom(SearchViewModel::class.java)) {
                             throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
                         }
-                        return SearchViewModel(database) as T
+                        return SearchViewModel(database, requireContext().applicationContext) as T
                     }
                 }
                 searchViewModel = ViewModelProvider(this, factory)[SearchViewModel::class.java]
@@ -406,6 +405,9 @@ class SearchTvFragment : Fragment() {
             collectSearchStateSafely()
             collectActorSuggestionsSafely()
             collectDirectorSuggestionsSafely()
+            searchViewModel?.startAvailabilityMaintenance(
+                UserPreferences.currentProvider?.language ?: "it"
+            )
         } catch (error: Exception) {
             Log.e(TAG, "LAB155 Search ViewModel/collector binding failed", error)
             showSafeToast("Cerca aperta, motore temporaneamente non disponibile")
@@ -436,6 +438,10 @@ class SearchTvFragment : Fragment() {
                                     pbSearch.visibility = View.GONE
                                     appAdapter.isLoading = false
                                     displayGlobalSearch(state.catalog.posters, state.hasMore)
+                                    if (state.indexPartial && !hasShownPartialIndexNotice) {
+                                        hasShownPartialIndexNotice = true
+                                        showSafeToast("Catalogo dei provider in indicizzazione: risultati confermati, ma ancora parziali")
+                                    }
                                 }
                                 is State.FailedSearching -> {
                                     pbSearch.visibility = View.GONE
@@ -575,7 +581,8 @@ class SearchTvFragment : Fragment() {
                 setPadding(0, dp(3), 0, 0)
             }
             panel.addView(firstRow)
-            addSelectorToRow(firstRow, typeSelector)
+            // LAB175: type selection is available only in the single pinned
+            // TV bottom menu. Keep its model for persistence, not a second UI.
             addSelectorToRow(firstRow, italianSelector)
             addSelectorToRow(firstRow, yearSelector)
             addSelectorToRow(firstRow, genreSelector)
@@ -708,15 +715,10 @@ class SearchTvFragment : Fragment() {
                     setOnClickListener { callback() }
                     lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(4) })
                 }
-            fun quickType(type: AdvancedSearchFilters.ContentType) {
-                typeSelector?.selectValue(type)
-                updateQuickBar()
-                submitSearch()
+            quickAll = quickButton("Tutti", 98) { openUnifiedTypeMenu() }.apply {
+                contentDescription = "Seleziona tipo: Tutti, Film, Serie o Cartoni"
             }
-            quickAll = quickButton("Tutti", 68) { quickType(AdvancedSearchFilters.ContentType.ALL) }
-            quickFilm = quickButton("Film", 68) { quickType(AdvancedSearchFilters.ContentType.MOVIE) }
-            quickSeries = quickButton("Serie", 68) { quickType(AdvancedSearchFilters.ContentType.TV) }
-            quickDate = quickButton("Più nuovi", 104) { openUnifiedSortMenu() }.apply {
+            quickDate = quickButton("Popolarità", 104) { openUnifiedSortMenu() }.apply {
                 textSize = 11f
                 contentDescription = "Ordina i risultati: tocca per scegliere"
             }
@@ -781,8 +783,6 @@ class SearchTvFragment : Fragment() {
         val reset = btnResetFilters ?: return
         val apply = btnApplyFilters ?: return
         val all = quickAll ?: return
-        val film = quickFilm ?: return
-        val series = quickSeries ?: return
         val sort = quickDate ?: return
         val arrow = dropdownArrow ?: return
 
@@ -790,7 +790,7 @@ class SearchTvFragment : Fragment() {
         // bottom lip are part of the SAME drawer, not separate focus islands.
         // Left exits into the native sidebar; up and right are sealed borders.
         val sidebar = R.id.nav_main
-        llGlobalSearch.nextFocusDownId = type.viewId
+        llGlobalSearch.nextFocusDownId = italian.viewId
         llGlobalSearch.nextFocusUpId = llGlobalSearch.id
         llGlobalSearch.nextFocusRightId = llGlobalSearch.id
         llGlobalSearch.nextFocusLeftId = sidebar
@@ -802,17 +802,15 @@ class SearchTvFragment : Fragment() {
                     !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)))
         }
 
-        type.setNextFocus(left = sidebar, right = italian.viewId,
+        italian.setNextFocus(left = sidebar, right = year.viewId,
             up = llGlobalSearch.id, down = from.viewId)
-        italian.setNextFocus(left = type.viewId, right = year.viewId,
-            up = llGlobalSearch.id, down = to.viewId)
         year.setNextFocus(left = italian.viewId, right = genre.viewId,
             up = llGlobalSearch.id, down = actor.id)
         genre.setNextFocus(left = year.viewId, right = genre.viewId,
             up = llGlobalSearch.id, down = actor.id)
 
         from.setNextFocus(left = sidebar, right = to.viewId,
-            up = type.viewId, down = platform.viewId)
+            up = italian.viewId, down = platform.viewId)
         to.setNextFocus(left = from.viewId, right = actor.id,
             up = italian.viewId, down = director.id)
         actor.nextFocusLeftId = to.viewId
@@ -852,7 +850,7 @@ class SearchTvFragment : Fragment() {
         btnSearchVoice.nextFocusUpId = reset.id
         btnSearchVoice.nextFocusDownId = vgvSearch.id
 
-        val bottom = listOf(all, film, series, sort, arrow)
+        val bottom = listOf(all, sort, arrow)
         bottom.forEachIndexed { index, view ->
             view.nextFocusLeftId = if (index == 0) btnSearchVoice.id else bottom[index - 1].id
             view.nextFocusRightId = if (index == bottom.lastIndex) view.id else bottom[index + 1].id
@@ -1236,7 +1234,7 @@ class SearchTvFragment : Fragment() {
         selectedGenres.clear()
         fromSelector?.reset()
         toSelector?.reset()
-        selectedSort = AdvancedSearchFilters.SortFilter.DATE
+        selectedSort = AdvancedSearchFilters.SortFilter.POPULARITY
         updateQuickBar()
         platformSelector?.reset()
         countrySelector?.reset()
@@ -1348,10 +1346,7 @@ class SearchTvFragment : Fragment() {
         savePersistedFiltersSafely()
 
         if (isGlobalSearchChecked) {
-            if (query.isBlank() && !filters.isActive) {
-                showSafeToast(getString(R.string.search_empty_query))
-                return true
-            }
+            hasShownPartialIndexNotice = false
             vm.searchGlobal(query, UserPreferences.currentProvider?.language ?: "it", filters)
             collapseFiltersAndFocusResults()
         } else {
@@ -1729,6 +1724,30 @@ class SearchTvFragment : Fragment() {
         return true
     }
 
+    private fun openUnifiedTypeMenu() {
+        if (!isAdded) return
+        val choices = listOf(
+            AdvancedSearchFilters.ContentType.ALL,
+            AdvancedSearchFilters.ContentType.MOVIE,
+            AdvancedSearchFilters.ContentType.TV,
+            AdvancedSearchFilters.ContentType.CARTOON,
+        )
+        val labels = arrayOf("Tutti", "Film", "Serie", "Cartoni")
+        val current = choices.indexOf(typeSelector?.value).coerceAtLeast(0)
+        val dialog = android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Tipo di contenuto")
+            .setSingleChoiceItems(labels, current) { window, index ->
+                typeSelector?.selectValue(choices[index])
+                updateQuickBar()
+                window.dismiss()
+                submitSearch()
+            }
+            .setNegativeButton("Annulla", null)
+            .create()
+        dialog.setOnDismissListener { quickAll?.post { quickAll?.requestFocus() } }
+        dialog.show()
+    }
+
     private fun openUnifiedSortMenu() {
         if (!isAdded) return
         val choices = Lab156UnifiedSort.options
@@ -1739,7 +1758,9 @@ class SearchTvFragment : Fragment() {
                 selectedSort = choices[index]
                 updateQuickBar()
                 current.dismiss()
-                submitSearch()
+                if (searchViewModel?.reorderVisibleResults(selectedSort) != true) {
+                    submitSearch()
+                }
             }
             .setNegativeButton("Annulla", null)
             .create()
@@ -1749,9 +1770,13 @@ class SearchTvFragment : Fragment() {
 
     private fun updateQuickBar() {
         val type = typeSelector?.value
-        quickAll?.isActivated = type == AdvancedSearchFilters.ContentType.ALL
-        quickFilm?.isActivated = type == AdvancedSearchFilters.ContentType.MOVIE
-        quickSeries?.isActivated = type == AdvancedSearchFilters.ContentType.TV
+        quickAll?.text = when (type) {
+            AdvancedSearchFilters.ContentType.MOVIE -> "Film"
+            AdvancedSearchFilters.ContentType.TV -> "Serie"
+            AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
+            else -> "Tutti"
+        }
+        quickAll?.isActivated = true
         quickDate?.text = Lab156UnifiedSort.label(selectedSort)
     }
 

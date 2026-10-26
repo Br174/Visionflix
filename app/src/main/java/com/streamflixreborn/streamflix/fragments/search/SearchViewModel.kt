@@ -1,5 +1,6 @@
 package com.streamflixreborn.streamflix.fragments.search
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -24,6 +25,8 @@ import com.streamflixreborn.streamflix.utils.TMDb3.w500
 import com.streamflixreborn.streamflix.utils.UserPreferences
 import com.streamflixreborn.streamflix.utils.format
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -51,6 +54,7 @@ sealed class State {
         val providerResults: List<ProviderResult>,
         val hasMore: Boolean = true,
         val catalog: GlobalCatalogMerger.Catalog = GlobalCatalogMerger.merge(providerResults),
+        val indexPartial: Boolean = false,
     ) : State()
 }
 
@@ -72,7 +76,7 @@ private data class GlobalSearchTarget(
     val endpoint: String?,
 )
 
-class SearchViewModel(database: AppDatabase) : ViewModel() {
+class SearchViewModel(database: AppDatabase, availabilityContext: Context? = null) : ViewModel() {
 
     private val _state = MutableStateFlow<State>(State.SuccessSearching(emptyList(), hasMore = false))
     private val _actorSuggestions = MutableStateFlow<List<People>>(emptyList())
@@ -152,6 +156,164 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private var globalLoadingMore = false
     private var globalEmptyPages = 0
     private var activeGlobalGeneration = 0
+    // LAB175: independent, persistent catalogue for Android TV. Mobile keeps
+    // the historical search path until TV end-to-end acceptance is verified.
+    private val availabilityIndex = availabilityContext?.let { Lab175AvailabilityIndex(it) }
+    private var availabilityMaintenance: Job? = null
+    private var indexedGlobalEnabled = false
+    private var indexedPage = 1
+    private var indexedMetadata = listOf<AppAdapter.Item>()
+    private var indexedLanguage = "it"
+    private val INDEXED_MAX_TMDB_PAGES = 12
+
+    /**
+     * One bounded maintenance session per TV Search view model. Never launched
+     * by the Cerca/filters/Sort buttons. Provider pages are cached to disk.
+     */
+    fun startAvailabilityMaintenance(language: String) {
+        val index = availabilityIndex ?: return
+        if (availabilityMaintenance != null) return
+        availabilityMaintenance = viewModelScope.launch(Dispatchers.IO) {
+            val providers = Provider.providers.keys.filter {
+                it.language == language && it !is IptvProvider && it !is TmdbProvider
+            }.associateBy { it.name }
+            val keys = providers.keys.map { Lab175AvailabilityIndex.SourceKey(it) }
+            // Fair cross-provider round robin, never a repeated full-site scan.
+            val planned = index.chooseSources(keys, System.currentTimeMillis(), 18)
+            val permits = Semaphore(2)
+            coroutineScope {
+                planned.map { (key, pageToLoad) -> async {
+                    permits.withPermit {
+                        val provider = providers[key.name] ?: return@withPermit
+                        try {
+                            val cards = withTimeoutOrNull(8000L) {
+                                browseProvider(provider, pageToLoad)
+                            }
+                            if (cards == null) {
+                                index.markFailure(key, pageToLoad, System.currentTimeMillis())
+                            } else {
+                                index.recordPage(key, pageToLoad, cards, System.currentTimeMillis())
+                                if (indexedGlobalEnabled) refreshIndexedWall()
+                            }
+                        } catch (cancel: kotlinx.coroutines.CancellationException) {
+                            throw cancel
+                        } catch (error: Exception) {
+                            Log.w("SearchViewModel", "LAB175 index provider " + key.name, error)
+                            index.markFailure(key, pageToLoad, System.currentTimeMillis())
+                        }
+                    }
+                } }.awaitAll()
+            }
+        }
+    }
+
+    /** TMDb filters the universe; the offline index proves provider presence. */
+    private suspend fun searchIndexedGlobal(
+        searchText: String, language: String, filters: AdvancedSearchFilters,
+    ) {
+        val index = availabilityIndex ?: return
+        indexedGlobalEnabled = true
+        indexedLanguage = language
+        indexedPage = 1
+        indexedMetadata = emptyList()
+        advancedFilters = normalizeFilters(filters)
+        query = searchText
+        _state.emit(State.GlobalSearching)
+        if (!tmdbConfigured()) {
+            _state.emit(State.FailedSearching(IllegalStateException(
+                "Ricerca globale: configura una chiave TMDb gratuita valida nelle Impostazioni."
+            )))
+            return
+        }
+        try {
+            indexedMetadata = searchTmdbAdvanced(
+                TmdbProvider(language), searchText, advancedFilters, 1,
+                candidateSelection = false,
+            )
+            refreshIndexedWall()
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            _state.emit(State.FailedSearching(error))
+        }
+    }
+
+    /** No provider HTTP here; SQLite lookup and list sorting only. */
+    private fun refreshIndexedWall() {
+        val index = availabilityIndex ?: return
+        if (!indexedGlobalEnabled) return
+        val matching = index.findMatches(indexedMetadata)
+        val sorted = applyProviderFilters(matching, advancedFilters, trustMetadata = true)
+        val catalog = GlobalCatalogMerger.mergeItems(listOf(sorted))
+        // Preserve TMDb discovery order for popularity, but never invent
+        // provider IDs. Other sorts are applied to actual source-backed items.
+        val posters = applyProviderFilters(catalog.posters, advancedFilters, trustMetadata = true)
+        val groups = matching.groupBy { when (it) {
+            is Movie -> it.providerName.orEmpty()
+            is TvShow -> it.providerName.orEmpty()
+            else -> ""
+        } }.mapNotNull { (name, list) ->
+            Provider.findByName(name)?.let { provider ->
+                ProviderResult(provider, ProviderResult.State.Success(list),
+                    "Indicizzato · " + name)
+            }
+        }
+        _state.value = State.SuccessGlobalSearching(
+            groups, hasMore = indexedPage < INDEXED_MAX_TMDB_PAGES,
+            catalog = catalog.copy(posters = posters),
+            indexPartial = true,
+        )
+    }
+
+    private suspend fun loadMoreIndexedGlobal() {
+        if (!indexedGlobalEnabled || indexedPage >= INDEXED_MAX_TMDB_PAGES) return
+        val next = indexedPage + 1
+        val prior = _state.value
+        try {
+            val extra = searchTmdbAdvanced(
+                TmdbProvider(indexedLanguage), query, advancedFilters, next,
+                candidateSelection = false,
+            )
+            indexedPage = next
+            indexedMetadata = (indexedMetadata + extra)
+                .distinctBy { item -> filterMatchKey(item) ?: item.toString() }
+            refreshIndexedWall()
+            if (extra.isEmpty()) (_state.value as? State.SuccessGlobalSearching)
+                ?.let { _state.value = it.copy(hasMore = false) }
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            Log.w("SearchViewModel", "LAB175 metadata next page", error)
+            if (prior is State.SuccessGlobalSearching) {
+                _state.value = prior.copy(hasMore = false)
+            }
+        }
+    }
+
+    /** Sorting already-displayed items must not start a provider scan. */
+    fun reorderVisibleResults(sort: AdvancedSearchFilters.SortFilter): Boolean {
+        advancedFilters = advancedFilters.copy(sort = sort)
+        val existing = _state.value
+        return when (existing) {
+            is State.SuccessGlobalSearching -> {
+                if (indexedGlobalEnabled) refreshIndexedWall()
+                else _state.value = globalWallState(existing.providerResults, existing.hasMore)
+                true
+            }
+            is State.SuccessSearching -> {
+                _state.value = existing.copy(
+                    results = applyProviderFilters(existing.results,
+                        advancedFilters.copy(
+                            dateFrom = null, dateTo = null, year = null,
+                            genre = AdvancedSearchFilters.GenreFilter.ALL,
+                            genres = emptySet(),
+                        ), trustMetadata = true)
+                )
+                true
+            }
+            else -> false
+        }
+    }
     // Independent Streamflix page-exhaustion bookkeeping per provider endpoint.
     private val globalEmptyRawByTarget = mutableMapOf<Int, Int>()
     private val globalRepeatedRawByTarget = mutableMapOf<Int, Int>()
@@ -346,6 +508,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         filters: AdvancedSearchFilters,
         targetPage: Int,
     ) {
+        indexedGlobalEnabled = false
         _state.emit(State.Searching)
         localLoadingMore = false
         try {
@@ -1130,6 +1293,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         currentLanguage: String,
         filters: AdvancedSearchFilters = AdvancedSearchFilters(),
     ) = viewModelScope.launch(Dispatchers.IO) {
+        if (availabilityIndex != null && UserPreferences.currentProvider !is IptvProvider) {
+            searchIndexedGlobal(query, currentLanguage, filters)
+            return@launch
+        }
+        indexedGlobalEnabled = false
         advancedFilters = normalizeFilters(filters)
         this@SearchViewModel.query = query
         page = 1
@@ -1362,6 +1530,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
      * on global pages too. No filtered-empty page can end pagination.
      */
     fun loadMoreGlobal(): kotlinx.coroutines.Job = viewModelScope.launch(Dispatchers.IO) {
+        if (indexedGlobalEnabled) {
+            loadMoreIndexedGlobal()
+            return@launch
+        }
         if (globalLoadingMore || globalTargets.isEmpty()) return@launch
         val initial = _state.value as? State.SuccessGlobalSearching ?: return@launch
         if (!initial.hasMore) return@launch

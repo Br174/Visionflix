@@ -841,6 +841,67 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB174_TESTS=PASS] TV single/combo source filters and strict metadata'
+      - name: LAB175 TV catalogue-index integration and no-rescan tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab175-availability-index-tv-20261026'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          vm=(root/'SearchViewModel.kt').read_text()
+          tv=(root/'SearchTvFragment.kt').read_text()
+          idx=(root/'Lab175AvailabilityIndex.kt').read_text()
+          pol=(root/'Lab175AvailabilityPolicy.kt').read_text()
+          assert 'lab175_availability_v1.db' in idx
+          assert 'CREATE TABLE availability' in idx and 'CREATE TABLE progress' in idx
+          assert 'CREATE INDEX idx_availability_title' in idx
+          assert 'findMatches(metadata:' in idx and 'recordPage(' in idx and 'markFailure(' in idx
+          assert 'Unsupported availability index schema, not deleting user data' in idx
+          assert 'getMovies' not in idx and 'getServers' not in idx and 'getVideo' not in idx
+          assert 'startAvailabilityMaintenance' in vm
+          assert 'if (availabilityIndex != null && UserPreferences.currentProvider !is IptvProvider)' in vm
+          assert 'if (indexedGlobalEnabled)' in vm
+          assert 'private suspend fun searchIndexedGlobal' in vm
+          assert 'private suspend fun loadMoreIndexedGlobal' in vm
+          assert 'private fun refreshIndexedWall' in vm
+          assert 'index.findMatches(indexedMetadata)' in vm
+          assert 'availabilityIndex?.' not in tv
+          assert 'private fun openUnifiedTypeMenu()' in tv
+          assert 'arrayOf("Tutti", "Film", "Serie", "Cartoni")' in tv
+          assert 'addSelectorToRow(firstRow, typeSelector)' not in tv
+          assert 'quickFilm' not in tv and 'quickSeries' not in tv
+          assert 'listOf(all, sort, arrow)' in tv
+          assert 'if (searchViewModel?.reorderVisibleResults(selectedSort) != true)' in tv
+          assert 'private var selectedSort: AdvancedSearchFilters.SortFilter = AdvancedSearchFilters.SortFilter.POPULARITY' in tv
+          assert 'fun normalizeTitle(raw: String)' in pol
+          assert 'fun matches(source: Identity, metadata: Identity)' in pol
+          print('[LAB175_SOURCE=PASS] independent index, typed source match, UI focus, no duplicate TV type')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab175AvailabilityPolicyTest' \
+            --tests '*Lab175ProviderIntegrationFixtureTest' \
+            --tests '*Lab174FilteredSourcePolicyTest' \
+            --tests '*Lab173TvCombinedFilterPolicyTest' \
+            --tests '*Lab172NativeYearPolicyTest' \
+            --tests '*Lab171NativeGenrePolicyTest' \
+            --tests '*Lab170NativePagingPolicyTest' \
+            --tests '*Lab168FastResultsPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*Lab156UnifiedSortTest' \
+            --tests '*Lab157FocusPolicyTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' \
+            --stacktrace
+          echo '[LAB175_TV_INDEX_TESTS=PASS] source-backed catalogue, provider identity, filter isolation'
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
