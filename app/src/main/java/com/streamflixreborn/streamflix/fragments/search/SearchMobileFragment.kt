@@ -537,7 +537,11 @@ class SearchMobileFragment : Fragment() {
             actorName = viewModel.selectedActorName,
             directorId = viewModel.selectedDirectorId,
             directorName = viewModel.selectedDirectorName,
-            genres = selectedGenres.toSet(),
+            // Single-genre selection must not silently inherit a previous
+            // multi-genre selection kept in memory.
+            genres = if (baseFilters.genre ==
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter.ALL)
+                selectedGenres.toSet() else emptySet(),
         )
         savePersistedFilters()
 

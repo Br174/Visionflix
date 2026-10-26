@@ -1,0 +1,10 @@
+MOTORLAB VISIONFLIX LAB172 CHECKPOINT
+CORE_RELEASE=2026.10.22-r38
+BASE_VERIFIED_LAB171=b19d4dfd9c76fcd8fc16f77c591f6344ad760b15
+BRANCH=lab/visionflix-lab172-streamflix-fast-years-20261026
+USER_APPROVAL=Implement cleanest fastest direct Streamflix genre+year approach. Zero per-poster tests inside the app; GitHub code tests permitted.
+CAUSAL_EVIDENCE=CB01 cleanTitle removes "(YEAR)" but native category/search cards never copied it to Movie.released/TvShow.released. A genre-only query succeeds, adding years rejects released=null.
+FIX=Preserve printed native year in existing CB01 card responses (three parsers); one local inclusive year interval check, no extra remote requests. Prevent stale multi-genre selection on Mobile overriding selected single genre. Keep native source pages and original TV UI.
+LIMITATION=Unprovided year cannot be called verified; this LAB does not invent a date or launch per-item remote discovery.
+PROTECTED=LAB166..LAB171, main/MADRE/production, player, people photo UI, Android package/signature, no paid services.
+STATUS=CI_PENDING

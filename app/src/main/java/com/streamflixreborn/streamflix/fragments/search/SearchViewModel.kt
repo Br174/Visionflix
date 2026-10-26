@@ -11,6 +11,7 @@ import com.streamflixreborn.streamflix.models.Genre
 import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
+import com.streamflixreborn.streamflix.providers.Lab172NativeYearPolicy
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
 import com.streamflixreborn.streamflix.providers.EndpointManagedProvider
@@ -525,8 +526,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 is TvShow -> item.released?.format("yyyy-MM-dd")
                 else -> null
             }
-            // TMDb has already verified the filter; a provider's localized year can differ.
-            if (!trustMetadata && !matchesYearFilter(date, filters)) return@filter false
+            // LAB172: use native year metadata or the year already printed on
+            // the card title. Do not start remote per-title verification.
+            val nativeDate = date ?: Lab172NativeYearPolicy.fromTitle(
+                when (item) {
+                    is Movie -> item.title
+                    is TvShow -> item.title
+                    else -> ""
+                }
+            )
+            if (!trustMetadata && !matchesYearFilter(nativeDate, filters)) return@filter false
 
             if (filters.effectiveGenres.isNotEmpty() && !trustMetadata) {
                 val genres = when (item) {
@@ -1038,17 +1047,12 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         date: String?,
         filters: AdvancedSearchFilters,
     ): Boolean {
-        val selectedYear = filters.year
-        val fromYear = filters.dateFrom?.take(4)?.toIntOrNull()
-        val toYear = filters.dateTo?.take(4)?.toIntOrNull()
-        val hasYearFilter = selectedYear != null || fromYear != null || toYear != null
-
-        if (!hasYearFilter) return true
-        val itemYear = date?.take(4)?.toIntOrNull() ?: return false
-
-        return (selectedYear == null || itemYear == selectedYear) &&
-            (fromYear == null || itemYear >= fromYear) &&
-            (toYear == null || itemYear <= toYear)
+        return Lab172NativeYearPolicy.matchesRange(
+            date,
+            filters.year,
+            filters.dateFrom?.take(4)?.toIntOrNull(),
+            filters.dateTo?.take(4)?.toIntOrNull()
+        )
     }
 
     private fun buildQueryVariants(rawQuery: String): List<String> {

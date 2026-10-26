@@ -198,6 +198,7 @@ object CB01Provider : EndpointManagedProvider {
         return Movie(
             id = href,
             title = title,
+            released = Lab172NativeYearPolicy.fromTitle(rawTitle),
             poster = poster,
             quality = quality,
         )
@@ -215,6 +216,7 @@ object CB01Provider : EndpointManagedProvider {
         return TvShow(
             id = href,
             title = title,
+            released = Lab172NativeYearPolicy.fromTitle(rawTitle),
             poster = poster,
             quality = quality,
         )
@@ -232,6 +234,7 @@ object CB01Provider : EndpointManagedProvider {
         return Movie(
             id = href,
             title = title,
+            released = Lab172NativeYearPolicy.fromTitle(rawTitle),
             poster = poster,
             quality = quality,
         )

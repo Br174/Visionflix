@@ -699,6 +699,53 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB171_TESTS=PASS] Native Streamflix genre path and all previous regressions'
+      - name: LAB172 Streamflix-fast native year metadata and combo filters
+        if: github.ref == 'refs/heads/lab/visionflix-lab172-streamflix-fast-years-20261026'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix')
+          vm=(root/'fragments/search/SearchViewModel.kt').read_text()
+          cb=(root/'providers/CB01Provider.kt').read_text()
+          mobile=(root/'fragments/search/SearchMobileFragment.kt').read_text()
+          tv=(root/'fragments/search/SearchTvFragment.kt').read_text()
+          layout=Path('app/src/main/res/layout/fragment_search_mobile.xml').read_text()
+          assert cb.count('released = Lab172NativeYearPolicy.fromTitle(rawTitle)') == 3
+          assert 'Lab172NativeYearPolicy.matchesRange(' in vm
+          assert 'val nativeDate = date ?: Lab172NativeYearPolicy.fromTitle(' in vm
+          assert 'provider.getGenre(id, requestedPage).shows' in vm
+          assert 'nativeProviderPage(provider, nextPage, advancedFilters, query)' in vm
+          assert 'nativeProviderPage(engine, nextPage, advancedFilters, query, metadata)' in vm
+          assert 'selectedGenres.toSet() else emptySet()' in mobile
+          assert 'btn_filter_toggle' in layout and 'scroll_advanced_filters' in layout
+          assert 'fun searchActors(' in vm and 'fun searchDirectors(' in vm
+          assert 'private fun selectActor(' in tv and 'private fun selectDirector(' in tv
+          assert 'GlobalCatalogMerger.merge' in vm
+          print('[LAB172_SOURCE=PASS] native year metadata, inclusive years, Streamflix pages, no remote per-title checks')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab172NativeYearPolicyTest' \
+            --tests '*Lab171NativeGenrePolicyTest' \
+            --tests '*Lab170NativePagingPolicyTest' \
+            --tests '*Lab168FastResultsPolicyTest' \
+            --tests '*Lab165FastDiscoveryPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*DirectorCreditsTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
+          echo '[LAB172_TESTS=PASS] GitHub-only filter regressions; no new runtime tests'
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
