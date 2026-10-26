@@ -794,6 +794,53 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB173_TV_FILTER_TESTS=PASS]'
+      - name: LAB174 TV native filtered page and missing metadata regression checks
+        if: github.ref == 'refs/heads/lab/visionflix-lab174-tv-native-filter-recovery-20261026'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          vm=(root/'SearchViewModel.kt').read_text()
+          tv=(root/'SearchTvFragment.kt').read_text()
+          mobile=(root/'SearchMobileFragment.kt').read_text()
+          assert 'Lab174FilteredSourcePolicy.requiresStrictMetadata(filters)' in vm
+          assert 'val missingGenre =' in vm and 'val missingYear =' in vm
+          assert 'if (!strictMetadata && local.isNotEmpty()) return local' in vm
+          assert 'metadataVerified' in vm and 'if (strictMetadata) metadataVerified' in vm
+          assert 'Lab174FilteredSourcePolicy.cleanProviderTitle' in vm
+          assert 'provider.getGenre(id, requestedPage).shows' in vm
+          assert 'nativeProviderPage(provider, nextPage, advancedFilters, query)' in vm
+          assert 'nativeProviderPage(engine, nextPage, advancedFilters, query, metadata)' in vm
+          assert 'Nessun provider ha potuto verificare i filtri' in vm
+          assert 'if (text.isBlank()) nativeGenrePage' in vm
+          assert 'Lab173TvCombinedFilterPolicy.effectiveMultiGenres' in tv
+          assert 'private fun selectActor(' in tv and 'private fun selectDirector(' in tv
+          assert 'btnFilterToggle' in mobile
+          print('[LAB174_SOURCE=PASS] native pages, missing genre/year, strict country, visible error')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab174FilteredSourcePolicyTest' \
+            --tests '*Lab173TvCombinedFilterPolicyTest' \
+            --tests '*Lab172NativeYearPolicyTest' \
+            --tests '*Lab171NativeGenrePolicyTest' \
+            --tests '*Lab170NativePagingPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*DirectorCreditsTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
+          echo '[LAB174_TESTS=PASS] TV single/combo source filters and strict metadata'
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}

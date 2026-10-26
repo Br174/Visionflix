@@ -447,7 +447,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     ): List<AppAdapter.Item> {
         // LAB170: exactly one native Streamflix source page, for EVERY page.
         // Do not search individually for dozens of TMDb candidate titles.
-        val nativeGenre = if (providedPage == null) nativeGenrePage(provider, filters, page) else null
+        val nativeGenre = if (providedPage == null && query.isBlank())
+            nativeGenrePage(provider, filters, page) else null
         val raw = providedPage ?: nativeGenre
             ?: if (query.isBlank()) browseProvider(provider, page, filters.type)
             else searchProviderWithRecovery(provider, query, page)
@@ -455,27 +456,63 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             genre = AdvancedSearchFilters.GenreFilter.ALL,
             genres = emptySet(),
         ) else filters
-        val requiresMetadata =
-            filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
-            filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
-            filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-            !filters.actorId.isNullOrBlank() || !filters.directorId.isNullOrBlank()
-        if (!requiresMetadata) return applyProviderFilters(raw, effectiveFilters)
-        if (!tmdbConfigured()) throw IllegalStateException(
-            "Questo filtro richiede una chiave TMDb gratuita valida nelle Impostazioni."
-        )
+        // A thin provider poster is not proof of a non-matching genre/year.
+        // Local facts first, one batched TMDb catalogue lookup ONLY when a
+        // requested filter cannot be evaluated from available source fields.
         if (raw.isEmpty()) return emptyList()
+        val local = applyProviderFilters(raw, effectiveFilters)
+        val hasYearFilter = filters.year != null ||
+            !filters.dateFrom.isNullOrBlank() || !filters.dateTo.isNullOrBlank()
+        val missingGenre = effectiveFilters.effectiveGenres.isNotEmpty() && raw.any { item ->
+            val entries = when (item) {
+                is Movie -> item.genres
+                is TvShow -> item.genres
+                else -> emptyList()
+            }
+            entries.isEmpty()
+        }
+        val missingYear = hasYearFilter && raw.any { item ->
+            val released = when (item) {
+                is Movie -> item.released
+                is TvShow -> item.released
+                else -> null
+            }
+            val title = when (item) {
+                is Movie -> item.title
+                is TvShow -> item.title
+                else -> ""
+            }
+            released == null && Lab172NativeYearPolicy.fromTitle(title) == null
+        }
+        val strictMetadata = Lab174FilteredSourcePolicy.requiresStrictMetadata(filters)
+        if (!strictMetadata && !missingGenre && !missingYear) return local
+        if (!tmdbConfigured()) {
+            if (!strictMetadata && local.isNotEmpty()) return local
+            throw IllegalStateException(
+                "Il provider non fornisce tutti i metadati per i filtri selezionati. " +
+                "Per verificarli serve una chiave TMDb gratuita nelle Impostazioni, " +
+                "oppure una categoria nativa del provider."
+            )
+        }
         val approved = sharedMetadata ?: searchTmdbAdvanced(
             TmdbProvider(provider.language),
             query, filters, page,
-            candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(filters, query)
+            candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(filters, query) &&
+                !missingGenre && !missingYear
         )
-        if (approved.isEmpty()) return emptyList()
+        if (approved.isEmpty()) {
+            if (!strictMetadata && local.isNotEmpty()) return local
+            return emptyList()
+        }
         val keys = approved.mapNotNull(::filterMatchKey).toSet()
-        return applyProviderFilters(raw, effectiveFilters, trustMetadata = true)
+        val metadataVerified = applyProviderFilters(raw, effectiveFilters, trustMetadata = true)
             .filter { item -> filterMatchKey(item)?.let { key ->
                 Lab164SearchMatchPolicy.matchesMetadata(key, keys)
             } == true }
+        // Strict country/language/platform must never be inferred locally.
+        // For genre/year, locally proven matches remain visible immediately.
+        return if (strictMetadata) metadataVerified
+            else (local + metadataVerified).distinctBy { it.searchIdentityKey() }
     }
 
     private fun filterMatchKey(item: AppAdapter.Item): String? {
@@ -498,7 +535,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     }
 
     private fun normalizeFilterTitle(value: String): String =
-        java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+        java.text.Normalizer.normalize(
+            Lab174FilteredSourcePolicy.cleanProviderTitle(value),
+            java.text.Normalizer.Form.NFD,
+        )
             .replace(Regex("\\p{M}+"), "")
             .lowercase(Locale.ROOT)
             .replace(Regex("[^a-z0-9]+"), "")
@@ -591,7 +631,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val direct = searchTmdbAdvanced(provider, text, filters, pageIndex)
             return direct to direct
         }
-        val nativeGenre = nativeGenrePage(provider, filters, pageIndex)
+        val nativeGenre = if (text.isBlank()) nativeGenrePage(provider, filters, pageIndex) else null
         val raw = nativeGenre ?: if (text.isBlank()) browseProvider(provider, pageIndex, filters.type)
             else searchProviderWithRecovery(provider, text, pageIndex)
         val safeFilters = if (nativeGenre != null) filters.copy(
@@ -1290,6 +1330,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 }
         }
         if (generation == activeGlobalGeneration) {
+            val failures = mutableResults.mapNotNull {
+                (it.state as? ProviderResult.State.Error)?.error
+            }
+            if (failures.size == targets.size && targets.isNotEmpty()) {
+                _state.emit(State.FailedSearching(IllegalStateException(
+                    "Nessun provider ha potuto verificare i filtri scelti. " +
+                    "Controlla provider e metadati nelle Impostazioni.", failures.first()
+                )))
+                return@launch
+            }
             if (metadataLookupError != null &&
                 (_state.value as? State.SuccessGlobalSearching)?.catalog?.posters?.isEmpty() == true) {
                 _state.emit(State.FailedSearching(IllegalStateException(

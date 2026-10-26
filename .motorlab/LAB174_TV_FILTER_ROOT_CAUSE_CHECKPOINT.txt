@@ -1,0 +1,10 @@
+MOTORLAB VISIONFLIX LAB174 TV FILTER REPAIR
+CORE=2026.10.22-r38
+BASE_SHA=8d39c99fbbb822e7449e0bb2bafce871e44310da
+BRANCH=lab/visionflix-lab174-tv-native-filter-recovery-20261026
+APPROVAL=explicit on 2026-10-26 after pre-change report LAB174
+DIAGNOSIS=LAB173 native genres unsupported by some sources; source cards with missing genre or year are wrongly treated as negative matches; global all-provider metadata failures displayed as blank wall. Source names include [HD] and (YYYY), harming external title matching. Native genre routes override typed query.
+PLAN=Preserve native Streamflix source page and playback identity; use source-confirmed filters immediately, fallback to one TMDb catalogue lookup per page for metadata-unknown cards, never per-title; strict country requires verified TMDb production country; visible failure if filters cannot be verified; typed searches retain text.
+CHANGED=SearchViewModel, lightweight pure filter policy, GitHub-only regression test, CI gate.
+PROTECTED=TV UI, Mobile UI, player, Android ID/signing, main/MADRE/production, LAB169..LAB173, no paid services.
+STATUS=CI_PENDING; Android TV real-provider validation required before declaring functional success.
