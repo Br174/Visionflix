@@ -551,6 +551,55 @@ jobs:
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB168_TESTS=PASS] source first, photos, filtering, catalog merge and player'
 
+      - name: LAB169 Streamflix native paging and regression guard
+        if: github.ref == 'refs/heads/lab/visionflix-lab169-streamflix-native-pagination-20261026'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          vm = Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchViewModel.kt').read_text()
+          tv = Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchTvFragment.kt').read_text()
+          mobile = Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search/SearchMobileFragment.kt').read_text()
+          assert 'fun loadMore()' in vm and 'val nextPage = page + 1' in vm
+          assert 'while (attempts <' not in vm
+          assert 'browseFilteredCatalog' not in vm
+          assert 'repeat(2) {' not in vm[vm.index('fun searchGlobal('):vm.index('fun loadMoreGlobal(')]
+          assert 'completedTargets % 3' not in vm
+          assert 'Lab154SearchPacing.providerPages(page)' not in vm
+          assert 'if (candidateSelection) page..page' in vm
+          assert 'fun searchActors(' in vm and 'fun searchDirectors(' in vm
+          assert 'private fun selectActor(' in tv and 'private fun selectDirector(' in tv
+          assert 'onPeopleClickListener' in mobile and 'directorSuggestionsAdapter' in mobile
+          assert 'GlobalCatalogMerger.merge' in vm
+          assert 'searchProviderWithRecovery' in vm
+          assert 'ParentalControlUtils.filterItems' in vm
+          assert 'fun loadMoreGlobal()' in vm
+          print('[LAB169_REPLACEMENT=PASS] one-page native search, no hidden legacy fan-out, photos/filter/player protections')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab168FastResultsPolicyTest' \
+            --tests '*Lab165FastDiscoveryPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab164TmdbCredentialRoutingTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*Lab153NavigationTest' \
+            --tests '*Lab155SearchSafetyTest' \
+            --tests '*Lab156UnifiedSortTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' \
+            --tests '*DirectorCreditsTest' --stacktrace
+          echo '[LAB169_TESTS=PASS] Streamflix native pagination, filters and protected features'
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}

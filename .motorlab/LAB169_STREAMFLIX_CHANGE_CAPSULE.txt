@@ -1,0 +1,10 @@
+MotorLab LAB169 Streamflix native-page replacement
+PROJECT=Verlezza Vision
+BASE_VERIFIED=fc2ec6f677aba680f34ec0dad8649f22ce1b4c36
+BRANCH=lab/visionflix-lab169-streamflix-native-pagination-20261026
+RELEASE=2026.10.22-r38
+APPROVED_SCOPE=user 2026-10-26 explicit Streamflix method replacement
+OLD=SearchViewModel.loadMore multi-attempt loop, browseFilteredCatalog multi-page, metadata candidate multi-page, global auto 2-page loop, 3-provider result publication barrier, global next-page all-provider UI barrier
+NEW=Single provider page per request, no implicit retry loops, single-page metadata candidate fetch, one provider visible at a time, load-more on demand
+PRESERVE=all advanced filters, people/photo selection, provider source identity and endpoint, GlobalCatalogMerger dedupe, Glide, player, signing, Android ID, LAB166/LAB167/LAB168, main/MADRE/production
+STATUS=LAB_PROPOSED_CHECKPOINT

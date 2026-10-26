@@ -141,6 +141,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         private set
 
     private var page = 1
+    private var localLoadingMore = false
     private var usingWebFallback = false
     private var globalTargets: List<GlobalSearchTarget> = emptyList()
     private var globalPage = 1
@@ -337,6 +338,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         targetPage: Int,
     ) {
         _state.emit(State.Searching)
+        localLoadingMore = false
         try {
             val provider = UserPreferences.currentProvider
                 ?: throw IllegalStateException("Seleziona prima un provider")
@@ -395,8 +397,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                     "Configurala nelle Impostazioni, non usare la chiave 'dummy'."
             )
         }
-        // LAB168: publish correct source results without waiting for TMDb
-        // discovery or dozens of per-title availability checks.
+        // LAB169: keep the original Streamflix direct provider page as the
+        // only local pagination route. TMDb is only for filters that cannot
+        // be verified by the provider's own data.
         val immediateResults: List<AppAdapter.Item>? =
             if (Lab168FastResultsPolicy.canUseDirectProviderResults(filters)) {
                 if (query.isBlank()) browseProvider(provider, page, filters.type)
@@ -404,29 +407,17 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             } else null
         if (immediateResults != null) {
             val matched = applyProviderFilters(immediateResults, filters)
-            if (matched.isNotEmpty()) return@coroutineScope matched
-            // A sparse first page is not proof of absence: preserve metadata fallback.
+            if (matched.isNotEmpty() || page > 1) return@coroutineScope matched
+            // Only the first sparse page may consult external metadata.
+            // Later pages NEVER cascade into additional TMDb/title requests.
         }
         val lightweightYearQuery = Lab164SearchMatchPolicy.providerFirstYearQuery(query, filters)
         val metadataEnabled = needsTmdbMetadata && hasMetadata && !lightweightYearQuery
 
-        suspend fun browseFilteredCatalog(): List<AppAdapter.Item> {
-            if (page > 1) return Lab154SearchPacing.providerPages(page)
-                .flatMap { browseProvider(provider, it) }
-                .distinctBy { it.searchIdentityKey() }
-            val initial = Lab164SearchMatchPolicy.catalogPages(1)
-                .flatMap { browseProvider(provider, it) }
-                .distinctBy { it.searchIdentityKey() }
-            if (applyProviderFilters(initial, filters).isNotEmpty()) return initial
-            val extra = Lab164SearchMatchPolicy.catalogPages(2)
-                .flatMap { browseProvider(provider, it) }
-            return (initial + extra).distinctBy { it.searchIdentityKey() }
-        }
-
         val directResults = when {
             query.isNotBlank() -> immediateResults ?: searchProviderWithRecovery(provider, query, page)
             metadataEnabled -> emptyList()
-            else -> browseFilteredCatalog()
+            else -> immediateResults ?: browseProvider(provider, page, filters.type)
         }
         if (!metadataEnabled) {
             val local = applyProviderFilters(directResults, filters)
@@ -622,52 +613,47 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
     }
 
+    /** LAB169: Streamflix one requested page -> one append. No hidden page skips. */
     fun loadMore() = viewModelScope.launch(Dispatchers.IO) {
-        val currentState = _state.value
-        if (currentState is State.SuccessSearching) {
-            if (usingWebFallback) {
-                _state.emit(State.SuccessSearching(currentState.results, hasMore = false))
-                return@launch
+        if (localLoadingMore) return@launch
+        val currentState = _state.value as? State.SuccessSearching ?: return@launch
+        if (!currentState.hasMore) return@launch
+        if (usingWebFallback) {
+            _state.emit(currentState.copy(hasMore = false))
+            return@launch
+        }
+        localLoadingMore = true
+        _state.emit(State.SearchingMore)
+        try {
+            val provider = UserPreferences.currentProvider
+                ?: throw IllegalStateException("Seleziona prima un provider")
+            val nextPage = page + 1
+            val results = when {
+                provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank()) ->
+                    searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
+                advancedFilters.isActive ->
+                    searchProviderAdvanced(provider, query, advancedFilters, nextPage)
+                query.isBlank() -> browseProvider(provider, nextPage)
+                else -> searchProviderWithRecovery(provider, query, nextPage)
             }
-
-            _state.emit(State.SearchingMore)
-            try {
-                val provider = UserPreferences.currentProvider!!
-                var nextPage = page
-                val existingKeys = currentState.results
-                    .asSequence()
-                    .map { it.searchIdentityKey() }
-                    .toHashSet()
-                var newUniqueResults: List<AppAdapter.Item> = emptyList()
-                var attempts = 0
-                // A partially filtered page may be empty while later provider pages contain matches.
-                // Bounded skips prevent infinite retries and preserve provider rate limits.
-                while (attempts < (if (advancedFilters.isActive) 4 else 3) && newUniqueResults.isEmpty()) {
-                    nextPage++
-                    attempts++
-                    val results = when {
-                        provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank()) ->
-                            searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
-                        advancedFilters.isActive -> searchProviderAdvanced(provider, query, advancedFilters, nextPage)
-                        query.isBlank() -> browseProvider(provider, nextPage)
-                        else -> searchProviderWithRecovery(provider, query, nextPage)
-                    }
-                    if (results.isEmpty() && !advancedFilters.isActive && query.isBlank()) break
-                    newUniqueResults = ParentalControlUtils.filterItems(results)
-                        .filterNot { it.searchIdentityKey() in existingKeys }
-                }
-                page = nextPage
-                _state.emit(
-                    State.SuccessSearching(
-                        results = currentState.results + newUniqueResults,
-                        hasMore = Lab164SearchMatchPolicy.canLoadLocalMore(
-                            newUniqueResults.isNotEmpty(), advancedFilters.isActive, nextPage),
-                    )
-                )
-            } catch (e: Exception) {
-                Log.e("SearchViewModel", "loadMore: ", e)
-                _state.emit(State.FailedSearching(e))
-            }
+            val known = currentState.results.asSequence()
+                .map { it.searchIdentityKey() }.toHashSet()
+            val newUniqueResults = ParentalControlUtils.filterItems(results)
+                .filterNot { it.searchIdentityKey() in known }
+                .distinctBy { it.searchIdentityKey() }
+            page = nextPage
+            _state.emit(State.SuccessSearching(
+                results = currentState.results + newUniqueResults,
+                hasMore = newUniqueResults.isNotEmpty(),
+            ))
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            Log.e("SearchViewModel", "LAB169 loadMore", error)
+            // Retain previous posters when the next page fails.
+            _state.emit(currentState.copy(hasMore = false))
+        } finally {
+            localLoadingMore = false
         }
     }
 
@@ -769,8 +755,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
 
         if (query.isNotBlank()) {
-            val queryVariants = buildQueryVariants(query)
-            val pagesPerVariant = if (queryVariants.size <= 2) 3 else 2
+            val queryVariants = if (candidateSelection) buildQueryVariants(query).take(2)
+                else buildQueryVariants(query)
+            val pagesPerVariant = if (candidateSelection) 1
+                else if (queryVariants.size <= 2) 3 else 2
             val firstSearchPage = ((page - 1) * pagesPerVariant) + 1
             val searchDeferred = queryVariants.flatMap { variant ->
                 (firstSearchPage until firstSearchPage + pagesPerVariant).map { tmdbPage ->
@@ -947,7 +935,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.year?.let { params["primary_release_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.lte"] = it }
-            val pages = Lab154SearchPacing.metadataPages(page)
+            val pages = if (candidateSelection) page..page
+                else Lab154SearchPacing.metadataPages(page)
             pages.map { discoverPage -> async {
                 TMDb3.Discover.movie(params + ("page" to discoverPage.toString())).results
             } }.awaitAll().flatten()
@@ -976,7 +965,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.year?.let { params["first_air_date_year"] = it.toString() }
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["first_air_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["first_air_date.lte"] = it }
-            val pages = Lab154SearchPacing.metadataPages(page)
+            val pages = if (candidateSelection) page..page
+                else Lab154SearchPacing.metadataPages(page)
             pages.map { discoverPage -> async {
                 TMDb3.Discover.tv(params + ("page" to discoverPage.toString())).results
             } }.awaitAll().flatten()
@@ -1277,8 +1267,15 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                     completedTargets++
                                     // Batch UI updates for a fluid poster wall instead of rebuilding
                                     // RecyclerView on every individual provider completion.
-                                    if (completedTargets == 1 || completedTargets % 3 == 0 || completedTargets == targets.size) {
-                                        _state.emit(globalWallState(mutableResults.toList(), hasMore = completedTargets == targets.size))
+                                    // Streamflix publishes results per provider instead of
+                                    // waiting for three or the entire provider pool.
+                                    val nonempty = (result.state as? ProviderResult.State.Success)
+                                        ?.results?.isNotEmpty() == true
+                                    if (nonempty || completedTargets == targets.size) {
+                                        _state.emit(globalWallState(
+                                            mutableResults.toList(),
+                                            hasMore = completedTargets == targets.size,
+                                        ))
                                     }
                                 }
                             }
@@ -1299,14 +1296,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 )))
                 return@launch
             }
-            // Continue filling the catalog without a remote-control scroll event.
-            // Two more page windows, bounded to avoid monopolizing provider quotas.
-            repeat(2) {
-                kotlinx.coroutines.delay(450)
-                if (generation != activeGlobalGeneration ||
-                    (_state.value as? State.SuccessGlobalSearching)?.hasMore != true) return@repeat
-                loadMoreGlobal().join()
-            }
+            // LAB169: no eager page-2/page-3 fan-out. Streamflix requests
+            // another page only from the on-demand poster-wall callback.
         }
     }
 
@@ -1344,6 +1335,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val gate = Semaphore(3)
             val mergeMutex = Mutex()
             var addedCount = 0
+            val generation = activeGlobalGeneration
             coroutineScope {
                 currentTargets.withIndex().groupBy { it.value.provider.name }.values.forEach { group ->
                     launch {
@@ -1385,6 +1377,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                     }
                                 })
                                 mergeMutex.withLock {
+                                    if (generation != activeGlobalGeneration) return@withLock
                                     val prior = (updated[index].state as? ProviderResult.State.Success)?.results.orEmpty()
                                     val known = prior.map { it.searchIdentityKey() }.toHashSet()
                                     val fresh = tagged.filter { it.searchIdentityKey() !in known }
@@ -1392,6 +1385,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                                     updated[index] = ProviderResult(
                                         engine, ProviderResult.State.Success(prior + fresh), target.displayName
                                     )
+                                    // Append confirmed items from every provider as they
+                                    // arrive, without a whole-page barrier.
+                                    if (fresh.isNotEmpty()) {
+                                        _state.emit(globalWallState(updated.toList(), hasMore = true))
+                                    }
                                 }
                             }
                         } finally {
@@ -1402,11 +1400,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 }
             }
             globalPage = nextPage
-            // If all sources produced nothing, stop automatic paging to avoid endless calls.
+            // A genuinely empty page stops pagination; no legacy retries.
             globalEmptyPages = if (addedCount == 0) globalEmptyPages + 1 else 0
-            _state.emit(globalWallState(updated,
-                hasMore = Lab164SearchMatchPolicy.canLoadGlobalMore(
-                    nextPage, globalEmptyPages, advancedFilters.isActive)))
+            if (generation == activeGlobalGeneration) {
+                _state.emit(globalWallState(updated, hasMore = addedCount > 0))
+            }
         } catch (e: Exception) {
             Log.e("SearchViewModel", "loadMoreGlobal", e)
             _state.emit(existing.copy(hasMore = false))
