@@ -11,3 +11,10 @@ TV_UI=single pinned dropdown content type (Tutti/Film/Serie/Cartoni), no duplica
 SAFETY=main, MADRE, production, older LABs, signatures, Android ID, existing DB, provider extraction and playback protected. No paid services.
 ACCEPTANCE=unit+source regression checks before GitHub CI signed TV/Mobile and immutable ZIP. Real-TV/provider coverage and actual stream availability remain unverified until physical testing. Index incomplete on first run.
 STATUS=CI_PENDING
+
+FULMINE_2026_10_26=read-only validation detected fairness starvation when due=0 and unchanged alphabetical first-18; source endpoint was blank even when manual active.
+LAB175_PATCH=prioritize StreamingCommunity/CB01 on first pass, let unseen sources enter before re-fetch of already seen sources, successful pages have 5-minute cooldown, preserve resolved endpoint in independent cache, exclude cache records older than 30 days.
+NEW_REGRESSION=Lab175IndexRotationTest, existing PolicyTest includes prioritization, CI source assertions.
+KNOWN_LIMIT=provider listing with unknown year still not classified confidently; index partial on early searches; no direct verification of actual playback; manual TV test still needed.
+DO_NOT_PROMOTE=until TV device result and source coverage accepted.
+STATUS=FULMINE_CI_PENDING

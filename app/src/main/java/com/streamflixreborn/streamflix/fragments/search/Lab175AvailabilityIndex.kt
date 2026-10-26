@@ -82,12 +82,22 @@ internal class Lab175AvailabilityIndex(context: Context) :
         sources: List<SourceKey>, now: Long, limit: Int,
     ): List<Pair<SourceKey, Int>> {
         val progress = sources.associateWith { progress(it) }
-        return Lab175AvailabilityPolicy.chooseNext(
-            progress.map { (s, p) -> s.key to p.due }, now, limit,
-        ).mapNotNull { key ->
-            val source = sources.firstOrNull { it.key == key } ?: return@mapNotNull null
-            source to (progress[source]?.nextPage ?: 1)
-        }
+        // Initial priority goes to the user's principal Italian movie sources.
+        // Afterwards select unseen providers before fetching a second page
+        // from already-visited providers, preventing permanent starvation.
+        return progress.entries.asSequence()
+            .filter { it.value.due <= now }
+            .sortedWith(compareBy<Map.Entry<SourceKey, Progress>> { entry ->
+                when {
+                    entry.value.nextPage == 1 &&
+                        Lab175AvailabilityPolicy.prioritySource(entry.key.name) -> 0
+                    entry.value.nextPage == 1 -> 1
+                    else -> 2
+                }
+            }.thenBy { it.value.due }.thenBy { it.key.key })
+            .take(limit.coerceAtLeast(0))
+            .map { it.key to it.value.nextPage }
+            .toList()
     }
 
     /**
@@ -141,7 +151,9 @@ internal class Lab175AvailabilityIndex(context: Context) :
             }
             val nextPage = if (cards.isEmpty()) requestedPage else requestedPage + 1
             // An empty page might be a temporary provider failure: retry.
-            val delay = if (cards.isEmpty()) 30L * 60 * 1000 else 0L
+            // A successful page yields its slot to the providers not yet
+            // indexed. Revisit later, never on each search/sort click.
+            val delay = if (cards.isEmpty()) 30L * 60 * 1000 else 5L * 60 * 1000
             db.insertWithOnConflict("progress", null, ContentValues().apply {
                 put("provider", source.name)
                 put("endpoint", source.endpoint)
@@ -183,12 +195,17 @@ internal class Lab175AvailabilityIndex(context: Context) :
         val indexed = mutableListOf<Record>()
         keys.chunked(250).forEach { group ->
             val args = group.toTypedArray()
-            val where = "normalized IN (" + List(group.size) { "?" }.joinToString(",") + ")"
+            // Do not claim ancient, possibly removed provider listings as
+            // currently available. The source is kept for non-destructive
+            // re-indexing, but cannot authorize new displayed posters.
+            val freshAfter = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+            val where = "normalized IN (" + List(group.size) { "?" }.joinToString(",") +
+                ") AND seen_at >= ?"
             readableDatabase.query(
                 "availability",
                 arrayOf("provider", "endpoint", "source_id", "kind", "title",
                     "year", "poster", "rating"),
-                where, args, null, null, null,
+                where, args + freshAfter.toString(), null, null, null,
             ).use { cursor ->
                 while (cursor.moveToNext()) {
                     indexed.add(Record(

@@ -18,6 +18,11 @@ internal object Lab175AvailabilityPolicy {
     ).replace(Regex("""\p{M}+"""), "")
         .lowercase(Locale.ROOT).replace(Regex("""[^a-z0-9]+"""), "")
 
+    // Earlier pages from principal TV sources are useful first; all other
+    // sources still receive a turn before repeated pages can monopolise work.
+    fun prioritySource(name: String): Boolean =
+        name in setOf("StreamingCommunity", "CB01", "Adaptive Cinema")
+
     fun candidate(kind: String, title: String, year: Int?): Identity =
         Identity(kind, normalizeTitle(title), year)
 

@@ -173,12 +173,17 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
      */
     fun startAvailabilityMaintenance(language: String) {
         val index = availabilityIndex ?: return
-        if (availabilityMaintenance != null) return
+        if (availabilityMaintenance?.isActive == true) return
         availabilityMaintenance = viewModelScope.launch(Dispatchers.IO) {
             val providers = Provider.providers.keys.filter {
                 it.language == language && it !is IptvProvider && it !is TmdbProvider
             }.associateBy { it.name }
-            val keys = providers.keys.map { Lab175AvailabilityIndex.SourceKey(it) }
+            val keys = providers.map { (name, engine) ->
+                Lab175AvailabilityIndex.SourceKey(
+                    name,
+                    (engine as? EndpointManagedProvider)?.baseUrl.orEmpty(),
+                )
+            }
             // Fair cross-provider round robin, never a repeated full-site scan.
             val planned = index.chooseSources(keys, System.currentTimeMillis(), 18)
             val permits = Semaphore(2)

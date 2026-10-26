@@ -53,6 +53,12 @@ class Lab175AvailabilityPolicyTest {
             Lab175AvailabilityPolicy.onlyConfirmed(metadata, available))
     }
 
+    @Test fun favouriteSourcesArePrioritisedWithoutMakingAllOthersIneligible() {
+        assertTrue(Lab175AvailabilityPolicy.prioritySource("StreamingCommunity"))
+        assertTrue(Lab175AvailabilityPolicy.prioritySource("CB01"))
+        assertFalse(Lab175AvailabilityPolicy.prioritySource("Sflix"))
+    }
+
     @Test fun plannerIsBoundedAndHonoursCooldown() {
         assertEquals(listOf("B", "A"),
             Lab175AvailabilityPolicy.chooseNext(

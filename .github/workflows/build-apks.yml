@@ -866,6 +866,10 @@ jobs:
           assert 'CREATE TABLE availability' in idx and 'CREATE TABLE progress' in idx
           assert 'CREATE INDEX idx_availability_title' in idx
           assert 'findMatches(metadata:' in idx and 'recordPage(' in idx and 'markFailure(' in idx
+          assert 'Lab175AvailabilityPolicy.prioritySource(entry.key.name)' in idx
+          assert '5L * 60 * 1000' in idx and 'seen_at >= ?' in idx
+          assert '(engine as? EndpointManagedProvider)?.baseUrl.orEmpty()' in vm
+          assert 'availabilityMaintenance?.isActive == true' in vm
           assert 'Unsupported availability index schema, not deleting user data' in idx
           assert 'getMovies' not in idx and 'getServers' not in idx and 'getVideo' not in idx
           assert 'startAvailabilityMaintenance' in vm
@@ -889,6 +893,7 @@ jobs:
           PY
           ./gradlew :app:testDebugUnitTest \
             --tests '*Lab175AvailabilityPolicyTest' \
+            --tests '*Lab175IndexRotationTest' \
             --tests '*Lab175ProviderIntegrationFixtureTest' \
             --tests '*Lab174FilteredSourcePolicyTest' \
             --tests '*Lab173TvCombinedFilterPolicyTest' \
