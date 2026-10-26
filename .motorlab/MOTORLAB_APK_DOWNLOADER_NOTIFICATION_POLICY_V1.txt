@@ -1,0 +1,15 @@
+MOTORLAB VERLEZZA VISION - APK / DOWNLOADER NOTIFICATION POLICY V1
+STATUS=ACTIVE_PERSISTENT_PROJECT_REQUIREMENT
+USER_EXPLICIT_REQUEST=2026-10-27
+PROJECT=Verlezza Vision / Br174/Visionflix
+SCOPE=Current and future authorized TV APK builds, including LAB, with Mobile APK and ZIP links when available.
+MANDATORY_EVENT_1=After a new APK build FINISHES AND is verified (CI/tests, signing, versionCode, artifact URL), notify in Italian. Include LAB/version/build, GitHub release and direct TV APK URL, ZIP URL, Mobile URL if available, and whether Downloader publication is still pending. Do not prematurely call a successful build an uploaded/verified Downloader build.
+MANDATORY_EVENT_2=After an APK is demonstrably published to the fixed Downloader destination, send a separate Italian message explicitly stating 'APK caricata e disponibile su Downloader', including the SAME permanent Downloader code, versionCode, direct destination URL and the verification evidence. Do not assert Downloader readiness without testing the specific code or having authoritative recorded proof of its actual destination.
+PREFERRED_USER_CODE=6920196
+PREFERRED_USER_CODE_STATUS=PREVIOUSLY_SUPPLIED_NOT_INDEPENDENTLY_VERIFIED; do not claim active mapping without evidence.
+IMMUTABLE_RELEASE=Br174/Visionflix/releases/tag/visionflix-lab-ci-<successful_run>
+MUTABLE_FIXED_RELEASE=Br174/Visionflix/releases/tag/visionflix-lab-current
+NO_DUPLICATES=Do not repeat notifications for a previously reported project, versionCode and event (build complete or Downloader ready).
+CODE_POLICY=Never silently change the user's requested permanent code. If the code resolves to an old/unrelated destination or cannot be verified, report it as NOT VERIFIED and show the safe GitHub direct URL, never invent a substitute. If a new code is unavoidable, report the reason and require user agreement rather than assuming equivalence.
+PERSISTENCE=This repository policy complements ChatGPT memory and must be consulted in future MotorLab/Verlezza Vision release workflows and handoffs.
+SAFETY=No code/application/runtime changes. Main, MADRE, production, signing and package identity remain untouched. No paid services.
