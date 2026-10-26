@@ -1310,8 +1310,11 @@ class SearchTvFragment : Fragment() {
             type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
             italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
             genre = genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
-            genres = selectedGenres.toSet(),
-            year = yearSelector?.value,
+            genres = Lab173TvCombinedFilterPolicy.effectiveMultiGenres(
+                genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
+                selectedGenres,
+            ),
+            year = if (from != null || to != null) null else yearSelector?.value,
             dateFrom = from?.let { "%04d-01-01".format(it) },
             dateTo = to?.let { "%04d-12-31".format(it) },
             actorId = vm?.selectedActorId,
@@ -1334,6 +1337,14 @@ class SearchTvFragment : Fragment() {
         val query = etSearch.text?.toString().orEmpty().trim()
         hideKeyboard()
         val filters = currentFilters() ?: return true
+        if ((filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+                filters.italian != AdvancedSearchFilters.ItalianFilter.ALL) &&
+            !com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting.hasKey(
+                UserPreferences.tmdbApiKey, com.streamflixreborn.streamflix.BuildConfig.TMDB_API_KEY)) {
+            showSafeToast("Paese, piattaforma e lingua richiedono una chiave TMDb gratuita nelle Impostazioni")
+            return true
+        }
         savePersistedFiltersSafely()
 
         if (isGlobalSearchChecked) {
@@ -1378,7 +1389,10 @@ class SearchTvFragment : Fragment() {
                     sort = selectedSort,
                     platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
                     country = countrySelector?.value ?: AdvancedSearchFilters.CountryFilter.ALL,
-                    genres = selectedGenres.toSet(),
+                    genres = Lab173TvCombinedFilterPolicy.effectiveMultiGenres(
+                        genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
+                        selectedGenres,
+                    ),
                     actorId = searchViewModel?.selectedActorId,
                     actorName = actorEdit?.text?.toString().orEmpty().trim(),
                     directorId = searchViewModel?.selectedDirectorId,

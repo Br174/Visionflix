@@ -465,8 +465,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             "Questo filtro richiede una chiave TMDb gratuita valida nelle Impostazioni."
         )
         if (raw.isEmpty()) return emptyList()
-        val approved = sharedMetadata ?: searchTmdbAdvanced(TmdbProvider(provider.language),
-            query, filters, page, candidateSelection = true)
+        val approved = sharedMetadata ?: searchTmdbAdvanced(
+            TmdbProvider(provider.language),
+            query, filters, page,
+            candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(filters, query)
+        )
         if (approved.isEmpty()) return emptyList()
         val keys = approved.mapNotNull(::filterMatchKey).toSet()
         return applyProviderFilters(raw, effectiveFilters, trustMetadata = true)
@@ -931,6 +934,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["primary_release_date.lte"] = it }
             val pages = if (candidateSelection) page..page
+                else if (Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(filters, query))
+                    Lab173TvCombinedFilterPolicy.metadataPages(page)
                 else Lab154SearchPacing.metadataPages(page)
             pages.map { discoverPage -> async {
                 TMDb3.Discover.movie(params + ("page" to discoverPage.toString())).results
@@ -961,6 +966,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             filters.dateFrom?.takeIf { it.isNotBlank() }?.let { params["first_air_date.gte"] = it }
             filters.dateTo?.takeIf { it.isNotBlank() }?.let { params["first_air_date.lte"] = it }
             val pages = if (candidateSelection) page..page
+                else if (Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(filters, query))
+                    Lab173TvCombinedFilterPolicy.metadataPages(page)
                 else Lab154SearchPacing.metadataPages(page)
             pages.map { discoverPage -> async {
                 TMDb3.Discover.tv(params + ("page" to discoverPage.toString())).results
@@ -1165,7 +1172,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                     searchTmdbYearCandidates(query, advancedFilters, currentLanguage)
                 else
                     searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1,
-                        candidateSelection = true)
+                        candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(
+                            advancedFilters, query))
             } catch (cancel: kotlinx.coroutines.CancellationException) {
                 throw cancel
             } catch (error: Exception) {
@@ -1334,7 +1342,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 val metadata = if (strict && tmdbConfigured()) {
                     searchTmdbAdvanced(
                         TmdbProvider(active.first().value.provider.language),
-                        query, advancedFilters, nextPage, candidateSelection = true
+                        query, advancedFilters, nextPage,
+                        candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(
+                            advancedFilters, query)
                     )
                 } else null
 

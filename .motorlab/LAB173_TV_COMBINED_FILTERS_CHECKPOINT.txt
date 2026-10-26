@@ -1,0 +1,11 @@
+MOTORLAB VISIONFLIX LAB173 CHECKPOINT
+CORE=2026.10.22-r38
+BASE_VERIFIED_LAB172=2933ff510eed2d0e373d8fe32ee31ba5527442f5
+BRANCH=lab/visionflix-lab173-tv-combined-filters-20261026
+PRIORITY=Android TV filtered search. User-reported France+Comedy and genre+1980-1985 return zero; TV takes precedence over Mobile.
+DIAGNOSED=TV currentFilters inadvertently carried stale multiGenre selection overriding a new single-genre setting. Strict country uses TMDb metadata, but direct native candidates intersect only one unrelated TMDb Discover page, resulting in empty wall.
+FIX=TV fresh single genre resets multi; when date range given suppress stale single-year; country metadata fetched with bounded 3-page window and shared across native providers; no per-title network lookups; explicit TV feedback if TMDb free key not configured.
+KNOWN_LIMIT=Country cannot be certified by Streamflix native listing when missing production-country metadata; TMDb key is required, filtered candidate overlap is not guaranteed. Must verify real-source results on Android TV before marking user-reported issue resolved.
+TEST=GitHub CI pure policy regression, TV and Mobile signed APK+ZIP, Downloader fixed-link verified only after publish.
+PROTECTED=existing LABs, TV graphics/player, Android signing/ID, MADRE/main/production, no paid services.
+STATUS=CI_PENDING

@@ -746,6 +746,54 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB172_TESTS=PASS] GitHub-only filter regressions; no new runtime tests'
+      - name: LAB173 TV combined filter country metadata and native Streamflix checks
+        if: github.ref == 'refs/heads/lab/visionflix-lab173-tv-combined-filters-20261026'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          vm=(root/'SearchViewModel.kt').read_text()
+          tv=(root/'SearchTvFragment.kt').read_text()
+          mobile=(root/'SearchMobileFragment.kt').read_text()
+          policy=(root/'Lab173TvCombinedFilterPolicy.kt').read_text()
+          assert 'Lab173TvCombinedFilterPolicy.effectiveMultiGenres(' in tv
+          assert 'year = if (from != null || to != null) null else yearSelector?.value' in tv
+          assert 'una chiave TMDb gratuita' in tv
+          assert 'Lab173TvCombinedFilterPolicy.metadataPages(page)' in vm
+          assert 'Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow' in vm
+          assert 'provider.getGenre(id, requestedPage).shows' in vm
+          assert 'nativeProviderPage(provider, nextPage, advancedFilters, query)' in vm
+          assert 'nativeProviderPage(engine, nextPage, advancedFilters, query, metadata)' in vm
+          assert 'Lab172NativeYearPolicy.matchesRange' in vm
+          assert '1980' in (root.parent.parent/'providers/Lab172NativeYearPolicy.kt').read_text()
+          assert 'btnFilterToggle' in mobile
+          assert 'private fun selectActor(' in tv and 'private fun selectDirector(' in tv
+          assert 'GlobalCatalogMerger.merge' in vm
+          print('[LAB173_TV_FILTER_SOURCE=PASS] TV standalone and global combo filters, no per-title tests')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab173TvCombinedFilterPolicyTest' \
+            --tests '*Lab172NativeYearPolicyTest' \
+            --tests '*Lab171NativeGenrePolicyTest' \
+            --tests '*Lab170NativePagingPolicyTest' \
+            --tests '*Lab168FastResultsPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*DirectorCreditsTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
+          echo '[LAB173_TV_FILTER_TESTS=PASS]'
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
