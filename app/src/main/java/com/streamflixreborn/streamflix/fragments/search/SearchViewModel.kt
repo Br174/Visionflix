@@ -293,11 +293,18 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting
             .hasKey(UserPreferences.tmdbApiKey, BuildConfig.TMDB_API_KEY)
 
-    private suspend fun browseProvider(provider: Provider, page: Int): List<AppAdapter.Item> = coroutineScope {
-        // Browse instead of asking providers to text-search an empty string.
-        val movies = async { runCatching { provider.getMovies(page) }.getOrDefault(emptyList()) }
-        val series = async { runCatching { provider.getTvShows(page) }.getOrDefault(emptyList()) }
-        (movies.await() + series.await()).distinctBy { it.searchIdentityKey() }
+    private suspend fun browseProvider(
+        provider: Provider,
+        page: Int,
+        type: AdvancedSearchFilters.ContentType = AdvancedSearchFilters.ContentType.ALL,
+    ): List<AppAdapter.Item> = coroutineScope {
+        // LAB168: Streamflix's direct provider page, avoiding unrequested media types.
+        val movies = if (type == AdvancedSearchFilters.ContentType.TV) null
+            else async { runCatching { provider.getMovies(page) }.getOrDefault(emptyList()) }
+        val series = if (type == AdvancedSearchFilters.ContentType.MOVIE) null
+            else async { runCatching { provider.getTvShows(page) }.getOrDefault(emptyList()) }
+        (movies?.await().orEmpty() + series?.await().orEmpty())
+            .distinctBy { it.searchIdentityKey() }
     }
 
     private suspend fun searchProviderWithRecovery(provider: Provider, text: String, page: Int): List<AppAdapter.Item> {
@@ -383,6 +390,15 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 "Impossibile verificare questi filtri: manca una chiave TMDb gratuita. " +
                     "Configurala nelle Impostazioni, non usare la chiave 'dummy'."
             )
+        }
+        // LAB168: publish correct source results without waiting for TMDb
+        // discovery or dozens of per-title availability checks.
+        if (Lab168FastResultsPolicy.canUseDirectProviderResults(filters)) {
+            val immediate = if (query.isBlank()) browseProvider(provider, page, filters.type)
+                else searchProviderWithRecovery(provider, query, page)
+            val matched = applyProviderFilters(immediate, filters)
+            if (matched.isNotEmpty()) return@coroutineScope matched
+            // A sparse first page is not proof of absence: preserve metadata fallback.
         }
         val lightweightYearQuery = Lab164SearchMatchPolicy.providerFirstYearQuery(query, filters)
         val metadataEnabled = needsTmdbMetadata && hasMetadata && !lightweightYearQuery
@@ -1137,7 +1153,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             (tmdbConfigured() && (advancedFilters.year != null ||
                 !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
         )
-        if (needsGlobalMetadata && !tmdbConfigured()) {
+        if (needsGlobalMetadata && !tmdbConfigured() &&
+            !Lab168FastResultsPolicy.canUseDirectProviderResults(advancedFilters)) {
             _state.emit(State.FailedSearching(IllegalStateException(
                 "I filtri globali per Paese, genere, lingua e metadati richiedono una chiave TMDb valida"
             )))
@@ -1146,7 +1163,9 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         // Discover metadata concurrently rather than blocking the local provider's
         // immediate text results. All displayed items still pass their filters.
         var metadataLookupError: Exception? = null
-        val metadataTask: kotlinx.coroutines.Deferred<List<AppAdapter.Item>>? = if (needsGlobalMetadata) async {
+        val metadataTask: kotlinx.coroutines.Deferred<List<AppAdapter.Item>>? =
+            if (needsGlobalMetadata &&
+                !Lab168FastResultsPolicy.canUseDirectProviderResults(advancedFilters)) async {
             // An HTTP 451 / blocked metadata endpoint is NOT an unhandled
             // child-coroutine failure. Keep the app-level Cerca screen alive.
             try {
@@ -1305,7 +1324,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 (tmdbConfigured() && (advancedFilters.year != null ||
                     !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
             )
-            val metadata = if (needsMetadata && tmdbConfigured()) {
+            val metadata = if (needsMetadata && tmdbConfigured() &&
+                !Lab168FastResultsPolicy.canUseDirectProviderResults(advancedFilters)) {
                 searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, nextPage,
                     candidateSelection = true)
             } else null
