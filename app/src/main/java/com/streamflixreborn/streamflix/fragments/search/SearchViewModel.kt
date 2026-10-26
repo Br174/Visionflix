@@ -393,10 +393,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
         // LAB168: publish correct source results without waiting for TMDb
         // discovery or dozens of per-title availability checks.
-        if (Lab168FastResultsPolicy.canUseDirectProviderResults(filters)) {
-            val immediate = if (query.isBlank()) browseProvider(provider, page, filters.type)
+        val immediateResults: List<AppAdapter.Item>? =
+            if (Lab168FastResultsPolicy.canUseDirectProviderResults(filters)) {
+                if (query.isBlank()) browseProvider(provider, page, filters.type)
                 else searchProviderWithRecovery(provider, query, page)
-            val matched = applyProviderFilters(immediate, filters)
+            } else null
+        if (immediateResults != null) {
+            val matched = applyProviderFilters(immediateResults, filters)
             if (matched.isNotEmpty()) return@coroutineScope matched
             // A sparse first page is not proof of absence: preserve metadata fallback.
         }
@@ -417,7 +420,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
 
         val directResults = when {
-            query.isNotBlank() -> searchProviderWithRecovery(provider, query, page)
+            query.isNotBlank() -> immediateResults ?: searchProviderWithRecovery(provider, query, page)
             metadataEnabled -> emptyList()
             else -> browseFilteredCatalog()
         }

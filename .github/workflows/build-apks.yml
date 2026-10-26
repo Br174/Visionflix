@@ -514,6 +514,43 @@ jobs:
             --tests '*DirectorCreditsTest' --stacktrace
           echo '[LAB166_TESTS=PASS] TV freeze watchdog and saved progress, previous Matrioska/search/player regressions'
 
+      - name: LAB168 Streamflix-fast filters and protected photo/player regressions
+        if: github.ref == 'refs/heads/lab/visionflix-lab168-streamflix-fast-search-20261026'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          vm = (root / 'SearchViewModel.kt').read_text()
+          tv = (root / 'SearchTvFragment.kt').read_text()
+          assert 'fun searchActors(' in vm and 'fun searchDirectors(' in vm
+          assert 'private fun selectActor(' in tv and 'private fun selectDirector(' in tv
+          assert 'private fun prefetchPosters(' not in tv
+          assert 'Lab168FastResultsPolicy.canUseDirectProviderResults' in vm
+          assert 'GlobalCatalogMerger.merge' in vm
+          print('[LAB168_GUARDS=PASS] photo selectors, dedupe, direct filters, no duplicate poster prefetch')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab168FastResultsPolicyTest' \
+            --tests '*Lab165FastDiscoveryPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*DirectorCreditsTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
+          echo '[LAB168_TESTS=PASS] source first, photos, filtering, catalog merge and player'
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
