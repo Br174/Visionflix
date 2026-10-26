@@ -625,6 +625,8 @@ jobs:
           assert 'btn_filter_toggle' in layout and 'scroll_advanced_filters' in layout
           assert 'binding.spPlatform,\n                binding.spCountry,' in mobile
           assert 'nativeProviderPage(provider, nextPage, advancedFilters, query)' in vm
+          assert 'nativeProviderPage(engine, nextPage, advancedFilters, query, metadata)' in vm
+          assert 'globalFinishedTargets.size < targets.size' in vm
           assert 'Lab170NativePagingPolicy.shouldContinue' in vm
           assert 'suspend fun findVerified(' not in vm
           assert 'browseFilteredCatalog' not in vm and 'while (attempts <' not in vm

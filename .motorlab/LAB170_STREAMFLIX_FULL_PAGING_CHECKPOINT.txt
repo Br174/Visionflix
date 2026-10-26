@@ -5,4 +5,4 @@ BRANCH=lab/visionflix-lab170-mobile-drawer-native-full-pagination-20261026
 GOAL=Manual compact Mobile filter panel; all filter parameters including Country; Streamflix native sequential pages with raw/filtered separation; no heavy candidate-by-title fetch.
 PROTECTED=LAB166-169, Android identity/signing, player, TV existing UI, people photos, MADRE/main/production
 TEST=LAB170 unit plus previous regression checks, signed Mobile/TV APK ZIP, verified fixed Downloader 6920196
-STATUS=CI_PENDING
+STATUS=SECOND_CI_REQUIRED_FIRST_ERROR_KOTLIN_RECURSIVE_TYPE_FIXED_AND_GLOBAL_RAW_PAGING_ADDED

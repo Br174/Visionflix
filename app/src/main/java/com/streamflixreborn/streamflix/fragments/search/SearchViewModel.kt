@@ -148,6 +148,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private var globalLoadingMore = false
     private var globalEmptyPages = 0
     private var activeGlobalGeneration = 0
+    // Independent Streamflix page-exhaustion bookkeeping per provider endpoint.
+    private val globalEmptyRawByTarget = mutableMapOf<Int, Int>()
+    private val globalRepeatedRawByTarget = mutableMapOf<Int, Int>()
+    private val globalLastRawByTarget = mutableMapOf<Int, String>()
+    private val globalFinishedTargets = mutableSetOf<Int>()
 
     private fun globalWallState(results: List<ProviderResult>, hasMore: Boolean = true): State.SuccessGlobalSearching {
         val previous = (_state.value as? State.SuccessGlobalSearching)?.catalog
@@ -496,6 +501,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     private suspend fun nativeProviderPage(
         provider: Provider, pageIndex: Int, filters: AdvancedSearchFilters,
         text: String,
+        metadata: List<AppAdapter.Item>? = null,
     ): Pair<List<AppAdapter.Item>, List<AppAdapter.Item>> {
         if (provider is TmdbProvider && (filters.isActive || text.isNotBlank())) {
             val direct = searchTmdbAdvanced(provider, text, filters, pageIndex)
@@ -504,12 +510,13 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         val raw = if (text.isBlank()) browseProvider(provider, pageIndex, filters.type)
             else searchProviderWithRecovery(provider, text, pageIndex)
         val displayed = if (filters.isActive) searchProviderAdvanced(
-            provider, text, filters, pageIndex, providedPage = raw
+            provider, text, filters, pageIndex,
+            providedPage = raw, sharedMetadata = metadata
         ) else raw
         return raw to displayed
     }
 
-    fun loadMore() = viewModelScope.launch(Dispatchers.IO) {
+    fun loadMore(): kotlinx.coroutines.Job = viewModelScope.launch(Dispatchers.IO) {
         if (localLoadingMore) return@launch
         val initial = _state.value as? State.SuccessSearching ?: return@launch
         if (!initial.hasMore) return@launch
@@ -1035,6 +1042,10 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
         val targets = originals + remotes
         globalTargets = targets
+        globalEmptyRawByTarget.clear()
+        globalRepeatedRawByTarget.clear()
+        globalLastRawByTarget.clear()
+        globalFinishedTargets.clear()
         globalPage = 1
         globalLoadingMore = false
         if (targets.isEmpty()) {
@@ -1204,117 +1215,141 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
     }
 
-    /** LAB152: independently page all global sources while preserving the existing wall. */
-    fun loadMoreGlobal() = viewModelScope.launch(Dispatchers.IO) {
+    /**
+     * LAB170: apply Streamflix's native one-page provider API consistently
+     * on global pages too. No filtered-empty page can end pagination.
+     */
+    fun loadMoreGlobal(): kotlinx.coroutines.Job = viewModelScope.launch(Dispatchers.IO) {
         if (globalLoadingMore || globalTargets.isEmpty()) return@launch
-        val existing = _state.value as? State.SuccessGlobalSearching ?: return@launch
-        if (!existing.hasMore) return@launch
+        val initial = _state.value as? State.SuccessGlobalSearching ?: return@launch
+        if (!initial.hasMore) return@launch
         globalLoadingMore = true
+        val generation = activeGlobalGeneration
+        var continuation = false
         try {
-            val currentTargets = globalTargets.toList()
-            val nextPage = globalPage + 1
-            val currentLanguage = currentTargets.firstOrNull()?.provider?.language ?: "it"
-            val needsMetadata = advancedFilters.isActive && (
-                advancedFilters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
-                advancedFilters.country != AdvancedSearchFilters.CountryFilter.ALL ||
-                advancedFilters.effectiveGenres.isNotEmpty() ||
-                advancedFilters.type == AdvancedSearchFilters.ContentType.CARTOON ||
-                advancedFilters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-                !advancedFilters.actorId.isNullOrBlank() ||
-                !advancedFilters.directorId.isNullOrBlank() ||
-                (tmdbConfigured() && (advancedFilters.year != null ||
-                    !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
-            )
-            val metadata = if (needsMetadata && tmdbConfigured() &&
-                !Lab168FastResultsPolicy.canUseDirectProviderResults(advancedFilters)) {
-                searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, nextPage,
-                    candidateSelection = true)
-            } else null
-            // Result positions remain in target order; distinct mirrors can share the same display name.
-            val updated = currentTargets.mapIndexed { index, target ->
-                existing.providerResults.getOrNull(index)
+            val targets = globalTargets.toList()
+            val updated = targets.mapIndexed { i, target ->
+                initial.providerResults.getOrNull(i)
                     ?: ProviderResult(target.provider, ProviderResult.State.Loading, target.displayName)
             }.toMutableList()
             val gate = Semaphore(3)
-            val mergeMutex = Mutex()
-            var addedCount = 0
-            val generation = activeGlobalGeneration
-            coroutineScope {
-                currentTargets.withIndex().groupBy { it.value.provider.name }.values.forEach { group ->
-                    launch {
-                        val engine = group.first().value.provider
-                        val saved = ProviderEndpointRegistry.selectedOverride(engine.name)
-                        try {
-                            for ((index, target) in group) {
-                                if (target.endpoint.isNullOrBlank()) ProviderEndpointRegistry.selectOriginal(engine.name)
-                                else ProviderEndpointRegistry.selectRemote(engine.name, target.endpoint)
+            val mutex = Mutex()
+            var batch = 0
+            var totalAdded = 0
+            var sourceHasMore = true
+            while (batch < Lab170NativePagingPolicy.MAX_SCAN_BATCH &&
+                totalAdded == 0 && sourceHasMore && generation == activeGlobalGeneration) {
+                val nextPage = globalPage + 1
+                val active = targets.withIndex().filter { it.index !in globalFinishedTargets }
+                if (active.isEmpty()) break
+                val strict = advancedFilters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
+                    advancedFilters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+                    advancedFilters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+                    !advancedFilters.actorId.isNullOrBlank() ||
+                    !advancedFilters.directorId.isNullOrBlank()
+                val metadata = if (strict && tmdbConfigured()) {
+                    searchTmdbAdvanced(
+                        TmdbProvider(active.first().value.provider.language),
+                        query, advancedFilters, nextPage, candidateSelection = true
+                    )
+                } else null
+
+                var nextAdded = 0
+                coroutineScope {
+                    active.groupBy { it.value.provider.name }.values.forEach { group ->
+                        launch {
+                            val engine = group.first().value.provider
+                            val selection = ProviderEndpointRegistry.selectedOverride(engine.name)
+                            try {
+                                for ((index, target) in group) {
+                                    if (generation != activeGlobalGeneration) break
+                                    if (target.endpoint.isNullOrBlank())
+                                        ProviderEndpointRegistry.selectOriginal(engine.name)
+                                    else ProviderEndpointRegistry.selectRemote(engine.name, target.endpoint)
+                                    (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+                                    val rawAndFiltered = try {
+                                        gate.withPermit {
+                                            nativeProviderPage(engine, nextPage, advancedFilters, query, metadata)
+                                        }
+                                    } catch (cancel: kotlinx.coroutines.CancellationException) {
+                                        throw cancel
+                                    } catch (error: Exception) {
+                                        Log.w("SearchViewModel", "LAB170 global native page for ${target.displayName}", error)
+                                        emptyList<AppAdapter.Item>() to emptyList<AppAdapter.Item>()
+                                    }
+                                    val (raw, filtered) = rawAndFiltered
+                                    filtered.forEach { item ->
+                                        when (item) {
+                                            is Movie -> {
+                                                item.providerName = engine.name
+                                                item.providerEndpoint = target.endpoint
+                                            }
+                                            is TvShow -> {
+                                                item.providerName = engine.name
+                                                item.providerEndpoint = target.endpoint
+                                            }
+                                        }
+                                    }
+                                    mutex.withLock {
+                                        if (generation != activeGlobalGeneration) return@withLock
+                                        val prior = (updated[index].state as? ProviderResult.State.Success)
+                                            ?.results.orEmpty()
+                                        val existingKeys = prior.map { it.searchIdentityKey() }.toHashSet()
+                                        val fresh = ParentalControlUtils.filterItems(filtered)
+                                            .filter { existingKeys.add(it.searchIdentityKey()) }
+                                        val signature = Lab170NativePagingPolicy.signature(
+                                            raw.map { it.searchIdentityKey() }
+                                        )
+                                        val emptyCount = if (raw.isEmpty())
+                                            (globalEmptyRawByTarget[index] ?: 0) + 1 else 0
+                                        val repeatedCount = if (raw.isNotEmpty() &&
+                                            signature == globalLastRawByTarget[index])
+                                            (globalRepeatedRawByTarget[index] ?: 0) + 1 else 0
+                                        globalEmptyRawByTarget[index] = emptyCount
+                                        globalRepeatedRawByTarget[index] = repeatedCount
+                                        globalLastRawByTarget[index] = signature
+                                        if (!Lab170NativePagingPolicy.shouldContinue(
+                                                nextPage, emptyCount, repeatedCount)) {
+                                            globalFinishedTargets.add(index)
+                                        }
+                                        nextAdded += fresh.size
+                                        updated[index] = ProviderResult(engine,
+                                            ProviderResult.State.Success(prior + fresh),
+                                            target.displayName)
+                                        if (fresh.isNotEmpty()) {
+                                            _state.emit(globalWallState(updated.toList(), hasMore = true))
+                                        }
+                                    }
+                                }
+                            } finally {
+                                ProviderEndpointRegistry.restoreSelection(engine.name, selection)
                                 (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
-                                val found = try {
-                                    gate.withPermit {
-                                        when {
-                                            engine is TmdbProvider && advancedFilters.isActive ->
-                                                searchTmdbAdvanced(engine, query, advancedFilters, nextPage)
-                                            advancedFilters.isActive ->
-                                                searchProviderAdvanced(
-                                                    engine, query, advancedFilters, nextPage,
-                                                    sharedMetadata = metadata, candidateLimit = Lab154SearchPacing.candidateLimit(firstPage = false, originatingProvider = false),
-                                                )
-                                            query.isBlank() -> browseProvider(engine, nextPage)
-                                            else -> searchProviderWithRecovery(engine, query, nextPage)
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    Log.w("SearchViewModel", "Global next page: ${engine.name}: ${e.message}")
-                                    emptyList()
-                                }
-                                val tagged = ParentalControlUtils.filterItems(found.onEach { item ->
-                                    when (item) {
-                                        is Movie -> {
-                                            item.providerName = engine.name
-                                            item.providerEndpoint = target.endpoint
-                                        }
-                                        is TvShow -> {
-                                            item.providerName = engine.name
-                                            item.providerEndpoint = target.endpoint
-                                        }
-                                    }
-                                })
-                                mergeMutex.withLock {
-                                    if (generation != activeGlobalGeneration) return@withLock
-                                    val prior = (updated[index].state as? ProviderResult.State.Success)?.results.orEmpty()
-                                    val known = prior.map { it.searchIdentityKey() }.toHashSet()
-                                    val fresh = tagged.filter { it.searchIdentityKey() !in known }
-                                    addedCount += fresh.size
-                                    updated[index] = ProviderResult(
-                                        engine, ProviderResult.State.Success(prior + fresh), target.displayName
-                                    )
-                                    // Append confirmed items from every provider as they
-                                    // arrive, without a whole-page barrier.
-                                    if (fresh.isNotEmpty()) {
-                                        _state.emit(globalWallState(updated.toList(), hasMore = true))
-                                    }
-                                }
                             }
-                        } finally {
-                            ProviderEndpointRegistry.restoreSelection(engine.name, saved)
-                            (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
                         }
                     }
                 }
+                globalPage = nextPage
+                batch++
+                totalAdded += nextAdded
+                sourceHasMore = globalPage < Lab170NativePagingPolicy.MAX_SCAN_PAGE &&
+                    globalFinishedTargets.size < targets.size
+                kotlinx.coroutines.yield()
             }
-            globalPage = nextPage
-            // A genuinely empty page stops pagination; no legacy retries.
-            globalEmptyPages = if (addedCount == 0) globalEmptyPages + 1 else 0
             if (generation == activeGlobalGeneration) {
-                _state.emit(globalWallState(updated, hasMore = addedCount > 0))
+                continuation = totalAdded == 0 && sourceHasMore
+                _state.emit(globalWallState(updated, hasMore = sourceHasMore))
             }
-        } catch (e: Exception) {
-            Log.e("SearchViewModel", "loadMoreGlobal", e)
-            _state.emit(existing.copy(hasMore = false))
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            Log.e("SearchViewModel", "LAB170 global native paging", error)
+            if (generation == activeGlobalGeneration) _state.emit(initial.copy(hasMore = false))
         } finally {
             globalLoadingMore = false
         }
+        if (continuation) loadMoreGlobal().join()
     }
+
 }
 
 private fun AppAdapter.Item.searchIdentityKey(): String = when (this) {

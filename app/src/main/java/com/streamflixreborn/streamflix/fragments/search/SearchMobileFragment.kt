@@ -127,6 +127,7 @@ class SearchMobileFragment : Fragment() {
                     }
                     is State.SuccessGlobalSearching -> {
                         displayGlobalSearch(state.catalog.posters, state.hasMore)
+                        appAdapter.isLoading = false
                         binding.isLoading.root.visibility = View.GONE
                     }
                     is State.FailedSearching -> {
