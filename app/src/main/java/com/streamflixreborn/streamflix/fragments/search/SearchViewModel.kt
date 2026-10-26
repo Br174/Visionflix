@@ -161,6 +161,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     private val availabilityIndex = availabilityContext?.let { Lab175AvailabilityIndex(it) }
     private var availabilityMaintenance: Job? = null
     private var indexedGlobalEnabled = false
+    private var indexedMetadataReady = false
     private var indexedPage = 1
     private var indexedMetadata = listOf<AppAdapter.Item>()
     private var indexedLanguage = "it"
@@ -213,6 +214,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     ) {
         val index = availabilityIndex ?: return
         indexedGlobalEnabled = true
+        indexedMetadataReady = false
         indexedLanguage = language
         indexedPage = 1
         indexedMetadata = emptyList()
@@ -226,11 +228,24 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             return
         }
         try {
-            indexedMetadata = searchTmdbAdvanced(
-                TmdbProvider(language), searchText, advancedFilters, 1,
-                candidateSelection = false,
+            indexedMetadata = withTimeoutOrNull(15000L) {
+                searchTmdbAdvanced(
+                    TmdbProvider(language), searchText, advancedFilters, 1,
+                    candidateSelection = false,
+                )
+            } ?: throw IllegalStateException(
+                "TheMovieDB non risponde entro il limite previsto; nessuna scansione infinita dei provider."
             )
+            indexedMetadataReady = true
             refreshIndexedWall()
+            // Partial indexes are common on first run: try two extra
+            // TMDb windows only, with no provider HTTP and no infinite loop.
+            for (attempt in 1..2) {
+                val wall = _state.value as? State.SuccessGlobalSearching
+                if (wall == null || wall.catalog.posters.isNotEmpty() ||
+                    !wall.hasMore) break
+                loadMoreIndexedGlobal()
+            }
         } catch (cancel: kotlinx.coroutines.CancellationException) {
             throw cancel
         } catch (error: Exception) {
@@ -241,7 +256,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     /** No provider HTTP here; SQLite lookup and list sorting only. */
     private fun refreshIndexedWall() {
         val index = availabilityIndex ?: return
-        if (!indexedGlobalEnabled) return
+        if (!indexedGlobalEnabled || !indexedMetadataReady) return
         val matching = index.findMatches(indexedMetadata)
         val sorted = applyProviderFilters(matching, advancedFilters, trustMetadata = true)
         val catalog = GlobalCatalogMerger.mergeItems(listOf(sorted))
@@ -509,6 +524,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         targetPage: Int,
     ) {
         indexedGlobalEnabled = false
+        indexedMetadataReady = false
         _state.emit(State.Searching)
         localLoadingMore = false
         try {
