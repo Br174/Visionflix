@@ -841,8 +841,8 @@ jobs:
             --tests '*DirectorCreditsTest' \
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB174_TESTS=PASS] TV single/combo source filters and strict metadata'
-      - name: LAB175/LAB176 TV catalogue-index and autonomous-resume tests
-        if: github.ref == 'refs/heads/lab/visionflix-lab175-availability-index-tv-20261026' || github.ref == 'refs/heads/lab/visionflix-lab176-autonomous-index-20261026'
+      - name: LAB175/LAB176/LAB177 TV catalogue-index, filters and autonomous-resume tests
+        if: github.ref == 'refs/heads/lab/visionflix-lab175-availability-index-tv-20261026' || github.ref == 'refs/heads/lab/visionflix-lab176-autonomous-index-20261026' || github.ref == 'refs/heads/lab/visionflix-lab177-global-filter-coverage-20261027'
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
         shell: bash
@@ -902,6 +902,24 @@ jobs:
           assert 'listOf(all, sort, arrow)' in tv
           assert 'if (searchViewModel?.reorderVisibleResults(selectedSort) != true)' in tv
           assert 'private var selectedSort: AdvancedSearchFilters.SortFilter = AdvancedSearchFilters.SortFilter.POPULARITY' in tv
+          if '${{ github.ref_name }}' == 'lab/visionflix-lab177-global-filter-coverage-20261027':
+              coverage=(root/'Lab177FilteredWallPolicy.kt').read_text()
+              assert 'sourceTitleAliases = true' in vm
+              assert 'INDEXED_VISIBLE_TARGET = 18' in vm
+              assert 'INDEXED_AUTO_DISCOVERY_LIMIT = 9' in vm
+              assert 'withTimeoutOrNull(20_000L)' in vm
+              assert 'Lab177FilteredWallPolicy.shouldExpand(' in vm
+              assert 'movie.originalTitle, sourceTitleAliases' in vm
+              assert 'tv.originalName, sourceTitleAliases' in vm
+              assert 'sortedSearchResults.mapNotNull' in vm
+              assert 'sourceTitleVariants(item, originals[key], sourceTitleAliases)' in vm
+              assert 'fun sourceTitleVariants(' in vm
+              assert 'fun requiresAlias(' in coverage
+              assert 'fun shouldExpand(' in coverage
+              assert 'val productionCountry = filters.country.isoCode' in vm
+              assert 'productionCountry?.let { params["with_origin_country"] = it }' in vm
+              assert 'val matching = index.findMatches(indexedMetadata)' in vm
+              print('[LAB177_GLOBAL_FILTERS_SOURCE=PASS] filtered multiwindow, local aliases, preserved country semantics, verified provider-only posters')
           assert 'fun normalizeTitle(raw: String)' in pol
           assert 'fun matches(source: Identity, metadata: Identity)' in pol
           print('[LAB175_SOURCE=PASS] independent index, typed source match, UI focus, no duplicate TV type')
@@ -910,6 +928,7 @@ jobs:
             --tests '*Lab175AvailabilityPolicyTest' \
             --tests '*Lab175IndexRotationTest' \
             --tests '*Lab176AutonomousIndexPolicyTest' \
+            --tests '*Lab177FilteredWallPolicyTest' \
             --tests '*Lab175ProviderIntegrationFixtureTest' \
             --tests '*Lab174FilteredSourcePolicyTest' \
             --tests '*Lab173TvCombinedFilterPolicyTest' \

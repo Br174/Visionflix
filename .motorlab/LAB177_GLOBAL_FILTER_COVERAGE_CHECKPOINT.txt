@@ -1,0 +1,11 @@
+MOTORLAB LAB177 GLOBAL FILTER COVERAGE CHECKPOINT
+DATE=2026-10-27
+PROJECT=Verlezza Vision / Br174/Visionflix
+USER_EVIDENCE=LAB176 TV indexedTitles=1551, providersStarted=5/9, pagesIndexed=33; global search empty query + country Italy showed only two posters; switching to ALL countries returned more. User reports global filters fail to populate enough provider-confirmed posters.
+BASE=LAB176 commit 905245709928fe25e1eb9febe349057d68e1a594; source build 484 from a6da2766d778462cfc77d2f36738a44549dc8f88. Auto-publication notification memory policy kept.
+DIAGNOSIS=CountryFilter.ITALY is TMDb with_origin_country=IT (production country), unlike Italian provider availability or original Italian language. LAB176 SearchIndexedGlobal reads first TMDb Discover metadata window, then only 2 extra if zero matching; 1 or 2 matched posters stops expansion while many provider-index titles remain outside scanned TMDb windows. Alias matching used localized title only so native original titles are falsely negative. '1551 indexed' is not a count of filtered/confirmed video-playable results.
+PATCH=LAB177 selected global search only (TV); expand TMDb filtered windows progressively until at least 18 source-backed posters OR max 9 windows OR additional 20-second timeout; show source-confirmed results as soon as first window returns; never native provider rescan on filter/scroll. Accept TMDb original + localized title aliases for film/series with identical TMDb IDs & dates, deduplicate by source identity, preserve production-country, language, genre, year and commercial platform semantics.
+TESTS=LAB177FilteredWallPolicyTest, source assertions and LAB175/176 regression suite before APK; signed APK TV/Mobile ZIP only after CI.
+LIMITATIONS=Still capped TMDb pages and only as complete as indexed provider catalog and title/year matching, cannot guarantee 1551 results or actual playable streams. Need physical TV/provider testing and potential next stage of cached TMDb IDs per source if insufficient.
+PROTECTED=LAB175, LAB176, main, MADRE, production, app ID, signing, player, databases, no paid services.
+STATUS=CI_PENDING

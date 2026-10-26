@@ -185,6 +185,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     private var indexedMetadata = listOf<AppAdapter.Item>()
     private var indexedLanguage = "it"
     private val INDEXED_MAX_TMDB_PAGES = 12
+    private val INDEXED_AUTO_DISCOVERY_LIMIT = 9
+    private val INDEXED_VISIBLE_TARGET = 18
 
     /**
      * LAB176: autonomous while the TV Search screen is visible, cooperative
@@ -303,6 +305,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 searchTmdbAdvanced(
                     TmdbProvider(language), searchText, advancedFilters, 1,
                     candidateSelection = false,
+                    sourceTitleAliases = true,
                 )
             } ?: throw IllegalStateException(
                 "TheMovieDB non risponde entro il limite previsto; nessuna scansione infinita dei provider."
@@ -311,14 +314,25 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             indexedMetadata = results
             indexedMetadataReady = true
             refreshIndexedWall()
-            // Partial indexes are common on first run: try two extra
-            // TMDb windows only, with no provider HTTP and no infinite loop.
-            for (attempt in 1..2) {
-                val wall = _state.value as? State.SuccessGlobalSearching
-                if (wall == null || wall.catalog.posters.isNotEmpty() ||
-                    !wall.hasMore) break
-                loadMoreIndexedGlobal()
-                if (generation != activeIndexedSearchGeneration) return
+            // LAB177: one matched poster is NOT a complete search. Continue
+            // through further filtered TMDb windows in a bounded background
+            // expansion, progressively displaying verified provider posters.
+            // Never contact native providers as part of these searches.
+            withTimeoutOrNull(20_000L) {
+                while (generation == activeIndexedSearchGeneration) {
+                    val wall = _state.value as? State.SuccessGlobalSearching
+                        ?: break
+                    if (!Lab177FilteredWallPolicy.shouldExpand(
+                            count = wall.catalog.posters.size,
+                            currentPage = indexedPage,
+                            hasMore = wall.hasMore,
+                            minimumPosters = INDEXED_VISIBLE_TARGET,
+                            maximumAutoPage = INDEXED_AUTO_DISCOVERY_LIMIT,
+                        )) break
+                    val priorPage = indexedPage
+                    loadMoreIndexedGlobal()
+                    if (indexedPage <= priorPage) break
+                }
             }
         } catch (cancel: kotlinx.coroutines.CancellationException) {
             throw cancel
@@ -369,11 +383,12 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             val extra = searchTmdbAdvanced(
                 TmdbProvider(indexedLanguage), query, advancedFilters, next,
                 candidateSelection = false,
+                sourceTitleAliases = true,
             )
             if (generation != activeIndexedSearchGeneration || !indexedGlobalEnabled) return
             indexedPage = next
             indexedMetadata = (indexedMetadata + extra)
-                .distinctBy { item -> filterMatchKey(item) ?: item.toString() }
+                .distinctBy(::metadataAliasKey)
             refreshIndexedWall()
             if (extra.isEmpty()) (_state.value as? State.SuccessGlobalSearching)
                 ?.let { _state.value = it.copy(hasMore = false) }
@@ -997,12 +1012,37 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             }
     }
 
+    private fun sourceTitleVariants(
+        item: AppAdapter.Item, original: String?, enabled: Boolean,
+    ): List<AppAdapter.Item> {
+        if (!enabled || original.isNullOrBlank()) return listOf(item)
+        return when (item) {
+            is Movie -> if (!Lab177FilteredWallPolicy.requiresAlias(
+                item.title, original)) listOf(item)
+                else listOf(item, item.copy(title = original))
+            is TvShow -> if (!Lab177FilteredWallPolicy.requiresAlias(
+                item.title, original)) listOf(item)
+                else listOf(item, item.copy(title = original))
+            else -> listOf(item)
+        }
+    }
+
+    private fun metadataAliasKey(item: AppAdapter.Item): String {
+        val name = when (item) {
+            is Movie -> item.title
+            is TvShow -> item.title
+            else -> ""
+        }
+        return item.searchIdentityKey() + "|" + normalizeFilterTitle(name)
+    }
+
     private suspend fun searchTmdbAdvanced(
         provider: TmdbProvider,
         query: String,
         filters: AdvancedSearchFilters,
         page: Int,
         candidateSelection: Boolean = false,
+        sourceTitleAliases: Boolean = false,
     ): List<AppAdapter.Item> = coroutineScope {
         val availableGenres = filters.effectiveGenres
         val includeMovies = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
@@ -1163,6 +1203,15 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 }
             }
 
+            val originals: Map<String, String> = if (sourceTitleAliases)
+                sortedSearchResults.mapNotNull { multi ->
+                    when (multi) {
+                        is TMDb3.Movie -> "movie|" + multi.id.toString() to multi.originalTitle
+                        is TMDb3.Tv -> "tv|" + multi.id.toString() to multi.originalName
+                        else -> null
+                    }
+                }.toMap()
+            else emptyMap()
             return@coroutineScope sortedSearchResults.mapNotNull { multi ->
                 when (multi) {
                     is TMDb3.Movie -> {
@@ -1209,7 +1258,17 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
 
                     else -> null
                 }
-            }.distinctBy { it.searchIdentityKey() }
+            }.flatMap { item ->
+                val key = when (item) {
+                    is Movie -> "movie|" + item.id
+                    is TvShow -> "tv|" + item.id
+                    else -> ""
+                }
+                sourceTitleVariants(item, originals[key], sourceTitleAliases)
+            }.distinctBy { item ->
+                if (sourceTitleAliases) metadataAliasKey(item)
+                else item.searchIdentityKey()
+            }
         }
 
         val movieDeferred = if (includeMovies) async {
@@ -1291,16 +1350,19 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             .filter { !excludeItalian || it.originalLanguage != "it" }
             .filter { filters.acceptsGenreIds(it.genresIds, movie = true) }
             .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
-            .map { movie ->
-                Movie(
-                    id = movie.id.toString(),
-                    title = movie.title,
-                    overview = movie.overview,
-                    released = movie.releaseDate,
-                    rating = movie.voteAverage.toDouble(),
-                    poster = movie.posterPath?.w500,
-                    banner = movie.backdropPath?.original,
-                ) as AppAdapter.Item
+            .flatMap { movie ->
+                sourceTitleVariants(
+                    Movie(
+                        id = movie.id.toString(),
+                        title = movie.title,
+                        overview = movie.overview,
+                        released = movie.releaseDate,
+                        rating = movie.voteAverage.toDouble(),
+                        poster = movie.posterPath?.w500,
+                        banner = movie.backdropPath?.original,
+                    ),
+                    movie.originalTitle, sourceTitleAliases,
+                ).asSequence()
             }
             .toList()
 
@@ -1309,21 +1371,27 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             .filter { !excludeItalian || it.originalLanguage != "it" }
             .filter { filters.acceptsGenreIds(it.genresIds, movie = false) }
             .filter { directorId == null || it.id.toString() in blankDirectorTvIds }
-            .map { tv ->
-                TvShow(
-                    id = tv.id.toString(),
-                    title = tv.name,
-                    overview = tv.overview,
-                    released = tv.firstAirDate,
-                    rating = tv.voteAverage.toDouble(),
-                    poster = tv.posterPath?.w500,
-                    banner = tv.backdropPath?.original,
-                ) as AppAdapter.Item
+            .flatMap { tv ->
+                sourceTitleVariants(
+                    TvShow(
+                        id = tv.id.toString(),
+                        title = tv.name,
+                        overview = tv.overview,
+                        released = tv.firstAirDate,
+                        rating = tv.voteAverage.toDouble(),
+                        poster = tv.posterPath?.w500,
+                        banner = tv.backdropPath?.original,
+                    ),
+                    tv.originalName, sourceTitleAliases,
+                ).asSequence()
             }
             .toList()
 
         val combined = (movieItems + tvItems)
-            .distinctBy { it.searchIdentityKey() }
+            .distinctBy { item ->
+                if (sourceTitleAliases) metadataAliasKey(item)
+                else item.searchIdentityKey()
+            }
         // Candidate lookups need popularity-first order; UI sorts accepted
         // provider titles separately. TMDb-only views still use requested sort.
         when (discoverySort) {
