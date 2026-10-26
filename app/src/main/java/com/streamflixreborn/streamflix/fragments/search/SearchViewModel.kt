@@ -7,6 +7,7 @@ import com.streamflixreborn.streamflix.BuildConfig
 import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.models.Movie
+import com.streamflixreborn.streamflix.models.Genre
 import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
@@ -142,6 +143,8 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
     private var page = 1
     private var localLoadingMore = false
+    private val nativeGenreCache = mutableMapOf<String, List<Genre>>()
+    private val nativeGenreCacheMutex = Mutex()
     private var usingWebFallback = false
     private var globalTargets: List<GlobalSearchTarget> = emptyList()
     private var globalPage = 1
@@ -348,6 +351,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val provider = UserPreferences.currentProvider
                 ?: throw IllegalStateException("Seleziona prima un provider")
             usingWebFallback = false
+            nativeGenreCacheMutex.withLock { nativeGenreCache.clear() }
             if (provider is TmdbProvider && !tmdbConfigured()) {
                 throw IllegalStateException("TMDb richiede una chiave API gratuita valida nelle Impostazioni. La chiave 'dummy' non funziona.")
             }
@@ -361,11 +365,73 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             this@SearchViewModel.query = query
             page = targetPage
             val filtered = ParentalControlUtils.filterItems(results)
-            _state.emit(State.SuccessSearching(filtered, hasMore = !usingWebFallback &&
-                Lab164SearchMatchPolicy.canLoadLocalMore(filtered.isNotEmpty(), filters.isActive, targetPage)))
+            val hasMore = !usingWebFallback &&
+                Lab164SearchMatchPolicy.canLoadLocalMore(filtered.isNotEmpty(), filters.isActive, targetPage)
+            _state.emit(State.SuccessSearching(filtered, hasMore = hasMore))
+            // No items -> RecyclerView never binds a last poster, so its scroll
+            // listener cannot request the next page. Continue on the same native
+            // source automatically until matching posters or source exhaustion.
+            if (filtered.isEmpty() && filters.isActive && hasMore) loadMore()
         } catch (e: Exception) {
             Log.e("SearchViewModel", "executeSearch", e)
             _state.emit(State.FailedSearching(e))
+        }
+    }
+
+
+    /**
+     * LAB171 regression fix: source listing cards often contain only title +
+     * poster, and no item.genres. Streamflix's built-in genre navigation uses
+     * provider.search("", 1) -> Genre -> provider.getGenre(id, page).
+     * Use THAT native source route instead of discarding every poster.
+     */
+    private suspend fun nativeGenrePage(
+        provider: Provider,
+        filters: AdvancedSearchFilters,
+        requestedPage: Int,
+    ): List<AppAdapter.Item>? {
+        if (filters.effectiveGenres.isEmpty() || provider is TmdbProvider) return null
+        val cacheKey = provider.name + "|" + (ProviderEndpointRegistry.selectedOverride(provider.name) ?: "")
+        val choices = nativeGenreCacheMutex.withLock {
+            nativeGenreCache[cacheKey] ?: run {
+                val entries = try {
+                    provider.search("", 1).filterIsInstance<Genre>()
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (error: Exception) {
+                    Log.w("SearchViewModel", "Unable to list native genres for ${provider.name}", error)
+                    emptyList()
+                }
+                val available = if (entries.isNotEmpty()) entries else try {
+                    provider.getHome().flatMap { category ->
+                        category.list.filterIsInstance<Genre>()
+                    }
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (error: Exception) {
+                    Log.w("SearchViewModel", "Native home genres unavailable for ${provider.name}", error)
+                    emptyList()
+                }
+                nativeGenreCache[cacheKey] = available
+                available
+            }
+        }
+        val ids = Lab171NativeGenrePolicy.matchingNativeIds(choices, filters.effectiveGenres)
+        if (ids.isEmpty()) return null
+        return coroutineScope {
+            val permits = Semaphore(3)
+            ids.map { id -> async(Dispatchers.IO) {
+                permits.withPermit {
+                    try {
+                        provider.getGenre(id, requestedPage).shows.filterIsInstance<AppAdapter.Item>()
+                    } catch (cancel: kotlinx.coroutines.CancellationException) {
+                        throw cancel
+                    } catch (error: Exception) {
+                        Log.w("SearchViewModel", "Native genre page ${provider.name} ${id} / ${requestedPage}", error)
+                        emptyList()
+                    }
+                }
+            } }.awaitAll().flatten().distinctBy { it.searchIdentityKey() }
         }
     }
 
@@ -380,14 +446,20 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
     ): List<AppAdapter.Item> {
         // LAB170: exactly one native Streamflix source page, for EVERY page.
         // Do not search individually for dozens of TMDb candidate titles.
-        val raw = providedPage ?: if (query.isBlank()) browseProvider(provider, page, filters.type)
+        val nativeGenre = if (providedPage == null) nativeGenrePage(provider, filters, page) else null
+        val raw = providedPage ?: nativeGenre
+            ?: if (query.isBlank()) browseProvider(provider, page, filters.type)
             else searchProviderWithRecovery(provider, query, page)
+        val effectiveFilters = if (nativeGenre != null) filters.copy(
+            genre = AdvancedSearchFilters.GenreFilter.ALL,
+            genres = emptySet(),
+        ) else filters
         val requiresMetadata =
             filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
             filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
             filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
             !filters.actorId.isNullOrBlank() || !filters.directorId.isNullOrBlank()
-        if (!requiresMetadata) return applyProviderFilters(raw, filters)
+        if (!requiresMetadata) return applyProviderFilters(raw, effectiveFilters)
         if (!tmdbConfigured()) throw IllegalStateException(
             "Questo filtro richiede una chiave TMDb gratuita valida nelle Impostazioni."
         )
@@ -396,7 +468,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             query, filters, page, candidateSelection = true)
         if (approved.isEmpty()) return emptyList()
         val keys = approved.mapNotNull(::filterMatchKey).toSet()
-        return applyProviderFilters(raw, filters, trustMetadata = true)
+        return applyProviderFilters(raw, effectiveFilters, trustMetadata = true)
             .filter { item -> filterMatchKey(item)?.let { key ->
                 Lab164SearchMatchPolicy.matchesMetadata(key, keys)
             } == true }
@@ -507,10 +579,14 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
             val direct = searchTmdbAdvanced(provider, text, filters, pageIndex)
             return direct to direct
         }
-        val raw = if (text.isBlank()) browseProvider(provider, pageIndex, filters.type)
+        val nativeGenre = nativeGenrePage(provider, filters, pageIndex)
+        val raw = nativeGenre ?: if (text.isBlank()) browseProvider(provider, pageIndex, filters.type)
             else searchProviderWithRecovery(provider, text, pageIndex)
+        val safeFilters = if (nativeGenre != null) filters.copy(
+            genre = AdvancedSearchFilters.GenreFilter.ALL, genres = emptySet()
+        ) else filters
         val displayed = if (filters.isActive) searchProviderAdvanced(
-            provider, text, filters, pageIndex,
+            provider, text, safeFilters, pageIndex,
             providedPage = raw, sharedMetadata = metadata
         ) else raw
         return raw to displayed
@@ -1042,6 +1118,7 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
 
         val targets = originals + remotes
         globalTargets = targets
+        nativeGenreCacheMutex.withLock { nativeGenreCache.clear() }
         globalEmptyRawByTarget.clear()
         globalRepeatedRawByTarget.clear()
         globalLastRawByTarget.clear()
@@ -1210,8 +1287,11 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
                 )))
                 return@launch
             }
-            // LAB169: no eager page-2/page-3 fan-out. Streamflix requests
-            // another page only from the on-demand poster-wall callback.
+            // LAB171: an empty filtered first screen has no cards whose bind
+            // can trigger load-more; start the native on-demand scanner once.
+            val wall = _state.value as? State.SuccessGlobalSearching
+            if (advancedFilters.isActive && wall != null &&
+                wall.catalog.posters.isEmpty() && wall.hasMore) loadMoreGlobal()
         }
     }
 

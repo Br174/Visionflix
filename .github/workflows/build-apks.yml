@@ -648,6 +648,57 @@ jobs:
             --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
           echo '[LAB170_TESTS=PASS] native provider pages, Western 1970-1990, Mobile controls, TV protections'
 
+      - name: LAB171 Mobile genre filter regression and native Streamflix category checks
+        if: github.ref == 'refs/heads/lab/visionflix-lab171-mobile-filter-genre-regression-20261026'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          vm=(root/'SearchViewModel.kt').read_text()
+          mobile=(root/'SearchMobileFragment.kt').read_text()
+          layout=Path('app/src/main/res/layout/fragment_search_mobile.xml').read_text()
+          tv=(root/'SearchTvFragment.kt').read_text()
+          assert 'provider.search("", 1).filterIsInstance<Genre>()' in vm
+          assert 'provider.getGenre(id, requestedPage).shows' in vm
+          assert 'Lab171NativeGenrePolicy.matchingNativeIds' in vm
+          assert 'genre = AdvancedSearchFilters.GenreFilter.ALL' in vm
+          assert 'if (filtered.isEmpty() && filters.isActive && hasMore) loadMore()' in vm
+          assert 'wall.catalog.posters.isEmpty() && wall.hasMore) loadMoreGlobal()' in vm
+          assert 'nativeProviderPage(provider, nextPage, advancedFilters, query)' in vm
+          assert 'nativeProviderPage(engine, nextPage, advancedFilters, query, metadata)' in vm
+          assert 'searchHeaderMobile.translationY = -offset.toFloat()' not in mobile
+          assert 'binding.spPlatform,\n                binding.spCountry,' in mobile
+          assert 'btn_filter_toggle' in layout and 'scroll_advanced_filters' in layout
+          assert 'private fun selectActor(' in tv and 'private fun selectDirector(' in tv
+          assert 'fun searchActors(' in vm and 'fun searchDirectors(' in vm
+          assert 'GlobalCatalogMerger.merge' in vm
+          print('[LAB171_SOURCE=PASS] native genres, filtered-empty continuation and protected Mobile/TV UI')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab171NativeGenrePolicyTest' \
+            --tests '*Lab170NativePagingPolicyTest' \
+            --tests '*Lab168FastResultsPolicyTest' \
+            --tests '*Lab165FastDiscoveryPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab164TmdbCredentialRoutingTest' \
+            --tests '*Lab150AdvancedFiltersTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*Lab159DrawerFocusPolicyTest' \
+            --tests '*DirectorCreditsTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' --stacktrace
+          echo '[LAB171_TESTS=PASS] Native Streamflix genre path and all previous regressions'
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}

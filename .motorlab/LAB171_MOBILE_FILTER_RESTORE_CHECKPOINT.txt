@@ -1,0 +1,11 @@
+MOTORLAB LAB171 FILTER REGRESSION CHECKPOINT
+RELEASE=2026.10.22-r38
+BASE_VERIFIED_LAB170=9c65c8080cd2d3afe058cc4feef307a2211e4968
+BRANCH=lab/visionflix-lab171-mobile-filter-genre-regression-20261026
+ISSUE=User Android Mobile: unfiltered poster search works; applying a single genre (Western) empties wall.
+ROOT_CAUSE=LAB170 postfilters sparse provider listing cards without item.genres; no cards -> RecyclerView cannot trigger page continuation.
+FIX=Streamflix native search(empty) Genre categories then getGenre(id,page) per provider (one native page at a time); preserve source dedupe; native route itself verifies genre. Filtered empty first page triggers continuation. Shared SearchViewModel covers TV also, TV UI code untouched.
+SCOPE=user explicitly requested fix Mobile and verify TV, no paid service or structural changes
+PROTECTED=LAB166/167/168/169/170; player, people photos, Android app ID/signing, MADRE/main/production.
+RISKS=providers not exposing genre navigations still need metadata; real device/provider response cannot be proven by unit tests.
+STATUS=LAB171_TEST_PENDING
