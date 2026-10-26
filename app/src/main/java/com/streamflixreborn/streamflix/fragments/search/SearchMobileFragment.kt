@@ -53,7 +53,6 @@ class SearchMobileFragment : Fragment() {
     private var directorSearchJob: Job? = null
     private var suppressActorTextChange: Boolean = false
     private var suppressDirectorTextChange: Boolean = false
-    private var searchHeaderOffset: Int = 0
     private val selectedGenres = linkedSetOf<com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.GenreFilter>()
 
     private val actorSuggestionsAdapter by lazy {
@@ -102,6 +101,7 @@ class SearchMobileFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         initializeSearch()
         initializeAdvancedFilters()
+        initializeFilterDrawer()
         initializeActorSearch()
         initializeDirectorSearch()
         restorePersistedFilters()
@@ -307,40 +307,38 @@ class SearchMobileFragment : Fragment() {
         })
     }
 
+    // Only the visible side arrow may open or close this compact Mobile drawer.
+    private fun initializeFilterDrawer() {
+        val h = (resources.displayMetrics.heightPixels * 0.44f).toInt()
+            .coerceAtMost(330.dp(requireContext())).coerceAtLeast(190.dp(requireContext()))
+        binding.scrollAdvancedFilters.layoutParams =
+            binding.scrollAdvancedFilters.layoutParams.apply { height = h }
+        binding.scrollAdvancedFilters.visibility = View.GONE
+        binding.btnFilterToggle.apply {
+            text = "⌄"
+            contentDescription = "Apri i filtri"
+            setOnClickListener {
+                val expanded = binding.scrollAdvancedFilters.visibility != View.VISIBLE
+                binding.scrollAdvancedFilters.visibility = if (expanded) View.VISIBLE else View.GONE
+                text = if (expanded) "⌃" else "⌄"
+                contentDescription = if (expanded) "Chiudi i filtri" else "Apri i filtri"
+                binding.searchHeaderMobile.post { updateGridTopPadding() }
+            }
+        }
+    }
+
     private fun initializeScrollableHeader() {
         binding.searchHeaderMobile.post { updateGridTopPadding() }
-
-        binding.rvSearch.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (_binding == null) return
-                syncHeaderToGrid(recyclerView)
-            }
-        })
+        binding.searchHeaderMobile.translationY = 0f
     }
 
     private fun updateGridTopPadding() {
         if (_binding == null) return
-        val extra = 8.dp(requireContext())
-        val topPadding = binding.searchHeaderMobile.height + extra
-        if (binding.rvSearch.paddingTop != topPadding) {
-            binding.rvSearch.setPadding(
-                binding.rvSearch.paddingLeft,
-                topPadding,
-                binding.rvSearch.paddingRight,
-                binding.rvSearch.paddingBottom,
-            )
+        val top = binding.searchHeaderMobile.height + 8.dp(requireContext())
+        if (binding.rvSearch.paddingTop != top) {
+            binding.rvSearch.setPadding(binding.rvSearch.paddingLeft,
+                top, binding.rvSearch.paddingRight, binding.rvSearch.paddingBottom)
         }
-        syncHeaderToGrid(binding.rvSearch)
-    }
-
-    private fun syncHeaderToGrid(recyclerView: RecyclerView) {
-        if (_binding == null) return
-        val maxOffset = binding.searchHeaderMobile.height
-        if (maxOffset <= 0) return
-
-        val offset = recyclerView.computeVerticalScrollOffset().coerceIn(0, maxOffset)
-        searchHeaderOffset = offset
-        binding.searchHeaderMobile.translationY = -offset.toFloat()
     }
 
     private fun savePersistedFilters() {
@@ -505,6 +503,7 @@ class SearchMobileFragment : Fragment() {
                 binding.spGenre,
                 binding.spSort,
                 binding.spPlatform,
+                binding.spCountry,
             )
         } catch (e: IllegalArgumentException) {
             Toast.makeText(
@@ -666,7 +665,7 @@ class SearchMobileFragment : Fragment() {
             }
         })
 
-        if (hasMore && (viewModel.query.isNotEmpty() || viewModel.advancedFilters.isActive)) {
+        if (hasMore) {
             appAdapter.setOnLoadMoreListener { viewModel.loadMore() }
         } else {
             appAdapter.setOnLoadMoreListener(null)

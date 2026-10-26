@@ -371,151 +371,30 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         page: Int,
         sharedMetadata: List<AppAdapter.Item>? = null,
         candidateLimit: Int = 24,
-    ): List<AppAdapter.Item> = coroutineScope {
-        val needsTmdbMetadata =
-            filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
-                !filters.actorId.isNullOrBlank() ||
-                !filters.directorId.isNullOrBlank() ||
-                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-                filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
-                filters.effectiveGenres.isNotEmpty() ||
-                filters.type == AdvancedSearchFilters.ContentType.CARTOON ||
-                // Date ranges should discover relevant titles across decades, not only first catalog pages.
-                (tmdbConfigured() && (filters.year != null ||
-                    !filters.dateFrom.isNullOrBlank() || !filters.dateTo.isNullOrBlank()))
-
-        val hasMetadata = tmdbConfigured()
-        val strictlyRequiresMetadata =
+        providedPage: List<AppAdapter.Item>? = null,
+    ): List<AppAdapter.Item> {
+        // LAB170: exactly one native Streamflix source page, for EVERY page.
+        // Do not search individually for dozens of TMDb candidate titles.
+        val raw = providedPage ?: if (query.isBlank()) browseProvider(provider, page, filters.type)
+            else searchProviderWithRecovery(provider, query, page)
+        val requiresMetadata =
             filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
             filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
             filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-            !filters.actorId.isNullOrBlank() ||
-            !filters.directorId.isNullOrBlank()
-        if (needsTmdbMetadata && !hasMetadata && strictlyRequiresMetadata) {
-            throw IllegalStateException(
-                "Impossibile verificare questi filtri: manca una chiave TMDb gratuita. " +
-                    "Configurala nelle Impostazioni, non usare la chiave 'dummy'."
-            )
-        }
-        // LAB169: keep the original Streamflix direct provider page as the
-        // only local pagination route. TMDb is only for filters that cannot
-        // be verified by the provider's own data.
-        val immediateResults: List<AppAdapter.Item>? =
-            if (Lab168FastResultsPolicy.canUseDirectProviderResults(filters)) {
-                if (query.isBlank()) browseProvider(provider, page, filters.type)
-                else searchProviderWithRecovery(provider, query, page)
-            } else null
-        if (immediateResults != null) {
-            val matched = applyProviderFilters(immediateResults, filters)
-            if (matched.isNotEmpty() || page > 1) return@coroutineScope matched
-            // Only the first sparse page may consult external metadata.
-            // Later pages NEVER cascade into additional TMDb/title requests.
-        }
-        val lightweightYearQuery = Lab164SearchMatchPolicy.providerFirstYearQuery(query, filters)
-        val metadataEnabled = needsTmdbMetadata && hasMetadata && !lightweightYearQuery
-
-        val directResults = when {
-            query.isNotBlank() -> immediateResults ?: searchProviderWithRecovery(provider, query, page)
-            metadataEnabled -> emptyList()
-            else -> immediateResults ?: browseProvider(provider, page, filters.type)
-        }
-        if (!metadataEnabled) {
-            val local = applyProviderFilters(directResults, filters)
-            if (lightweightYearQuery && local.isEmpty() && directResults.isNotEmpty() && hasMetadata) {
-                // A source can omit release year even when its title is available.
-                // Verify only the already retrieved provider results against a
-                // single small TMDb text search, never a large multi-page discover.
-                val metadata = sharedMetadata ?: try {
-                    searchTmdbYearCandidates(query, filters, provider.language)
-                } catch (error: Exception) {
-                    if (error is kotlinx.coroutines.CancellationException) throw error
-                    Log.w("SearchViewModel", "Limited TMDb year verification unavailable", error)
-                    emptyList()
-                }
-                val keys = metadata.mapNotNull(::filterMatchKey).toSet()
-                if (keys.isNotEmpty()) {
-                    return@coroutineScope applyProviderFilters(
-                        directResults, filters.copy(year=null,dateFrom=null,dateTo=null),
-                        trustMetadata=true
-                    ).filter { itemMatchesMetadata(it, keys) }
-                }
-            }
-            if (needsTmdbMetadata && local.isEmpty() && !lightweightYearQuery) {
-                throw IllegalStateException(
-                    "Non ci sono generi verificabili nei risultati del provider. " +
-                        "Per questi filtri serve la chiave TMDb gratuita nelle Impostazioni."
-                )
-            }
-            return@coroutineScope local
-        }
-
-        val metadataMatches = try {
-            sharedMetadata ?: searchTmdbAdvanced(TmdbProvider(provider.language), query, filters, page, candidateSelection = true)
-        } catch (error: retrofit2.HttpException) {
-            if (error.code() == 401 || error.code() == 403) {
-                throw IllegalStateException(
-                    "TMDb ha rifiutato la chiave salvata (HTTP ${error.code()}). " +
-                        "Verifica che sia una API Key v3 oppure un Read Access Token valido.", error
-                )
-            }
-            throw error
-        }
-
-        if (metadataMatches.isEmpty()) return@coroutineScope emptyList()
-
-        val metadataKeys = metadataMatches
-            .mapNotNull(::filterMatchKey)
-            .toSet()
-
-        if (query.isNotBlank()) {
-            return@coroutineScope applyProviderFilters(directResults, filters, trustMetadata = true)
-                .filter { itemMatchesMetadata(it, metadataKeys) }
-        }
-
-        // Search only as far as needed. Sparse first windows get a second bounded
-        // candidate batch instead of giving a false empty result.
-        val providerGate = Semaphore(3)
-        suspend fun findVerified(items: List<AppAdapter.Item>): List<AppAdapter.Item> {
-            return items.map { candidate ->
-                async(Dispatchers.IO) {
-                    providerGate.withPermit {
-                        val candidateKey = filterMatchKey(candidate)
-                        val title = when (candidate) {
-                            is Movie -> candidate.title
-                            is TvShow -> candidate.title
-                            else -> ""
-                        }
-                        if (title.isBlank() || candidateKey == null) emptyList()
-                        else runCatching { searchProviderWithRecovery(provider, title, 1) }
-                            .getOrDefault(emptyList())
-                            // Correlate each returned provider title to the exact TMDb
-                            // candidate queried, never a different filtered title.
-                            .filter { item ->
-                                filterMatchKey(item)?.let { itemKey ->
-                                    Lab164SearchMatchPolicy.matchesMetadata(
-                                        itemKey, setOf(candidateKey)
-                                    )
-                                } ?: false
-                            }
-                    }
-                }
-            }.awaitAll().flatten().distinctBy { it.searchIdentityKey() }
-        }
-        val effectiveLimit = Lab165FastDiscoveryPolicy.candidateLimit(
-            candidateLimit, query, filters.actorId, filters.directorId, page
+            !filters.actorId.isNullOrBlank() || !filters.directorId.isNullOrBlank()
+        if (!requiresMetadata) return applyProviderFilters(raw, filters)
+        if (!tmdbConfigured()) throw IllegalStateException(
+            "Questo filtro richiede una chiave TMDb gratuita valida nelle Impostazioni."
         )
-        val firstBatch = findVerified(metadataMatches.take(effectiveLimit))
-        val verified = if (firstBatch.isEmpty()) {
-            (firstBatch + findVerified(metadataMatches.drop(effectiveLimit).take(effectiveLimit)))
-                .distinctBy { it.searchIdentityKey() }
-        } else firstBatch
-        val accepted = applyProviderFilters(verified, filters, trustMetadata = true)
-            .filter { itemMatchesMetadata(it, metadataKeys) }
-        if (accepted.isEmpty() && page == 1 && metadataMatches.isNotEmpty()) {
-            Log.i("SearchViewModel",
-                "Filter metadata found ${metadataMatches.size} titles; provider ${provider.name} supplied 0 verified matches")
-        }
-        accepted
+        if (raw.isEmpty()) return emptyList()
+        val approved = sharedMetadata ?: searchTmdbAdvanced(TmdbProvider(provider.language),
+            query, filters, page, candidateSelection = true)
+        if (approved.isEmpty()) return emptyList()
+        val keys = approved.mapNotNull(::filterMatchKey).toSet()
+        return applyProviderFilters(raw, filters, trustMetadata = true)
+            .filter { item -> filterMatchKey(item)?.let { key ->
+                Lab164SearchMatchPolicy.matchesMetadata(key, keys)
+            } == true }
     }
 
     private fun filterMatchKey(item: AppAdapter.Item): String? {
@@ -613,48 +492,72 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         }
     }
 
-    /** LAB169: Streamflix one requested page -> one append. No hidden page skips. */
+    /** One unfiltered provider API page, then optional filters; never skip pages. */
+    private suspend fun nativeProviderPage(
+        provider: Provider, pageIndex: Int, filters: AdvancedSearchFilters,
+        text: String,
+    ): Pair<List<AppAdapter.Item>, List<AppAdapter.Item>> {
+        if (provider is TmdbProvider && (filters.isActive || text.isNotBlank())) {
+            val direct = searchTmdbAdvanced(provider, text, filters, pageIndex)
+            return direct to direct
+        }
+        val raw = if (text.isBlank()) browseProvider(provider, pageIndex, filters.type)
+            else searchProviderWithRecovery(provider, text, pageIndex)
+        val displayed = if (filters.isActive) searchProviderAdvanced(
+            provider, text, filters, pageIndex, providedPage = raw
+        ) else raw
+        return raw to displayed
+    }
+
     fun loadMore() = viewModelScope.launch(Dispatchers.IO) {
         if (localLoadingMore) return@launch
-        val currentState = _state.value as? State.SuccessSearching ?: return@launch
-        if (!currentState.hasMore) return@launch
+        val initial = _state.value as? State.SuccessSearching ?: return@launch
+        if (!initial.hasMore) return@launch
         if (usingWebFallback) {
-            _state.emit(currentState.copy(hasMore = false))
+            _state.emit(initial.copy(hasMore = false))
             return@launch
         }
         localLoadingMore = true
+        var continueScanning = false
         _state.emit(State.SearchingMore)
         try {
             val provider = UserPreferences.currentProvider
                 ?: throw IllegalStateException("Seleziona prima un provider")
-            val nextPage = page + 1
-            val results = when {
-                provider is TmdbProvider && (advancedFilters.isActive || query.isNotBlank()) ->
-                    searchTmdbAdvanced(provider, query, advancedFilters, nextPage)
-                advancedFilters.isActive ->
-                    searchProviderAdvanced(provider, query, advancedFilters, nextPage)
-                query.isBlank() -> browseProvider(provider, nextPage)
-                else -> searchProviderWithRecovery(provider, query, nextPage)
+            val keys = initial.results.mapTo(hashSetOf()) { it.searchIdentityKey() }
+            val additions = mutableListOf<AppAdapter.Item>()
+            var batch = 0
+            var rawEmpty = 0
+            var rawRepeated = 0
+            var lastSignature: String? = null
+            var sourceHasMore = true
+            while (batch < Lab170NativePagingPolicy.MAX_SCAN_BATCH &&
+                additions.isEmpty() && sourceHasMore) {
+                val nextPage = page + 1
+                val (raw, shown) = nativeProviderPage(provider, nextPage, advancedFilters, query)
+                page = nextPage
+                batch++
+                val signature = Lab170NativePagingPolicy.signature(raw.map { it.searchIdentityKey() })
+                rawEmpty = if (raw.isEmpty()) rawEmpty + 1 else 0
+                rawRepeated = if (raw.isNotEmpty() && signature == lastSignature)
+                    rawRepeated + 1 else 0
+                lastSignature = signature
+                ParentalControlUtils.filterItems(shown).forEach {
+                    if (keys.add(it.searchIdentityKey())) additions.add(it)
+                }
+                sourceHasMore = Lab170NativePagingPolicy.shouldContinue(page, rawEmpty, rawRepeated)
+                kotlinx.coroutines.yield()
             }
-            val known = currentState.results.asSequence()
-                .map { it.searchIdentityKey() }.toHashSet()
-            val newUniqueResults = ParentalControlUtils.filterItems(results)
-                .filterNot { it.searchIdentityKey() in known }
-                .distinctBy { it.searchIdentityKey() }
-            page = nextPage
-            _state.emit(State.SuccessSearching(
-                results = currentState.results + newUniqueResults,
-                hasMore = newUniqueResults.isNotEmpty(),
-            ))
+            continueScanning = additions.isEmpty() && sourceHasMore
+            _state.emit(State.SuccessSearching(initial.results + additions, sourceHasMore))
         } catch (cancel: kotlinx.coroutines.CancellationException) {
             throw cancel
         } catch (error: Exception) {
-            Log.e("SearchViewModel", "LAB169 loadMore", error)
-            // Retain previous posters when the next page fails.
-            _state.emit(currentState.copy(hasMore = false))
+            Log.e("SearchViewModel", "LAB170 native page scan", error)
+            _state.emit(initial.copy(hasMore = false))
         } finally {
             localLoadingMore = false
         }
+        if (continueScanning) loadMore().join()
     }
 
     private fun normalizeFilters(filters: AdvancedSearchFilters): AdvancedSearchFilters {
