@@ -299,12 +299,16 @@ class SearchViewModel(database: AppDatabase) : ViewModel() {
         type: AdvancedSearchFilters.ContentType = AdvancedSearchFilters.ContentType.ALL,
     ): List<AppAdapter.Item> = coroutineScope {
         // LAB168: Streamflix's direct provider page, avoiding unrequested media types.
-        val movies = if (type == AdvancedSearchFilters.ContentType.TV) null
+        val movies: kotlinx.coroutines.Deferred<List<Movie>>? =
+            if (type == AdvancedSearchFilters.ContentType.TV) null
             else async { runCatching { provider.getMovies(page) }.getOrDefault(emptyList()) }
-        val series = if (type == AdvancedSearchFilters.ContentType.MOVIE) null
+        val series: kotlinx.coroutines.Deferred<List<TvShow>>? =
+            if (type == AdvancedSearchFilters.ContentType.MOVIE) null
             else async { runCatching { provider.getTvShows(page) }.getOrDefault(emptyList()) }
-        (movies?.await().orEmpty() + series?.await().orEmpty())
-            .distinctBy { it.searchIdentityKey() }
+        val results = mutableListOf<AppAdapter.Item>()
+        movies?.await()?.let { results.addAll(it) }
+        series?.await()?.let { results.addAll(it) }
+        results.distinctBy { it.searchIdentityKey() }
     }
 
     private suspend fun searchProviderWithRecovery(provider: Provider, text: String, page: Int): List<AppAdapter.Item> {
