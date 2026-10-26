@@ -843,6 +843,8 @@ jobs:
           echo '[LAB174_TESTS=PASS] TV single/combo source filters and strict metadata'
       - name: LAB175 TV catalogue-index integration and no-rescan tests
         if: github.ref == 'refs/heads/lab/visionflix-lab175-availability-index-tv-20261026'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
