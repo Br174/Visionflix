@@ -19,6 +19,9 @@ data class AdvancedSearchFilters(
     val country: CountryFilter = CountryFilter.ALL,
 ) {
     enum class ContentType { ALL, MOVIE, TV, CARTOON }
+    // LAB184: preserve persisted enum values while the two-entry UI now offers
+    // YES = Italian-dubbed preference (default), NO = original-language option.
+    // This selection never changes the independent production-country filter.
     enum class ItalianFilter { ALL, YES, NO }
 
     enum class SortFilter(val label: String) {
