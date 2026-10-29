@@ -27,6 +27,8 @@ class Lab168FastResultsPolicyTest {
         assertFalse(Lab168FastResultsPolicy.canUseDirectProviderResults(
             AdvancedSearchFilters(italian = AdvancedSearchFilters.ItalianFilter.YES)))
         assertFalse(Lab168FastResultsPolicy.canUseDirectProviderResults(
+            AdvancedSearchFilters(italian = AdvancedSearchFilters.ItalianFilter.NO)))
+        assertFalse(Lab168FastResultsPolicy.canUseDirectProviderResults(
             AdvancedSearchFilters(platform = AdvancedSearchFilters.PlatformFilter.NETFLIX)))
     }
 
