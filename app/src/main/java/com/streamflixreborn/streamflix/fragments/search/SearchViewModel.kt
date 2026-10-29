@@ -19,6 +19,8 @@ import com.streamflixreborn.streamflix.providers.EndpointManagedProvider
 import com.streamflixreborn.streamflix.providers.ProviderConfigUrl
 import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
 import com.streamflixreborn.streamflix.providers.TmdbProvider
+import com.streamflixreborn.streamflix.utils.Lab186AudioEvidencePolicy
+import com.streamflixreborn.streamflix.utils.Lab186AudioEvidenceStore
 import com.streamflixreborn.streamflix.utils.ParentalControlUtils
 import com.streamflixreborn.streamflix.utils.TMDb3
 import com.streamflixreborn.streamflix.utils.TMDb3.original
@@ -194,6 +196,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     // LAB175: independent, persistent catalogue for Android TV. Mobile keeps
     // the historical search path until TV end-to-end acceptance is verified.
     private val availabilityIndex = availabilityContext?.let { Lab175AvailabilityIndex(it) }
+    private val audioEvidenceContext = availabilityContext?.applicationContext
     private var availabilityMaintenance: Job? = null
     private var maintenanceGeneration = 0
 
@@ -876,6 +879,43 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 }
             }
             if (!typeOk) return@filter false
+
+            if (filters.italian == AdvancedSearchFilters.ItalianFilter.YES) {
+                // LAB186: Italian provider/TMDb translation does not prove dubbed
+                // audio. Reject documented subtitle-only editions and source-
+                // specific foreign tracks observed by the real player.
+                val audioTitle = when (item) {
+                    is Movie -> item.title
+                    is TvShow -> item.title
+                    else -> ""
+                }
+                val audioQuality = when (item) {
+                    is Movie -> item.quality
+                    is TvShow -> item.quality
+                    else -> null
+                }
+                if (Lab186AudioEvidencePolicy.explicitlySubtitleOnly(audioTitle, audioQuality))
+                    return@filter false
+                val sourceId = when (item) {
+                    is Movie -> item.id
+                    is TvShow -> item.id
+                    else -> ""
+                }
+                val provider = when (item) {
+                    is Movie -> item.providerName
+                    is TvShow -> item.providerName
+                    else -> null
+                }
+                val mirror = when (item) {
+                    is Movie -> item.providerEndpoint
+                    is TvShow -> item.providerEndpoint
+                    else -> null
+                }.orEmpty()
+                if (audioEvidenceContext?.let {
+                    Lab186AudioEvidenceStore.get(it, provider, sourceId, mirror)
+                } == Lab186AudioEvidencePolicy.Evidence.FOREIGN)
+                    return@filter false
+            }
 
             val date = when (item) {
                 is Movie -> item.released?.format("yyyy-MM-dd")
