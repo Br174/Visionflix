@@ -8,6 +8,12 @@ class Lab182SourceMatchPolicyTest {
     @Test fun contentTypeOnlyDoesNotNeedTmdb() {
         assertFalse(Lab182SourceMatchPolicy.requiresMetadata(AdvancedSearchFilters()))
         assertFalse(Lab182SourceMatchPolicy.requiresMetadata(
+            AdvancedSearchFilters(italian = AdvancedSearchFilters.ItalianFilter.YES)))
+        assertTrue(Lab182SourceMatchPolicy.requiresMetadata(
+            AdvancedSearchFilters(
+                italian = AdvancedSearchFilters.ItalianFilter.YES,
+                country = AdvancedSearchFilters.CountryFilter.USA)))
+        assertFalse(Lab182SourceMatchPolicy.requiresMetadata(
             AdvancedSearchFilters(type = AdvancedSearchFilters.ContentType.MOVIE)))
     }
     @Test fun decadeFilterRequiresVerification() {
