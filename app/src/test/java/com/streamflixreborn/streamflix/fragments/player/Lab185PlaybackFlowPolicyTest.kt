@@ -19,6 +19,8 @@ class Lab185PlaybackFlowPolicyTest {
         val low = Lab185PlaybackFlowPolicy.profile(true, true)
         assertTrue(tv.minBufferMs > base.minBufferMs)
         assertTrue(tv.maxBufferMs >= tv.minBufferMs)
+        assertTrue(low.minBufferMs > base.minBufferMs)
+        assertTrue(low.maxBufferMs <= 75_000)
         assertTrue(low.maxBufferMs <= tv.maxBufferMs)
         assertTrue(low.minBufferMs <= low.maxBufferMs)
         assertTrue(tv.resumePlaybackMs >= tv.startPlaybackMs)

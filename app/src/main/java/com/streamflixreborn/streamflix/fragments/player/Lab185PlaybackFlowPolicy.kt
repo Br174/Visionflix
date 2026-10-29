@@ -21,7 +21,7 @@ internal object Lab185PlaybackFlowPolicy {
                 DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
                 DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
             )
-            lowRam -> Profile(30_000, 60_000, 1_500, 4_000)
+            lowRam -> Profile(55_000, 75_000, 1_500, 4_000)
             else -> Profile(60_000, 120_000, 1_500, 5_000)
         }
 
