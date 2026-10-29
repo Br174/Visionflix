@@ -582,17 +582,16 @@ class SearchTvFragment : Fragment() {
                 }
             }
             italianSelector = makeSelector(
-                "Lingua originale",
+                "Versione audio",
                 listOf(
-                    AdvancedSearchFilters.ItalianFilter.ALL,
                     AdvancedSearchFilters.ItalianFilter.YES,
                     AdvancedSearchFilters.ItalianFilter.NO,
                 ),
             ) {
                 when (it) {
-                    AdvancedSearchFilters.ItalianFilter.ALL -> "Tutte"
-                    AdvancedSearchFilters.ItalianFilter.YES -> "Italiana"
-                    AdvancedSearchFilters.ItalianFilter.NO -> "Non italiana"
+                    AdvancedSearchFilters.ItalianFilter.ALL -> "Doppiato in italiano"
+                    AdvancedSearchFilters.ItalianFilter.YES -> "Doppiato in italiano"
+                    AdvancedSearchFilters.ItalianFilter.NO -> "Lingua originale"
                 }
             }
             val currentYear = Calendar.getInstance().get(Calendar.YEAR).coerceAtLeast(2026)
