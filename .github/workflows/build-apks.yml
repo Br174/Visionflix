@@ -64,6 +64,7 @@ jobs:
           SUBDL_API_KEY=dummy
           RABBITSTREAM_SOURCE_API=
           EOF
+          chmod +x ./gradlew
           node .motorlab/regression/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-report.json
           echo '[SCUDO360=PASS] Required search and filter JUnit class evidence'
 
