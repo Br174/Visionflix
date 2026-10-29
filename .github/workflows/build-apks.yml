@@ -1288,6 +1288,48 @@ jobs:
           print('[LAB186_ITALIAN_AUDIO_EVIDENCE=PASS]')
           PY
 
+      - name: LAB187 TV DPAD focus and visual theme regression proof
+        if: github.ref == 'refs/heads/lab/visionflix-lab187-tv-remote-focus-highlight-20261029'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          src=(root/'SearchTvFragment.kt').read_text()
+          policy=(root/'Lab187RemoteFocusPolicy.kt').read_text()
+          assert 'private fun focusSearchFromTopPosters()' in src
+          assert 'private fun openFiltersFromResults(): Boolean' in src
+          assert 'private fun exitFiltersDownToPosterWall(): Boolean' in src
+          assert 'Lab187RemoteFocusPolicy.Route.SEARCH_UP' in src
+          assert 'Lab187RemoteFocusPolicy.Route.SIDE_ARROW_OK' in src
+          assert 'Lab187RemoteFocusPolicy.Route.FOOTER_DOWN' in src
+          assert 'vgvSearch.nextFocusUpId = etSearch.id' in src
+          assert 'child?.itemView?.nextFocusUpId = etSearch.id' in src
+          assert 'openFiltersFromResults()' in src
+          assert 'setFilterPanelExpanded(false, true)' in src
+          assert 'setOnFocusChangeListener { _, focused ->' in src
+          assert 'cl_search_safe)?.isActivated = focused' in src
+          assert 'Color.rgb(22, 43, 64)' in src
+          assert 'CLOSE_AND_FOCUS_POSTERS' in policy
+          res=Path('app/src/main/res/drawable')
+          for name in ['bg_filter_action_primary_tv.xml','bg_filter_action_secondary_tv.xml',
+                      'bg_filter_control_tv.xml','bg_search_edittext_lab154.xml']:
+              xml=(res/name).read_text()
+              assert '#C9EDFF' in xml, name
+          assert 'state_activated' in (res/'bg_search_edittext_lab154.xml').read_text()
+          found=[]
+          for f in Path('app/build/test-results/testDebugUnitTest').glob('*.xml'):
+              node=ET.parse(f).getroot()
+              if node.attrib.get('name','').endswith('Lab187RemoteFocusPolicyTest'):
+                  assert int(node.attrib.get('tests',0))>=3, node.attrib
+                  assert int(node.attrib.get('failures',0))==0 and int(node.attrib.get('errors',0))==0, node.attrib
+                  found.append(f.name)
+          assert found, 'LAB187 focus tests not executed'
+          print('[LAB187_TV_DPAD_SCUDO360=PASS]', found)
+          PY
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
