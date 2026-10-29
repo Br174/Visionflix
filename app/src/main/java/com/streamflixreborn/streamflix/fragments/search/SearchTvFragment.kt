@@ -1360,8 +1360,7 @@ class SearchTvFragment : Fragment() {
         hideKeyboard()
         val filters = currentFilters() ?: return true
         if ((filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
-                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-                false) &&
+                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL) &&
             !com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting.hasKey(
                 UserPreferences.tmdbApiKey, com.streamflixreborn.streamflix.BuildConfig.TMDB_API_KEY)) {
             showSafeToast("Paese, piattaforma e lingua richiedono una chiave TMDb gratuita nelle Impostazioni")
