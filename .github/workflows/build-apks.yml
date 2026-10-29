@@ -53,6 +53,31 @@ jobs:
         with:
           cache-cleanup: on-success
 
+      # Mainline Scudo360 gate: mandatory before Mobile and TV packaging.
+      - name: Scudo360 native regression gate before any APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=mobile
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          node .motorlab/regression/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-report.json
+          echo '[SCUDO360=PASS] Required search and filter JUnit class evidence'
+
+      - name: Preserve Scudo360 report including failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scudo360-vision-${{ github.run_id }}
+          path: |
+            .motorlab/scudo360-report.json
+            app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Force next globally installable app version
         shell: bash
         run: |
@@ -95,31 +120,6 @@ jobs:
 
       - name: Progress 60% - cache and toolchain ready
         run: echo "[UAB_PROGRESS=60] Cache Gradle e toolchain pronte"
-
-      # Mainline Scudo360 gate: mandatory before Mobile and TV packaging.
-      - name: Scudo360 native regression gate before any APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > local.properties <<'EOF'
-          APP_LAYOUT=mobile
-          TMDB_API_KEY=dummy
-          SUBDL_API_KEY=dummy
-          RABBITSTREAM_SOURCE_API=
-          EOF
-          node .motorlab/regression/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-report.json
-          echo '[SCUDO360=PASS] Required search and filter JUnit class evidence'
-
-      - name: Preserve Scudo360 report including failure evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scudo360-vision-${{ github.run_id }}
-          path: |
-            .motorlab/scudo360-report.json
-            app/build/test-results/testDebugUnitTest/*.xml
-          if-no-files-found: warn
-          retention-days: 14
 
       - name: Build Android mobile debug APK
         run: |
