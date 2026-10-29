@@ -62,6 +62,11 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.streamflixreborn.streamflix.R
 import com.streamflixreborn.streamflix.fragments.player.settings.PlayerSettingsView
+import com.streamflixreborn.streamflix.fragments.search.SearchFilterPersistence
+import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
+import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
+import com.streamflixreborn.streamflix.utils.Lab186AudioEvidencePolicy
+import com.streamflixreborn.streamflix.utils.Lab186AudioEvidenceStore
 import com.streamflixreborn.streamflix.database.AppDatabase
 import com.streamflixreborn.streamflix.databinding.ContentExoControllerTvBinding
 import com.streamflixreborn.streamflix.databinding.FragmentPlayerTvBinding
@@ -160,6 +165,7 @@ class PlayerTvFragment : Fragment() {
     // LAB166: each ExoPlayer has exactly one listener. Previous revisions
     // registered another listener for every server/source and every retry.
     private var observedPlaybackPlayer: ExoPlayer? = null
+    private var lastForeignAudioSourceRejected: String? = null
     private val playbackPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val playbackPersistenceMutex = Mutex()
     private val bufferingWatchHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -1231,16 +1237,50 @@ class PlayerTvFragment : Fragment() {
 
                 override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                     super.onTracksChanged(tracks)
-                    val videoGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
-                    val videoTracks = videoGroups.sumOf { it.length }
-                    val selectedHeights = buildList {
-                        videoGroups.forEach { group ->
-                            for (i in 0 until group.length) {
-                                if (group.isTrackSelected(i)) {
-                                    add(group.getTrackFormat(i).height)
-                                }
-                            }
+                    if (!isAdded || _binding == null || currentVideo == null) return
+                    val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+                    if (audioGroups.isEmpty()) return
+                    val audioCodes = audioGroups.flatMap { group ->
+                        (0 until group.length).map { i -> group.getTrackFormat(i).language }
+                    }
+                    val evidence = Lab186AudioEvidencePolicy.classifyAudioLanguages(audioCodes)
+                    val provider = UserPreferences.currentProvider
+                    val contentId = when (val kind = args.videoType) {
+                        is Video.Type.Movie -> kind.id
+                        is Video.Type.Episode -> kind.tvShow.id
+                    }
+                    if (evidence != Lab186AudioEvidencePolicy.Evidence.UNKNOWN) {
+                        val name = provider?.name
+                        val mirror = name?.let {
+                            ProviderEndpointRegistry.selectedOverride(it)
+                        }.orEmpty()
+                        playbackPersistenceScope.launch {
+                            Lab186AudioEvidenceStore.remember(
+                                requireContext().applicationContext, name, contentId,
+                                mirror, evidence,
+                            )
                         }
+                    }
+                    // Do not play a demonstrably foreign-only audio track when
+                    // the Italian dubbed filter was selected for global TV search.
+                    val selectedFilter = SearchFilterPersistence.load(requireContext())
+                    if (!selectedFilter.globalSearch ||
+                        selectedFilter.italian != AdvancedSearchFilters.ItalianFilter.YES ||
+                        evidence != Lab186AudioEvidencePolicy.Evidence.FOREIGN) return
+                    player.playWhenReady = false
+                    val source = currentVideo?.source ?: return
+                    if (lastForeignAudioSourceRejected == source) return
+                    lastForeignAudioSourceRejected = source
+                    val nextServer = servers.getOrNull(servers.indexOf(currentServer) + 1)
+                    if (nextServer != null) {
+                        resumePositionAfterRecovery = player.currentPosition.coerceAtLeast(0L)
+                        Log.w("PlayerTvFragment",
+                            "LAB186: foreign-only audio; trying alternate server")
+                        viewModel.getVideo(nextServer)
+                    } else {
+                        Toast.makeText(requireContext(),
+                            "Audio italiano non disponibile su questo server.",
+                            Toast.LENGTH_LONG).show()
                     }
                 }
 
@@ -1901,7 +1941,7 @@ class PlayerTvFragment : Fragment() {
 
                     val lang = UserPreferences.currentProvider?.language?.substringBefore("-")
                     val preferredAudioLanguage = when (lang) {
-                        "it" -> "ita"
+                        "it" -> "it"
                         "fr" -> "fra"
                         "de" -> "deu"
                         "es" -> "spa"
