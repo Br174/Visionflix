@@ -26,7 +26,7 @@ internal object AdvancedSearchUi {
             contentType.adapter = mobileAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
             italian.adapter = mobileAdapter(
                 context,
-                listOf("Lingua originale: tutte", "Originale italiana", "Originale non italiana"),
+                listOf("Doppiato in italiano", "Lingua originale"),
             )
             year.adapter = mobileYearAdapter(context, "Anno: tutti")
             year.rootView.findViewById<Spinner>(R.id.et_date_from)?.adapter =
@@ -35,7 +35,7 @@ internal object AdvancedSearchUi {
                 mobileYearAdapter(context, "Al: tutti")
         } else {
             contentType.adapter = compactAdapter(context, listOf("Tutti", "Film", "Serie", "Cartoni"))
-            italian.adapter = compactAdapter(context, listOf("Tutte", "Italiana", "Non italiana"))
+            italian.adapter = compactAdapter(context, listOf("Doppiato in italiano", "Lingua originale"))
             year.adapter = yearAdapter(context)
             genre.adapter = compactAdapter(
                 context,
@@ -79,9 +79,8 @@ internal object AdvancedSearchUi {
                 else -> AdvancedSearchFilters.ContentType.ALL
             },
             italian = when (italian.selectedItemPosition) {
-                1 -> AdvancedSearchFilters.ItalianFilter.YES
-                2 -> AdvancedSearchFilters.ItalianFilter.NO
-                else -> AdvancedSearchFilters.ItalianFilter.ALL
+                1 -> AdvancedSearchFilters.ItalianFilter.NO
+                else -> AdvancedSearchFilters.ItalianFilter.YES
             },
             genre = genre?.let {
                 AdvancedSearchFilters.GenreFilter.values()
@@ -96,7 +95,6 @@ internal object AdvancedSearchUi {
         )
 
         val needsTmdb = UserPreferences.currentProvider is TmdbProvider ||
-            filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
             filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
             filters.country != AdvancedSearchFilters.CountryFilter.ALL
         if (needsTmdb && !hasUsableTmdbKey()) {
