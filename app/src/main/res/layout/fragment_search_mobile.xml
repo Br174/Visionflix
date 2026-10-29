@@ -219,7 +219,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="4dp"
                         android:layout_marginBottom="4dp"
-                        android:text="Lingua originale"
+                        android:text="Versione audio"
                         android:textColor="#A9B2C2"
                         android:textSize="12sp" />
 
