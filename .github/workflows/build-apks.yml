@@ -1155,6 +1155,52 @@ jobs:
             --stacktrace
           echo '[LAB183_FAST_WALL_TESTS=PASS]'
 
+      # Scudo 360 mandatory on the isolated LAB: cumulative JVM proof before APK.
+      - name: Scudo360 cumulative Android regression gate
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          node scripts/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-report.json
+          echo '[SCUDO360=PASS] cumulative JVM test evidence verified'
+
+      - name: Preserve Scudo360 failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scudo360-vision-regression-report
+          path: |
+            .motorlab/scudo360-report.json
+            app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Scudo360 LAB184 behavior compatibility proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          tv=(root/'SearchTvFragment.kt').read_text()
+          ui=(root/'AdvancedSearchUi.kt').read_text()
+          save=(root/'SearchFilterPersistence.kt').read_text()
+          vm=(root/'SearchViewModel.kt').read_text()
+          assert 'Doppiato in italiano' in tv
+          assert 'Lingua originale' in tv
+          assert 'listOf("Doppiato in italiano", "Lingua originale")' in ui
+          assert 'ItalianFilter.YES else it' in save
+          assert 'with_original_language"] = "it"' not in vm
+          print('SCUDO360_LANGUAGE_SOURCE_COMPATIBLE')
+          PY
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
@@ -1236,7 +1282,7 @@ jobs:
           retention-days: 14
 
       - name: Publish authorized LAB prerelease automatically
-        if: steps.stage.outputs.stage == 'LAB' && github.event_name == 'push'
+        if: steps.stage.outputs.stage == 'LAB' && github.event_name == 'push' && startsWith(github.ref_name, 'lab/visionflix-')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
