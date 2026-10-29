@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "project": "visionflix",
+  "suites": [
+    {
+      "id": "mainline-jvm",
+      "command": [
+        "./gradlew",
+        ":app:testDebugUnitTest",
+        "--console=plain",
+        "--warning-mode",
+        "summary"
+      ],
+      "paths": [
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Scudo360LanguageFilterTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Scudo360DateFilterTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Scudo360GenreAndTypeTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Scudo360OrderingPlatformTest.kt"
+      ],
+      "junitDir": "app/build/test-results/testDebugUnitTest",
+      "timeoutMs": 900000
+    }
+  ],
+  "contracts": [
+    {
+      "id": "vision.search.language",
+      "priority": "P1",
+      "suites": [
+        "mainline-jvm"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.providers.Scudo360LanguageFilterTest"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ]
+    },
+    {
+      "id": "vision.search.year-range",
+      "priority": "P1",
+      "suites": [
+        "mainline-jvm"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.providers.Scudo360DateFilterTest"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ]
+    },
+    {
+      "id": "vision.search.genre-type",
+      "priority": "P1",
+      "suites": [
+        "mainline-jvm"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.providers.Scudo360GenreAndTypeTest"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ]
+    },
+    {
+      "id": "vision.search.order-platform",
+      "priority": "P1",
+      "suites": [
+        "mainline-jvm"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.providers.Scudo360OrderingPlatformTest"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ]
+    }
+  ]
+}
