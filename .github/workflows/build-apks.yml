@@ -1015,7 +1015,7 @@ jobs:
           pol = (p/'Lab181ProviderFlowPolicy.kt').read_text()
           registry = Path('app/src/main/java/com/streamflixreborn/streamflix/providers/ProviderEndpointRegistry.kt').read_text()
           assert 'withTimeoutOrNull(Lab181ProviderFlowPolicy.SOURCE_TIMEOUT_MS)' in vm
-          assert 'withTimeoutOrNull(Lab181ProviderFlowPolicy.METADATA_TIMEOUT_MS)' in vm
+          assert 'withTimeoutOrNull(7_000L) { verifyItalianSourceTitle(item, filters) }' in vm
           assert 'inlineRecovery = false' in vm
           assert 'scheduleGlobalRecovery(provider)' in vm
           assert 'scheduleGlobalRecovery(engine)' in vm
