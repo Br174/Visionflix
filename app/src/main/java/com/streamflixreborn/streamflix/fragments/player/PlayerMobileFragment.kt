@@ -74,6 +74,10 @@ import com.streamflixreborn.streamflix.utils.setMediaServers
 import com.streamflixreborn.streamflix.utils.toSubtitleMimeType
 import com.streamflixreborn.streamflix.utils.viewModelsFactory
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Calendar
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -134,6 +138,10 @@ class PlayerMobileFragment : Fragment() {
 
     private var currentVideo: Video? = null
     private var currentServer: Video.Server? = null
+    private var observedPlaybackPlayer: ExoPlayer? = null
+    private val playbackPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val playbackPersistenceMutex = Mutex()
+    private var resumePositionAfterServerChange: Long? = null
     private var isIgnoringPip = false
     private var waitingForBypass = false
     private var bypassDone = false
@@ -917,6 +925,10 @@ class PlayerMobileFragment : Fragment() {
 
         val extraBuffering = PlayerSettingsView.Settings.ExtraBuffering.isEnabled
 
+        val positionBeforeReinit = if (::player.isInitialized)
+            player.currentPosition.coerceAtLeast(0L) else 0L
+        val serverResume = resumePositionAfterServerChange
+        resumePositionAfterServerChange = null
         val softwareDecoder = PlayerSettingsView.Settings.SoftwareDecoder.isEnabled
         val needsReinit =
             extraBuffering != currentExtraBuffering || softwareDecoder != currentSoftwareDecoder
@@ -933,7 +945,8 @@ class PlayerMobileFragment : Fragment() {
                 .build()
         }
 
-        val currentPosition = player.currentPosition
+        val currentPosition = serverResume ?:
+            if (needsReinit) positionBeforeReinit else player.currentPosition
 
         httpDataSource.setDefaultRequestProperties(
             mapOf(
@@ -1037,110 +1050,115 @@ class PlayerMobileFragment : Fragment() {
                 startActivity(Intent.createChooser(intent, getString(R.string.player_external_player_title)))
             }
         }
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                super.onIsPlayingChanged(isPlaying)
-                binding.pvPlayer.keepScreenOn = isPlaying || UserPreferences.keepScreenOnWhenPaused
-
-                if (isPlaying) {
-                    recordRecentlyWatchedStart()
-                    startProgressHandler()
-                } else {
-                    stopProgressHandler()
-                }
-
-                val hasUri = player.currentMediaItem?.localConfiguration?.uri
-                    ?.toString()?.isNotEmpty()
-                    ?: false
-
-                if (!isPlaying && hasUri) {
+        // LAB185: single listener for each ExoPlayer, even after switching
+        // providers, quality or stream sources.
+        if (observedPlaybackPlayer !== player) {
+            observedPlaybackPlayer = player
+            player.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    binding.pvPlayer.keepScreenOn =
+                        isPlaying || UserPreferences.keepScreenOnWhenPaused
+                    if (isPlaying) {
+                        val playingType = currentVideoTypeForUi()
+                        playbackPersistenceScope.launch {
+                            playbackPersistenceMutex.withLock {
+                                runCatching { recordRecentlyWatchedStart(playingType) }
+                                    .onFailure { Log.w("PlayerMobileFragment", "Recent play save failed", it) }
+                            }
+                        }
+                        startProgressHandler()
+                    } else {
+                        stopProgressHandler()
+                    }
+                    val hasMediaUri = !player.currentMediaItem?.localConfiguration?.uri
+                        ?.toString().isNullOrBlank()
+                    if (!Lab166TvPlaybackRecoveryPolicy.shouldPersistProgress(
+                            isPlaying, player.playWhenReady, player.playbackState, hasMediaUri
+                        )) return
                     val videoType = args.videoType
-                    val watchItem: WatchItem? = when (videoType) {
-                        is Video.Type.Movie -> database.movieDao().getById(videoType.id)
-                        is Video.Type.Episode -> database.episodeDao().getById(videoType.id)
-                    }
-
-                    when {
-                        player.hasStarted() && !player.hasFinished() -> {
-                            watchItem?.isWatched = false
-                            watchItem?.watchedDate = null
-                            watchItem?.watchHistory = WatchItem.WatchHistory(
-                                lastEngagementTimeUtcMillis = System.currentTimeMillis(),
-                                lastPlaybackPositionMillis = player.currentPosition,
-                                durationMillis = player.duration,
-                            )
-                        }
-
-                        player.hasFinished() -> {
-                            watchItem?.isWatched = true
-                            watchItem?.watchedDate = Calendar.getInstance()
-                            watchItem?.watchHistory = null
-                        }
-                    }
-
-                            when (videoType) {
-                                is Video.Type.Movie -> {
-                                    val provider = UserPreferences.currentProvider ?: return
-                                    val movie = watchItem as? Movie
-                                    movie?.let {
-                                        database.movieDao().update(it)
-                                        UserDataCache.syncMovieToCache(requireContext(), provider, it)
+                    val provider = UserPreferences.currentProvider ?: return
+                    val context = requireContext().applicationContext
+                    val position = player.currentPosition
+                    val duration = player.duration
+                    val started = player.hasStarted()
+                    val finished = player.hasFinished()
+                    val reallyFinished = player.hasReallyFinished()
+                    playbackPersistenceScope.launch {
+                        playbackPersistenceMutex.withLock {
+                            runCatching {
+                                val item: WatchItem? = when (videoType) {
+                                    is Video.Type.Movie -> database.movieDao().getById(videoType.id)
+                                    is Video.Type.Episode -> database.episodeDao().getById(videoType.id)
+                                }
+                                when {
+                                    started && !finished -> {
+                                        item?.isWatched = false
+                                        item?.watchedDate = null
+                                        item?.watchHistory = WatchItem.WatchHistory(
+                                            lastEngagementTimeUtcMillis = System.currentTimeMillis(),
+                                            lastPlaybackPositionMillis = position,
+                                            durationMillis = duration,
+                                        )
+                                    }
+                                    finished -> {
+                                        item?.isWatched = true
+                                        item?.watchedDate = Calendar.getInstance()
+                                        item?.watchHistory = null
                                     }
                                 }
-
-                                is Video.Type.Episode -> {
-                                    val provider = UserPreferences.currentProvider ?: return
-                                    val episode = watchItem as? Episode
-                                    episode?.let {
-                                        if (player.hasFinished()) {
+                                when (videoType) {
+                                    is Video.Type.Movie -> (item as? Movie)?.let { movie ->
+                                        database.movieDao().update(movie)
+                                        UserDataCache.syncMovieToCache(context, provider, movie)
+                                    }
+                                    is Video.Type.Episode -> (item as? Episode)?.let { episode ->
+                                        if (finished) {
                                             database.episodeDao().resetProgressionFromEpisode(videoType.id)
-                                            UserDataCache.removeEpisodeFromContinueWatching(requireContext(), provider, it.id)
-                                            queueNextEpisodeForContinueWatching(provider)
+                                            UserDataCache.removeEpisodeFromContinueWatching(
+                                                context, provider, episode.id)
+                                            if (isAdded) queueNextEpisodeForContinueWatching(provider)
                                         }
-                                        database.episodeDao().update(it)
-                                        if (!player.hasFinished()) {
-                                            UserDataCache.syncEpisodeToCache(requireContext(), provider, it)
-                                        }
-
-                                        it.tvShow?.let { tvShow ->
+                                        database.episodeDao().update(episode)
+                                        if (!finished) UserDataCache.syncEpisodeToCache(
+                                            context, provider, episode)
+                                        episode.tvShow?.let { tvShow ->
                                             database.tvShowDao().getById(tvShow.id)
                                         }?.let { tvShow ->
-                                            val episodeDao = database.episodeDao()
-                                            val isStillWatching = episodeDao.hasAnyWatchHistoryForTvShow(tvShow.id)
-                                            
-                                            val updatedTvShow = tvShow.copy().apply {
+                                            val stillWatching = database.episodeDao()
+                                                .hasAnyWatchHistoryForTvShow(tvShow.id)
+                                            val updated = tvShow.copy().apply {
                                                 merge(tvShow)
-                                                isWatching = !player.hasReallyFinished() || isStillWatching
+                                                isWatching = !reallyFinished || stillWatching
                                             }
-                                            database.tvShowDao().update(updatedTvShow)
-                                            CloudSyncHooks.tvShow(
-                                                requireContext(),
-                                                provider,
-                                                updatedTvShow,
-                                            )
+                                            database.tvShowDao().update(updated)
+                                            CloudSyncHooks.tvShow(context, provider, updated)
                                         }
                                     }
                                 }
+                            }.onFailure {
+                                Log.w("PlayerMobileFragment", "LAB185 persistence failed", it)
                             }
-                    if (player.hasReallyFinished()) {
-                        if (UserPreferences.autoplay) {
-                            playNextEpisodeAcrossSeasons(autoplay = true)
+                        }
+                        if (reallyFinished && UserPreferences.autoplay) {
+                            withContext(Dispatchers.Main) {
+                                if (isAdded && _binding != null)
+                                    playNextEpisodeAcrossSeasons(autoplay = true)
+                            }
                         }
                     }
                 }
-            }
 
-            override fun onPlayerError(error: PlaybackException) {
-                super.onPlayerError(error)
-                Log.e("PlayerMobileFragment", "onPlayerError: ", error)
-                
-                val nextServer = servers.getOrNull(servers.indexOf(currentServer) + 1)
-                if (nextServer != null) {
-                    Log.i("PlayerMobileFragment", "Playback failed, trying next server: ${nextServer.name}")
-                    viewModel.getVideo(nextServer)
+                override fun onPlayerError(error: PlaybackException) {
+                    Log.e("PlayerMobileFragment", "onPlayerError", error)
+                    val nextServer = servers.getOrNull(servers.indexOf(currentServer) + 1)
+                    if (nextServer != null) {
+                        resumePositionAfterServerChange =
+                            player.currentPosition.coerceAtLeast(0L)
+                        viewModel.getVideo(nextServer)
+                    }
                 }
-            }
-        })
+            })
+        }
 
         if (currentPosition == 0L) {
             val videoType = args.videoType
@@ -1192,9 +1210,11 @@ class PlayerMobileFragment : Fragment() {
         return (this.currentPosition > (this.duration * 0.005) || this.currentPosition > 20.seconds.inWholeMilliseconds)
     }
 
-    private fun recordRecentlyWatchedStart() {
+    private fun recordRecentlyWatchedStart(
+        videoType: Video.Type = currentVideoTypeForUi(),
+    ) {
         val playedAtMillis = System.currentTimeMillis()
-        when (val videoType = currentVideoTypeForUi()) {
+        when (videoType) {
             is Video.Type.Movie -> {
                 if (database.movieDao().markRecentlyWatched(videoType.id, playedAtMillis) == 0) {
                     database.movieDao().insert(
@@ -1467,12 +1487,13 @@ class PlayerMobileFragment : Fragment() {
     private var currentSoftwareDecoder = false
 
     private fun buildPlayer(extraBuffering: Boolean): ExoPlayer {
+        val lowRam = (requireContext().getSystemService(Context.ACTIVITY_SERVICE)
+            as? android.app.ActivityManager)?.isLowRamDevice ?: true
+        val buffer = Lab185PlaybackFlowPolicy.profile(extraBuffering, lowRam)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
-                if (extraBuffering) 300_000 else DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
-                DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                buffer.minBufferMs, buffer.maxBufferMs,
+                buffer.startPlaybackMs, buffer.resumePlaybackMs,
             )
             .build()
 
@@ -1564,6 +1585,7 @@ class PlayerMobileFragment : Fragment() {
     }
 
     private fun releasePlayer() {
+        observedPlaybackPlayer = null
         stopProgressHandler()
         binding.pvPlayer.player = null
         binding.settings.player = null
