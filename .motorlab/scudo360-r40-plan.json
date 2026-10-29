@@ -33,6 +33,6 @@
       ]
     }
   ],
-  "baselineCommit": null,
-  "baselineReportPath": null
+  "baselineCommit": "6c3c9b57b2ea4e2b8bdb0f09af6ad9290fb85247",
+  "baselineReportPath": ".motorlab/scudo360-r39-baseline.json"
 }
