@@ -994,6 +994,62 @@ jobs:
             --stacktrace
           echo '[LAB181_FILTER_AND_SOURCE_TESTS=PASS]'
 
+      - name: LAB182 source-first Italian-provider filter regressions
+        if: github.ref == 'refs/heads/lab/visionflix-lab182-source-first-filter-verification-20261029'
+        env:
+          VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-fixed-lab-downloader-config.sh
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=tv
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/search')
+          vm = (p/'SearchViewModel.kt').read_text()
+          pol = (p/'Lab181ProviderFlowPolicy.kt').read_text()
+          registry = Path('app/src/main/java/com/streamflixreborn/streamflix/providers/ProviderEndpointRegistry.kt').read_text()
+          assert 'withTimeoutOrNull(Lab181ProviderFlowPolicy.SOURCE_TIMEOUT_MS)' in vm
+          assert 'withTimeoutOrNull(Lab181ProviderFlowPolicy.METADATA_TIMEOUT_MS)' in vm
+          assert 'inlineRecovery = false' in vm
+          assert 'scheduleGlobalRecovery(provider)' in vm
+          assert 'scheduleGlobalRecovery(engine)' in vm
+          assert 'ProviderEndpointRegistry.refreshOne(provider)' in vm
+          assert 'REPAIR_COOLDOWN_MS' in pol
+          assert 'ProviderEndpointRegistry.restoreSelection' in vm
+          assert 'PROTECTED_OLD_CODES=3875230,4768904,3938567' in Path('.motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt').read_text()
+          assert 'PREFERRED_USER_CODE=6920196' in Path('.motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt').read_text()
+          assert 'saveManualEndpoint(' in registry and 'lastgood' in registry
+          assert 'Lab174FilteredSourcePolicy.requiresStrictMetadata(filters)' in vm
+          assert 'Lab172NativeYearPolicy.matchesRange' in vm
+          print('[LAB182_SOURCE_GUARD=PASS] bounded sources, background recovery, strict metadata, downloader intact')
+          assert 'verifyItalianSourcePage(raw, effective)' in vm
+          assert 'fetchItalianSourcePage(engine, query, advancedFilters, nextPage)' in vm
+          assert 'verifyItalianSourceTitle(' in vm
+          assert 'sourceTmdbGate = Semaphore(4)' in vm
+          print('[LAB182_SOURCE_FIRST=PASS]')
+          PY
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*Lab182SourceMatchPolicyTest' \
+            --tests '*Lab181ProviderFlowPolicyTest' \
+            --tests '*Lab174FilteredSourcePolicyTest' \
+            --tests '*Lab173TvCombinedFilterPolicyTest' \
+            --tests '*Lab172NativeYearPolicyTest' \
+            --tests '*Lab171NativeGenrePolicyTest' \
+            --tests '*Lab170NativePagingPolicyTest' \
+            --tests '*Lab164SearchMatchPolicyTest' \
+            --tests '*Lab151CountryAndGenreTest' \
+            --tests '*Lab152GlobalCatalogTest' \
+            --tests '*Lab156UnifiedSortTest' \
+            --tests '*Lab166TvPlaybackRecoveryPolicyTest' \
+            --stacktrace
+          echo '[LAB182_FILTER_AND_SOURCE_TESTS=PASS]'
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}

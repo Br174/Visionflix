@@ -1492,6 +1492,145 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             .distinctBy { it.lowercase(Locale.ROOT) }.take(6)
     }
 
+
+    // LAB182: Verify the titles actually returned by Italian providers.
+    // Discover's first page is not a complete admissible-title set.
+    private val sourceTmdbGate = Semaphore(4)
+    private val sourceTmdbMutex = Mutex()
+    private val sourceTmdbCache = mutableMapOf<String, Boolean>()
+
+    private suspend fun fetchItalianSourcePage(
+        provider: Provider, text: String, filters: AdvancedSearchFilters, index: Int,
+    ): Pair<List<AppAdapter.Item>, Boolean> =
+        withTimeoutOrNull(Lab181ProviderFlowPolicy.SOURCE_TIMEOUT_MS) {
+            val genreItems = if (filters.isActive && text.isBlank())
+                nativeGenrePage(provider, filters, index) else null
+            val nativeItems = genreItems ?: if (text.isBlank())
+                browseProvider(provider, index, filters.type)
+            else searchProviderWithRecovery(provider, text, index, inlineRecovery = false)
+            nativeItems to (genreItems != null)
+        } ?: throw java.io.IOException("Provider source timed out: " + provider.name)
+
+    private suspend fun verifyItalianSourcePage(
+        sourceItems: List<AppAdapter.Item>, filters: AdvancedSearchFilters,
+    ): List<AppAdapter.Item> = coroutineScope {
+        if (!filters.isActive) return@coroutineScope sourceItems
+        val local = applyProviderFilters(sourceItems, filters)
+        if (!Lab182SourceMatchPolicy.requiresMetadata(filters)) return@coroutineScope local
+        val localProof = if (Lab174FilteredSourcePolicy.requiresStrictMetadata(filters))
+            emptySet() else local.toSet()
+        sourceItems.filter { it is Movie || it is TvShow }.map { item ->
+            async(Dispatchers.IO) {
+                if (item in localProof) return@async item
+                if (!tmdbConfigured()) return@async null
+                val key = filterMatchKey(item).orEmpty() + "|" + filters.hashCode()
+                val known = sourceTmdbMutex.withLock { sourceTmdbCache[key] }
+                if (known != null) return@async item.takeIf { known }
+                val verified: Boolean? = try {
+                    sourceTmdbGate.withPermit {
+                        withTimeoutOrNull(7_000L) { verifyItalianSourceTitle(item, filters) }
+                    }
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (e: Exception) {
+                    Log.w("SearchViewModel", "LAB182 metadata unavailable " + key, e)
+                    null
+                }
+                if (verified != null) sourceTmdbMutex.withLock {
+                    sourceTmdbCache[key] = verified
+                }
+                item.takeIf { verified == true }
+            }
+        }.awaitAll().filterNotNull().distinctBy { it.searchIdentityKey() }
+    }
+
+    private suspend fun verifyItalianSourceTitle(
+        source: AppAdapter.Item, filters: AdvancedSearchFilters,
+    ): Boolean {
+        val title = when (source) {
+            is Movie -> source.title
+            is TvShow -> source.title
+            else -> return false
+        }
+        val clean = Lab174FilteredSourcePolicy.cleanProviderTitle(title)
+        val sourceKey = filterMatchKey(source) ?: return false
+        if (clean.isBlank()) return false
+        val country = filters.country.isoCode
+        val actorId = filters.actorId?.toIntOrNull()
+        val directorId = filters.directorId?.toIntOrNull()
+        val platformIds = filters.platform.providerIds
+            ?.split('|', ',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
+        val needsCredits = actorId != null || directorId != null
+        val candidates = TMDb3.Search.multi(query = clean, page = 1, language = "it").results
+        for (candidate in candidates) {
+            if (source is Movie && candidate is TMDb3.Movie) {
+                val year = candidate.releaseDate?.take(4).orEmpty()
+                val localized = "movie|" + normalizeFilterTitle(candidate.title) + "|" + year
+                val original = "movie|" + normalizeFilterTitle(candidate.originalTitle) + "|" + year
+                if (!Lab182SourceMatchPolicy.matchesTypedTitle(sourceKey, localized, original)) continue
+                if (filters.type == AdvancedSearchFilters.ContentType.TV) continue
+                if (filters.type == AdvancedSearchFilters.ContentType.CARTOON && 16 !in candidate.genresIds) continue
+                if (!filters.acceptsGenreIds(candidate.genresIds, movie = true)) continue
+                if (!matchesYearFilter(candidate.releaseDate, filters)) continue
+                if (filters.italian == AdvancedSearchFilters.ItalianFilter.YES && candidate.originalLanguage != "it") continue
+                if (filters.italian == AdvancedSearchFilters.ItalianFilter.NO && candidate.originalLanguage == "it") continue
+                val details = if (country != null || platformIds != null || needsCredits)
+                    TMDb3.Movies.details(
+                        movieId = candidate.id,
+                        appendToResponse = buildList {
+                            if (needsCredits) add(TMDb3.Params.AppendToResponse.Movie.CREDITS)
+                            if (platformIds != null) add(TMDb3.Params.AppendToResponse.Movie.WATCH_PROVIDERS)
+                        },
+                        language = "it",
+                    ) else null
+                if (country != null && details?.productionCountries?.any {
+                        it.iso3166.equals(country, ignoreCase = true)
+                    } != true) continue
+                if (platformIds != null && details?.watchProviders?.results?.get("IT")?.let {
+                        p -> (p.flatrate + p.buy).any { it.providerId in platformIds }
+                    } != true) continue
+                if (actorId != null && details?.credits?.cast?.any { it.id == actorId } != true) continue
+                if (directorId != null && details?.credits?.crew?.any {
+                        it.id == directorId && it.job.equals("Director", ignoreCase = true)
+                    } != true) continue
+                return true
+            }
+            if (source is TvShow && candidate is TMDb3.Tv) {
+                val year = candidate.firstAirDate?.take(4).orEmpty()
+                val localized = "tv|" + normalizeFilterTitle(candidate.name) + "|" + year
+                val original = "tv|" + normalizeFilterTitle(candidate.originalName) + "|" + year
+                if (!Lab182SourceMatchPolicy.matchesTypedTitle(sourceKey, localized, original)) continue
+                if (filters.type == AdvancedSearchFilters.ContentType.MOVIE) continue
+                if (filters.type == AdvancedSearchFilters.ContentType.CARTOON && 16 !in candidate.genresIds) continue
+                if (!filters.acceptsGenreIds(candidate.genresIds, movie = false)) continue
+                if (!matchesYearFilter(candidate.firstAirDate, filters)) continue
+                if (filters.italian == AdvancedSearchFilters.ItalianFilter.YES && candidate.originalLanguage != "it") continue
+                if (filters.italian == AdvancedSearchFilters.ItalianFilter.NO && candidate.originalLanguage == "it") continue
+                if (country != null && candidate.originCountry.none {
+                        it.equals(country, ignoreCase = true)
+                    }) continue
+                val details = if (platformIds != null || needsCredits)
+                    TMDb3.TvSeries.details(
+                        seriesId = candidate.id,
+                        appendToResponse = buildList {
+                            if (needsCredits) add(TMDb3.Params.AppendToResponse.Tv.CREDITS)
+                            if (platformIds != null) add(TMDb3.Params.AppendToResponse.Tv.WATCH_PROVIDERS)
+                        },
+                        language = "it",
+                    ) else null
+                if (platformIds != null && details?.watchProviders?.results?.get("IT")?.let {
+                        p -> (p.flatrate + p.buy).any { it.providerId in platformIds }
+                    } != true) continue
+                if (actorId != null && details?.credits?.cast?.any { it.id == actorId } != true) continue
+                if (directorId != null && details?.credits?.crew?.any {
+                        it.id == directorId && it.job.equals("Director", ignoreCase = true)
+                    } != true) continue
+                return true
+            }
+        }
+        return false
+    }
+
     fun searchGlobal(
         query: String,
         currentLanguage: String,
@@ -1535,6 +1674,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         globalRepeatedRawByTarget.clear()
         globalLastRawByTarget.clear()
         globalFinishedTargets.clear()
+        sourceTmdbMutex.withLock { sourceTmdbCache.clear() }
         globalPage = 1
         globalLoadingMore = false
         if (targets.isEmpty()) {
@@ -1542,48 +1682,12 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             return@launch
         }
 
-        val needsGlobalMetadata = advancedFilters.isActive && (
-            advancedFilters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
-            advancedFilters.country != AdvancedSearchFilters.CountryFilter.ALL ||
-            advancedFilters.effectiveGenres.isNotEmpty() ||
-            advancedFilters.type == AdvancedSearchFilters.ContentType.CARTOON ||
-            advancedFilters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-            !advancedFilters.actorId.isNullOrBlank() ||
-            !advancedFilters.directorId.isNullOrBlank() ||
-            (tmdbConfigured() && (advancedFilters.year != null ||
-                !advancedFilters.dateFrom.isNullOrBlank() || !advancedFilters.dateTo.isNullOrBlank()))
-        )
-        if (needsGlobalMetadata && !tmdbConfigured() &&
-            !Lab168FastResultsPolicy.canUseDirectProviderResults(advancedFilters)) {
+        if (Lab174FilteredSourcePolicy.requiresStrictMetadata(advancedFilters) && !tmdbConfigured()) {
             _state.emit(State.FailedSearching(IllegalStateException(
-                "I filtri globali per Paese, genere, lingua e metadati richiedono una chiave TMDb valida"
+                "I filtri richiedono una chiave TMDb valida"
             )))
             return@launch
         }
-        // Discover metadata concurrently rather than blocking the local provider's
-        // immediate text results. All displayed items still pass their filters.
-        var metadataLookupError: Exception? = null
-        val metadataTask: kotlinx.coroutines.Deferred<List<AppAdapter.Item>>? =
-            if (needsGlobalMetadata &&
-                !Lab168FastResultsPolicy.canUseDirectProviderResults(advancedFilters)) async {
-            // An HTTP 451 / blocked metadata endpoint is NOT an unhandled
-            // child-coroutine failure. Keep the app-level Cerca screen alive.
-            try {
-                if (Lab164SearchMatchPolicy.providerFirstYearQuery(query, advancedFilters))
-                    searchTmdbYearCandidates(query, advancedFilters, "it")
-                else
-                    searchTmdbAdvanced(TmdbProvider("it"), query, advancedFilters, 1,
-                        candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(
-                            advancedFilters, query))
-            } catch (cancel: kotlinx.coroutines.CancellationException) {
-                throw cancel
-            } catch (error: Exception) {
-                metadataLookupError = error
-                Log.w("SearchViewModel", "LAB155 filtered metadata unavailable, continuing safely", error)
-                emptyList<AppAdapter.Item>()
-            }
-        } else null
-
         val mutableResults = targets.map { target ->
             ProviderResult(
                 provider = target.provider,
@@ -1616,59 +1720,29 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                 (provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
 
                                 val result = try {
-                                    // Await metadata before acquiring one of the limited provider permits.
-                                    // Otherwise slow TMDb blocks unrelated fast provider results.
-                                    val sharedFilteredMetadata =
-                                        if (advancedFilters.isActive && metadataTask != null)
-                                            withTimeoutOrNull(Lab181ProviderFlowPolicy.METADATA_TIMEOUT_MS) {
-                                                metadataTask.await()
-                                            } ?: emptyList()
-                                        else null
-                                    val found = globalProviderGate.withPermit {
-                                        withTimeoutOrNull(Lab181ProviderFlowPolicy.SOURCE_TIMEOUT_MS) {
-                                        when {
-                                            provider is TmdbProvider && advancedFilters.isActive ->
-                                                searchTmdbAdvanced(provider, query, advancedFilters, 1)
-                                            advancedFilters.isActive ->
-                                                searchProviderAdvanced(
-                                                    provider, query, advancedFilters, 1,
-                                                    sharedMetadata = sharedFilteredMetadata,
-                                                    candidateLimit = Lab154SearchPacing.candidateLimit(
-                                                        firstPage = true,
-                                                        originatingProvider = provider.name == UserPreferences.currentProvider?.name),
-                                                    inlineRecovery = false,
-                                                )
-                                            query.isBlank() -> browseProvider(provider, 1)
-                                            else -> searchProviderWithRecovery(provider, query, 1, inlineRecovery = false)
-                                        }
-                                        } ?: throw java.io.IOException(
-                                            "${provider.name}: ricerca scaduta senza bloccare gli altri provider"
-                                        )
+                                    val (raw, nativeGenre) = globalProviderGate.withPermit {
+                                        fetchItalianSourcePage(provider, query, advancedFilters, 1)
                                     }
-                                    val items = ParentalControlUtils.filterItems(
-                                        found.onEach { item ->
-                                            when (item) {
-                                                is Movie -> {
-                                                    item.providerName = provider.name
-                                                    item.providerEndpoint = target.endpoint
-                                                }
-                                                is TvShow -> {
-                                                    item.providerName = provider.name
-                                                    item.providerEndpoint = target.endpoint
-                                                }
+                                    val effective = if (nativeGenre) advancedFilters.copy(
+                                        genre = AdvancedSearchFilters.GenreFilter.ALL,
+                                        genres = emptySet(),
+                                    ) else advancedFilters
+                                    val matched = verifyItalianSourcePage(raw, effective)
+                                    val items = ParentalControlUtils.filterItems(matched.onEach { item ->
+                                        when (item) {
+                                            is Movie -> {
+                                                item.providerName = provider.name
+                                                item.providerEndpoint = target.endpoint
+                                            }
+                                            is TvShow -> {
+                                                item.providerName = provider.name
+                                                item.providerEndpoint = target.endpoint
                                             }
                                         }
-                                    )
-                                    if (query.isBlank() && items.isEmpty() && provider is EndpointManagedProvider) {
-                                        // A blank catalog MAY indicate a stale host. Check off the UI path,
-                                        // never treat it as a reason to delete the provider.
+                                    })
+                                    if (query.isBlank() && raw.isEmpty() && provider is EndpointManagedProvider)
                                         needsRecovery = true
-                                    }
-                                    ProviderResult(
-                                        provider = provider,
-                                        state = ProviderResult.State.Success(items),
-                                        displayName = target.displayName,
-                                    )
+                                    ProviderResult(provider, ProviderResult.State.Success(items), target.displayName)
                                 } catch (cancel: kotlinx.coroutines.CancellationException) {
                                     throw cancel
                                 } catch (e: Exception) {
@@ -1719,15 +1793,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 )))
                 return@launch
             }
-            if (metadataLookupError != null &&
-                (_state.value as? State.SuccessGlobalSearching)?.catalog?.posters?.isEmpty() == true) {
-                _state.emit(State.FailedSearching(IllegalStateException(
-                    "Filtri non disponibili: metadati bloccati o non raggiungibili. " +
-                        "La schermata Cerca resta aperta; riprova senza questi filtri.",
-                    metadataLookupError
-                )))
-                return@launch
-            }
             // LAB171: an empty filtered first screen has no cards whose bind
             // can trigger load-more; start the native on-demand scanner once.
             val wall = _state.value as? State.SuccessGlobalSearching
@@ -1767,21 +1832,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 val nextPage = globalPage + 1
                 val active = targets.withIndex().filter { it.index !in globalFinishedTargets }
                 if (active.isEmpty()) break
-                val strict = advancedFilters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
-                    advancedFilters.country != AdvancedSearchFilters.CountryFilter.ALL ||
-                    advancedFilters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-                    !advancedFilters.actorId.isNullOrBlank() ||
-                    !advancedFilters.directorId.isNullOrBlank()
-                val metadata = if (strict && tmdbConfigured()) {
-                    withTimeoutOrNull(Lab181ProviderFlowPolicy.METADATA_TIMEOUT_MS) {
-                        searchTmdbAdvanced(
-                            TmdbProvider("it"), query, advancedFilters, nextPage,
-                            candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(
-                                advancedFilters, query)
-                        )
-                    } ?: emptyList()
-                } else null
-
                 var nextAdded = 0
                 coroutineScope {
                     active.groupBy { it.value.provider.name }.values.forEach { group ->
@@ -1797,27 +1847,24 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                     else ProviderEndpointRegistry.selectRemote(engine.name, target.endpoint)
                                     (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
                                     var timedOutOrFailed = false
-                                    val rawAndFiltered = try {
+                                    val (raw, nativeGenre) = try {
                                         gate.withPermit {
-                                            withTimeoutOrNull(Lab181ProviderFlowPolicy.SOURCE_TIMEOUT_MS) {
-                                                nativeProviderPage(
-                                                    engine, nextPage, advancedFilters, query, metadata,
-                                                    inlineRecovery = false
-                                                )
-                                            } ?: run {
-                                                timedOutOrFailed = true
-                                                emptyList<AppAdapter.Item>() to emptyList<AppAdapter.Item>()
-                                            }
+                                            fetchItalianSourcePage(engine, query, advancedFilters, nextPage)
                                         }
                                     } catch (cancel: kotlinx.coroutines.CancellationException) {
                                         throw cancel
                                     } catch (error: Exception) {
                                         timedOutOrFailed = true
-                                        Log.w("SearchViewModel", "LAB181 global native page for ${target.displayName}", error)
-                                        emptyList<AppAdapter.Item>() to emptyList<AppAdapter.Item>()
+                                        Log.w("SearchViewModel", "LAB182 source " + target.displayName, error)
+                                        emptyList<AppAdapter.Item>() to false
                                     }
                                     if (timedOutOrFailed) needsRecovery = true
-                                    val (raw, filtered) = rawAndFiltered
+                                    val effective = if (nativeGenre) advancedFilters.copy(
+                                        genre = AdvancedSearchFilters.GenreFilter.ALL,
+                                        genres = emptySet(),
+                                    ) else advancedFilters
+                                    val filtered = if (timedOutOrFailed) emptyList<AppAdapter.Item>()
+                                        else verifyItalianSourcePage(raw, effective)
                                     filtered.forEach { item ->
                                         when (item) {
                                             is Movie -> {
