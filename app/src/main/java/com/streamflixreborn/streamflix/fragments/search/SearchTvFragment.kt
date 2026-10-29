@@ -1552,8 +1552,49 @@ class SearchTvFragment : Fragment() {
         }
     }
 
-    private fun openFiltersFromResults() {
-        dropdownArrow?.requestFocus()
+    private fun focusRemoteSearch(): Boolean {
+        if (!isAdded || !this::etSearch.isInitialized) return false
+        val moved = etSearch.requestFocus()
+        if (moved) {
+            etSearch.isCursorVisible = true
+            etSearch.setSelection(etSearch.text?.length ?: 0)
+            // Do not open the on-screen keyboard just by changing D-pad focus.
+            etSearch.post { if (isAdded && etSearch.hasFocus()) hideKeyboard() }
+        }
+        return moved
+    }
+
+    private fun focusSearchFromTopPosters(): Boolean {
+        if (Lab187RemoteFocusPolicy.action(
+                Lab187RemoteFocusPolicy.Route.POSTER_TOP_UP,
+                filterPanelExpanded, appAdapter.itemCount > 0
+            ) != Lab187RemoteFocusPolicy.Action.FOCUS_SEARCH) return false
+        if (filterPanelExpanded) setFilterPanelExpanded(false, true)
+        return focusRemoteSearch()
+    }
+
+    private fun openFiltersFromResults(): Boolean {
+        if (Lab187RemoteFocusPolicy.action(
+                Lab187RemoteFocusPolicy.Route.SIDE_ARROW_OK,
+                filterPanelExpanded, appAdapter.itemCount > 0
+            ) != Lab187RemoteFocusPolicy.Action.OPEN_AND_FOCUS_SEARCH) return false
+        setFilterPanelExpanded(true, true)
+        return focusRemoteSearch()
+    }
+
+    private fun exitFiltersDownToPosterWall(): Boolean {
+        if (Lab187RemoteFocusPolicy.action(
+                Lab187RemoteFocusPolicy.Route.FOOTER_DOWN,
+                filterPanelExpanded, appAdapter.itemCount > 0
+            ) != Lab187RemoteFocusPolicy.Action.CLOSE_AND_FOCUS_POSTERS) return false
+        // Preserve grid selection: never reset to poster 0 or restore stale row.
+        setFilterPanelExpanded(false, true)
+        vgvSearch.post {
+            if (isAdded && !filterPanelExpanded && appAdapter.itemCount > 0) {
+                vgvSearch.requestFocus()
+            }
+        }
+        return true
     }
 
     private fun collapseFiltersAndFocusResults() {
@@ -2044,7 +2085,11 @@ class SearchTvFragment : Fragment() {
             isFocusable = true
             isClickable = true
             gravity = android.view.Gravity.CENTER
-            setTextColor(if (primary) Color.rgb(15, 20, 28) else Color.WHITE)
+            setTextColor(
+                androidx.core.content.ContextCompat.getColorStateList(
+                    requireContext(), R.color.tv_filter_focus_text_lab187
+                )
+            )
             textSize = 15f
             setBackgroundResource(
                 if (primary) R.drawable.bg_filter_action_primary_tv
