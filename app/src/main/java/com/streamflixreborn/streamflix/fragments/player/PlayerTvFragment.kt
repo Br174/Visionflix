@@ -1367,9 +1367,9 @@ class PlayerTvFragment : Fragment() {
                             }
                         }
                     }
-                    if (reallyFinished && UserPreferences.autoplay) {
+                    // Episode auto-advance happens once, after its IO update.
+                    if (videoType is Video.Type.Movie && reallyFinished && UserPreferences.autoplay)
                         playNextEpisodeAcrossSeasons(autoplay = true)
-                    }
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
