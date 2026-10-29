@@ -7,7 +7,7 @@ internal data class SavedSearchFilterState(
     val query: String = "",
     val globalSearch: Boolean = true,
     val type: AdvancedSearchFilters.ContentType = AdvancedSearchFilters.ContentType.ALL,
-    val italian: AdvancedSearchFilters.ItalianFilter = AdvancedSearchFilters.ItalianFilter.ALL,
+    val italian: AdvancedSearchFilters.ItalianFilter = AdvancedSearchFilters.ItalianFilter.YES,
     val year: Int? = null,
     val fromYear: Int? = null,
     val toYear: Int? = null,
@@ -37,7 +37,11 @@ internal object SearchFilterPersistence {
             query = p.getString("query", "").orEmpty(),
             globalSearch = p.getBoolean("global", true),
             type = enumValue("type", AdvancedSearchFilters.ContentType.values(), AdvancedSearchFilters.ContentType.ALL),
-            italian = enumValue("italian", AdvancedSearchFilters.ItalianFilter.values(), AdvancedSearchFilters.ItalianFilter.ALL),
+            italian = enumValue("italian", AdvancedSearchFilters.ItalianFilter.values(),
+                AdvancedSearchFilters.ItalianFilter.YES).let {
+                if (it == AdvancedSearchFilters.ItalianFilter.ALL)
+                    AdvancedSearchFilters.ItalianFilter.YES else it
+            },
             year = optionalInt("year"),
             fromYear = optionalInt("from_year"),
             toYear = optionalInt("to_year"),
