@@ -1,0 +1,9 @@
+MotorLab Scudo360 vision pilot
+SOURCE_BRANCH=lab/visionflix-lab184-italian-translation-filter-20261029
+INITIAL_SOURCE_SHA=88cfc52f91fbaf352a859c423684b3b5a0fc4472
+SCOPE=isolated_lab_no_app_source_changes
+PRE_BUILD_GATE=scripts/scudo360-gate.mjs
+REGISTRY=.motorlab/scudo360-contracts.json
+PUBLISH_FIXED_DOWNLOADER=PROHIBITED
+PROMOTE_MADRE=NO
+PILOT_CERTIFICATION=JVM_PLUS_SOURCE_PROOF_ONLY_NOT_DEVICE_END_TO_END
