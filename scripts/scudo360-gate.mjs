@@ -19,11 +19,12 @@ function existingFile(root,p){return cleanFile(p)&&fs.existsSync(path.resolve(ro
 function javaReports(dir){
   if(!fs.existsSync(dir)) return {tests:0,failures:0,errors:0,skipped:0,files:0};
   const files=fs.readdirSync(dir).filter(x=>/^TEST-.+\.xml$/.test(x));
-  const total={tests:0,failures:0,errors:0,skipped:0,files:files.length};
+  const total={tests:0,failures:0,errors:0,skipped:0,files:files.length,failedFiles:[]};
   for(const file of files){
     const xml=fs.readFileSync(path.join(dir,file),'utf8');
     const root=xml.match(/<testsuite\b[^>]*>/);
     if(!root) continue;
+    if (/\b(?:failures|errors)="[1-9][0-9]*"/.test(root[0])) total.failedFiles.push(file);
     for(const key of ['tests','failures','errors','skipped']){
       const m=root[0].match(new RegExp('\\b'+key+'="(\\d+)"'));
       total[key]+=m?Number(m[1]):0;
@@ -126,7 +127,7 @@ if(direct){
     const registry=JSON.parse(fs.readFileSync(file,'utf8'));
     const result=run(registry,{level,reportFile:dest});
     console.log(JSON.stringify({passed:result.passed,project:result.project,level:result.level,
-      suites:result.suites.map(x=>({id:x.id,status:x.status,exitCode:x.exitCode,tests:x.tests,failures:x.failures,errors:x.errors,skipped:x.skipped,elapsedMs:x.elapsedMs})),
+      suites:result.suites.map(x=>({id:x.id,status:x.status,exitCode:x.exitCode,tests:x.tests,failures:x.failures,errors:x.errors,skipped:x.skipped,failedFiles:x.failedFiles,elapsedMs:x.elapsedMs})),
       contracts:result.contracts,errors:result.errors},null,2));
     if(!result.passed)process.exitCode=1;
   }catch(error){console.error('SCUDO360_GATE_ERROR '+String(error?.message||error));process.exitCode=1;}
