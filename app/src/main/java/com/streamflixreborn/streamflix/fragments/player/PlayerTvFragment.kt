@@ -43,6 +43,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
@@ -166,6 +167,7 @@ class PlayerTvFragment : Fragment() {
     // registered another listener for every server/source and every retry.
     private var observedPlaybackPlayer: ExoPlayer? = null
     private var lastForeignAudioSourceRejected: String? = null
+    private var lastItalianTrackSelectionAttemptSource: String? = null
     private val playbackPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val playbackPersistenceMutex = Mutex()
     private val bufferingWatchHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -1250,13 +1252,14 @@ class PlayerTvFragment : Fragment() {
                         is Video.Type.Episode -> kind.tvShow.id
                     }
                     if (evidence != Lab186AudioEvidencePolicy.Evidence.UNKNOWN) {
+                        val context = requireContext().applicationContext
                         val name = provider?.name
                         val mirror = name?.let {
                             ProviderEndpointRegistry.selectedOverride(it)
                         }.orEmpty()
                         playbackPersistenceScope.launch {
                             Lab186AudioEvidenceStore.remember(
-                                requireContext().applicationContext, name, contentId,
+                                context, name, contentId,
                                 mirror, evidence,
                             )
                         }
@@ -1265,10 +1268,44 @@ class PlayerTvFragment : Fragment() {
                     // the Italian dubbed filter was selected for global TV search.
                     val selectedFilter = SearchFilterPersistence.load(requireContext())
                     if (!selectedFilter.globalSearch ||
-                        selectedFilter.italian != AdvancedSearchFilters.ItalianFilter.YES ||
-                        evidence != Lab186AudioEvidencePolicy.Evidence.FOREIGN) return
-                    player.playWhenReady = false
+                        selectedFilter.italian != AdvancedSearchFilters.ItalianFilter.YES) return
                     val source = currentVideo?.source ?: return
+                    if (evidence == Lab186AudioEvidencePolicy.Evidence.ITALIAN) {
+                        val selectedItalian = audioGroups.any { group ->
+                            (0 until group.length).any { i ->
+                                group.isTrackSelected(i) &&
+                                    Lab186AudioEvidencePolicy.classifyAudioLanguages(
+                                        listOf(group.getTrackFormat(i).language)
+                                    ) == Lab186AudioEvidencePolicy.Evidence.ITALIAN
+                            }
+                        }
+                        if (selectedItalian) return
+                        val choice = audioGroups.firstNotNullOfOrNull { group ->
+                            (0 until group.length).firstOrNull { i ->
+                                Lab186AudioEvidencePolicy.classifyAudioLanguages(
+                                    listOf(group.getTrackFormat(i).language)
+                                ) == Lab186AudioEvidencePolicy.Evidence.ITALIAN &&
+                                    group.isTrackSupported(i)
+                            }?.let { group to it }
+                        }
+                        if (choice != null &&
+                            lastItalianTrackSelectionAttemptSource != source) {
+                            lastItalianTrackSelectionAttemptSource = source
+                            player.trackSelectionParameters =
+                                player.trackSelectionParameters.buildUpon()
+                                    .setOverrideForType(TrackSelectionOverride(
+                                        choice.first.mediaTrackGroup, listOf(choice.second)
+                                    ))
+                                    .build()
+                            return
+                        }
+                        // An Italian stream exists but the device could not
+                        // select its track. Try another server, not foreign audio.
+                    } else if (evidence != Lab186AudioEvidencePolicy.Evidence.FOREIGN) {
+                        // Unknown audio: do not fabricate Italian-dubbed evidence.
+                        return
+                    }
+                    player.playWhenReady = false
                     if (lastForeignAudioSourceRejected == source) return
                     lastForeignAudioSourceRejected = source
                     val nextServer = servers.getOrNull(servers.indexOf(currentServer) + 1)
