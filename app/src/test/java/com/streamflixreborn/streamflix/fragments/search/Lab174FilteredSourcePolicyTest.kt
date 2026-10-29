@@ -31,8 +31,12 @@ class Lab174FilteredSourcePolicyTest {
     @Test fun otherStrictMetadataConstraintsStayStrict() {
         assertTrue(Lab174FilteredSourcePolicy.requiresStrictMetadata(
             AdvancedSearchFilters(platform=AdvancedSearchFilters.PlatformFilter.NETFLIX)))
-        assertTrue(Lab174FilteredSourcePolicy.requiresStrictMetadata(
+        assertFalse(Lab174FilteredSourcePolicy.requiresStrictMetadata(
             AdvancedSearchFilters(italian=AdvancedSearchFilters.ItalianFilter.YES)))
+        assertTrue(Lab174FilteredSourcePolicy.requiresStrictMetadata(
+            AdvancedSearchFilters(
+                italian=AdvancedSearchFilters.ItalianFilter.YES,
+                country=AdvancedSearchFilters.CountryFilter.USA)))
         assertTrue(Lab174FilteredSourcePolicy.requiresStrictMetadata(
             AdvancedSearchFilters(actorId="123")))
     }
