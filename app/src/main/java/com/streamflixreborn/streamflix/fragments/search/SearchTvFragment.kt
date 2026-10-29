@@ -958,7 +958,7 @@ class SearchTvFragment : Fragment() {
             }
         }
         // All lower lip controls close the drawer upon DOWN toward posters.
-        val exitDown: (View, Int, KeyEvent) -> Boolean = { _, code, event ->
+        val exitDown = View.OnKeyListener { _, code, event ->
             event.action == KeyEvent.ACTION_DOWN &&
                 code == KeyEvent.KEYCODE_DPAD_DOWN &&
                 exitFiltersDownToPosterWall()
