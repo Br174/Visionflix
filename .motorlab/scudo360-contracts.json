@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "project": "visionflix",
+  "suites": [
+    {
+      "id": "android-jvm-complete",
+      "command": [
+        "./gradlew",
+        ":app:testDebugUnitTest",
+        "--console=plain",
+        "--warning-mode",
+        "summary"
+      ],
+      "paths": [
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Lab150AdvancedFiltersTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/fragments/search/Lab153NavigationTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Lab172NativeYearPolicyTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/fragments/player/Lab166TvPlaybackRecoveryPolicyTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/fragments/search/Lab181ProviderFlowPolicyTest.kt"
+      ],
+      "junitDir": "app/build/test-results/testDebugUnitTest",
+      "timeoutMs": 1200000
+    }
+  ],
+  "contracts": [
+    {
+      "id": "visionflix.search.filters",
+      "priority": "P1",
+      "suites": [
+        "android-jvm-complete"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.providers.Lab150AdvancedFiltersTest"
+      ]
+    },
+    {
+      "id": "visionflix.tv.navigation",
+      "priority": "P1",
+      "suites": [
+        "android-jvm-complete"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.fragments.search.Lab153NavigationTest"
+      ]
+    },
+    {
+      "id": "visionflix.year.metadata",
+      "priority": "P1",
+      "suites": [
+        "android-jvm-complete"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.providers.Lab172NativeYearPolicyTest"
+      ]
+    },
+    {
+      "id": "visionflix.playback.recovery",
+      "priority": "P1",
+      "suites": [
+        "android-jvm-complete"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.fragments.player.Lab166TvPlaybackRecoveryPolicyTest"
+      ]
+    },
+    {
+      "id": "visionflix.providers.flow",
+      "priority": "P1",
+      "suites": [
+        "android-jvm-complete"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.fragments.search.Lab181ProviderFlowPolicyTest"
+      ]
+    }
+  ]
+}
