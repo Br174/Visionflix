@@ -44,7 +44,6 @@ internal object Lab164SearchMatchPolicy {
         query.isNotBlank() &&
             (filters.year != null || !filters.dateFrom.isNullOrBlank() ||
                 !filters.dateTo.isNullOrBlank()) &&
-            filters.italian == AdvancedSearchFilters.ItalianFilter.ALL &&
             filters.country == AdvancedSearchFilters.CountryFilter.ALL &&
             filters.platform == AdvancedSearchFilters.PlatformFilter.ALL &&
             filters.effectiveGenres.isEmpty() &&
