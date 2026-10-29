@@ -1215,6 +1215,45 @@ jobs:
           print('SCUDO360_LANGUAGE_SOURCE_COMPATIBLE')
           PY
 
+      - name: LAB185 playback smoothness TV and Mobile verified JVM evidence
+        if: startsWith(github.ref, 'refs/heads/lab/visionflix-lab185-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          root=Path('app/src/main/java/com/streamflixreborn/streamflix/fragments/player')
+          tv=(root/'PlayerTvFragment.kt').read_text()
+          mobile=(root/'PlayerMobileFragment.kt').read_text()
+          policy=(root/'Lab185PlaybackFlowPolicy.kt').read_text()
+          assert 'Lab185PlaybackFlowPolicy.profile(extraBuffering, lowRam)' in tv
+          assert 'Lab185PlaybackFlowPolicy.profile(extraBuffering, lowRam)' in mobile
+          assert 'timeoutForAttempt(bufferingRecoveryAttempts)' in tv
+          assert 'NetworkClient.default.newBuilder()' in tv
+          assert 'if (observedPlaybackPlayer !== player)' in tv
+          assert 'if (observedPlaybackPlayer !== player)' in mobile
+          assert 'playbackPersistenceMutex.withLock' in tv
+          assert 'playbackPersistenceMutex.withLock' in mobile
+          assert 'resumePositionAfterServerChange' in mobile
+          assert 'positionBeforeReinit' in tv
+          assert 'positionBeforeReinit' in mobile
+          assert '120_000' in policy
+          found={}
+          for f in Path('app/build/test-results/testDebugUnitTest').glob('*.xml'):
+              r=ET.parse(f).getroot()
+              name=r.attrib.get('name', '')
+              if name.endswith(('Lab185PlaybackFlowPolicyTest','Lab166TvPlaybackRecoveryPolicyTest')):
+                  count=int(r.attrib.get('tests',0))
+                  assert count > 0 and int(r.attrib.get('failures',0))==0 and int(r.attrib.get('errors',0))==0, (name,r.attrib)
+                  found[name]=count
+          needed=['Lab185PlaybackFlowPolicyTest','Lab166TvPlaybackRecoveryPolicyTest']
+          assert all(any(k.endswith(n) for k in found) for n in needed), found
+          print('[LAB185_PLAYBACK_JVM_EVIDENCE=PASS]', found)
+          downloader=Path('.motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt').read_text()
+          assert 'PREFERRED_USER_CODE=6920196' in downloader
+          PY
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
