@@ -1056,6 +1056,8 @@ class PlayerTvFragment : Fragment() {
             updatePlayerHeader()
             val extraBuffering = PlayerSettingsView.Settings.ExtraBuffering.isEnabled
             val softwareDecoder = PlayerSettingsView.Settings.SoftwareDecoder.isEnabled
+            val positionBeforeReinit = if (::player.isInitialized)
+                player.currentPosition.coerceAtLeast(0L) else 0L
             val needsReinit =
                 extraBuffering != currentExtraBuffering || softwareDecoder != currentSoftwareDecoder
             if (needsReinit) {
@@ -1071,7 +1073,8 @@ class PlayerTvFragment : Fragment() {
                     .build()
             }
 
-            val currentPosition = effectiveStartPositionMs ?: player.currentPosition
+            val currentPosition = effectiveStartPositionMs ?:
+                if (needsReinit) positionBeforeReinit else player.currentPosition
 
             httpDataSource.setDefaultRequestProperties(
                 mapOf(
@@ -1306,46 +1309,60 @@ class PlayerTvFragment : Fragment() {
                             }
                         }
                         is Video.Type.Episode -> {
-                            // LAB166 leaves the established episode progression /
-                            // next-episode / Matrioska workflow intact.
-                            val watchItem = database.episodeDao().getById(videoType.id)
-                            when {
-                                started && !finished -> {
-                                    watchItem?.isWatched = false
-                                    watchItem?.watchedDate = null
-                                    watchItem?.watchHistory = WatchItem.WatchHistory(
-                                        lastEngagementTimeUtcMillis = System.currentTimeMillis(),
-                                        lastPlaybackPositionMillis = position,
-                                        durationMillis = duration,
-                                    )
-                                }
-                                finished -> {
-                                    watchItem?.isWatched = true
-                                    watchItem?.watchedDate = Calendar.getInstance()
-                                    watchItem?.watchHistory = null
-                                }
-                            }
-                            (watchItem as? Episode)?.let { episode ->
-                                if (finished) {
-                                    database.episodeDao().resetProgressionFromEpisode(videoType.id)
-                                    UserDataCache.removeEpisodeFromContinueWatching(context, provider, episode.id)
-                                    queueNextEpisodeForContinueWatching(provider)
-                                }
-                                database.episodeDao().update(episode)
-                                if (!finished) {
-                                    UserDataCache.syncEpisodeToCache(context, provider, episode)
-                                }
-                                episode.tvShow?.let { tvShow ->
-                                    database.tvShowDao().getById(tvShow.id)
-                                }?.let { tvShow ->
-                                    val isStillWatching = database.episodeDao()
-                                        .hasAnyWatchHistoryForTvShow(tvShow.id)
-                                    val updatedTvShow = tvShow.copy().apply {
-                                        merge(tvShow)
-                                        isWatching = !reallyFinished || isStillWatching
+                            // LAB185: all episode Room/cache/cloud work runs on
+                            // serialized IO, never in the ExoPlayer main listener.
+                            val ended = finished
+                            val fullyEnded = reallyFinished
+                            playbackPersistenceScope.launch {
+                                playbackPersistenceMutex.withLock {
+                                    runCatching {
+                                        val watchItem = database.episodeDao().getById(videoType.id)
+                                        when {
+                                            started && !ended -> {
+                                                watchItem?.isWatched = false
+                                                watchItem?.watchedDate = null
+                                                watchItem?.watchHistory = WatchItem.WatchHistory(
+                                                    lastEngagementTimeUtcMillis = System.currentTimeMillis(),
+                                                    lastPlaybackPositionMillis = position,
+                                                    durationMillis = duration,
+                                                )
+                                            }
+                                            ended -> {
+                                                watchItem?.isWatched = true
+                                                watchItem?.watchedDate = Calendar.getInstance()
+                                                watchItem?.watchHistory = null
+                                            }
+                                        }
+                                        (watchItem as? Episode)?.let { episode ->
+                                            if (ended) {
+                                                database.episodeDao().resetProgressionFromEpisode(videoType.id)
+                                                UserDataCache.removeEpisodeFromContinueWatching(context, provider, episode.id)
+                                                if (isAdded) queueNextEpisodeForContinueWatching(provider)
+                                            }
+                                            database.episodeDao().update(episode)
+                                            if (!ended) UserDataCache.syncEpisodeToCache(context, provider, episode)
+                                            episode.tvShow?.let { tvShow ->
+                                                database.tvShowDao().getById(tvShow.id)
+                                            }?.let { tvShow ->
+                                                val stillWatching = database.episodeDao()
+                                                    .hasAnyWatchHistoryForTvShow(tvShow.id)
+                                                val updated = tvShow.copy().apply {
+                                                    merge(tvShow)
+                                                    isWatching = !fullyEnded || stillWatching
+                                                }
+                                                database.tvShowDao().update(updated)
+                                                CloudSyncHooks.tvShow(context, provider, updated)
+                                            }
+                                        }
+                                    }.onFailure {
+                                        Log.w("PlayerTvFragment", "LAB185 episode persistence failed", it)
                                     }
-                                    database.tvShowDao().update(updatedTvShow)
-                                    CloudSyncHooks.tvShow(context, provider, updatedTvShow)
+                                }
+                                if (fullyEnded && UserPreferences.autoplay) {
+                                    withContext(Dispatchers.Main) {
+                                        if (isAdded && _binding != null)
+                                            playNextEpisodeAcrossSeasons(autoplay = true)
+                                    }
                                 }
                             }
                         }
@@ -1472,7 +1489,7 @@ class PlayerTvFragment : Fragment() {
             }
             bufferingWatchRunnable = watchdog
             bufferingWatchHandler.postDelayed(
-                watchdog, Lab166TvPlaybackRecoveryPolicy.BUFFERING_TIMEOUT_MS
+                watchdog, Lab185PlaybackFlowPolicy.timeoutForAttempt(bufferingRecoveryAttempts)
             )
         }
 
@@ -1812,12 +1829,13 @@ class PlayerTvFragment : Fragment() {
         private var currentSoftwareDecoder = false
 
         private fun buildPlayer(extraBuffering: Boolean): ExoPlayer {
+            val lowRam = (requireContext().getSystemService(Context.ACTIVITY_SERVICE)
+                as? android.app.ActivityManager)?.isLowRamDevice ?: true
+            val buffer = Lab185PlaybackFlowPolicy.profile(extraBuffering, lowRam)
             val loadControl = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                    DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
-                    if (extraBuffering) 300_000 else DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                    buffer.minBufferMs, buffer.maxBufferMs,
+                    buffer.startPlaybackMs, buffer.resumePlaybackMs,
                 )
                 .build()
 
@@ -1843,7 +1861,9 @@ class PlayerTvFragment : Fragment() {
             currentSoftwareDecoder = softwareDecoder
 
             var tokenLogged = false
-            val okHttpClient = OkHttpClient.Builder()
+            // Reuse established HTTP connections while keeping provider-specific
+            // token headers and existing DNS policy.
+            val okHttpClient = NetworkClient.default.newBuilder()
                 .dns(DnsResolver.doh)
                 .addInterceptor { chain ->
                     var request = chain.request()
