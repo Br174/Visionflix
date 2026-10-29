@@ -359,9 +359,8 @@ class SearchMobileFragment : Fragment() {
                         else -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.ALL
                     },
                     italian = when (binding.spItalian.selectedItemPosition) {
-                        1 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.YES
-                        2 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.NO
-                        else -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.ALL
+                        1 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.NO
+                        else -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.YES
                     },
                     year = selectedYear(binding.spYear),
                     fromYear = selectedYear(binding.etDateFrom),
@@ -401,8 +400,7 @@ class SearchMobileFragment : Fragment() {
         )
         binding.spItalian.setSelection(
             when (saved.italian) {
-                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.YES -> 1
-                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.NO -> 2
+                com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ItalianFilter.NO -> 1
                 else -> 0
             },
             false,
