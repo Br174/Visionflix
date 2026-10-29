@@ -1254,6 +1254,40 @@ jobs:
           assert 'PREFERRED_USER_CODE=6920196' in downloader
           PY
 
+      - name: LAB186 dubbed Italian audio evidence and subtitle-only regression
+        if: github.ref == 'refs/heads/lab/visionflix-lab186-italian-audio-evidence-20261029'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          base=Path('app/src/main/java/com/streamflixreborn/streamflix')
+          search=(base/'fragments/search/SearchViewModel.kt').read_text()
+          player=(base/'fragments/player/PlayerTvFragment.kt').read_text()
+          guard=(base/'utils/AudioLanguageGuard.kt').read_text()
+          cb=(base/'providers/CB01Provider.kt').read_text()
+          assert 'Lab186AudioEvidencePolicy.explicitlySubtitleOnly' in search
+          assert 'Lab186AudioEvidenceStore.get' in search
+          assert 'Lab186AudioEvidenceStore.remember' in player
+          assert 'setOverrideForType(TrackSelectionOverride(' in player
+          assert 'audioLanguagesFromHlsMaster' in guard
+          assert 'Lab186AudioEvidencePolicy.explicitlySubtitleOnly(rawTitle)' in cb
+          assert 'Doppiato in italiano' in (base/'fragments/search/SearchTvFragment.kt').read_text()
+          passed=False
+          for f in Path('app/build/test-results/testDebugUnitTest').glob('*.xml'):
+              root=ET.parse(f).getroot()
+              if root.attrib.get('name','').endswith('Lab186AudioEvidencePolicyTest'):
+                  assert int(root.attrib.get('tests',0))>=3
+                  assert int(root.attrib.get('failures',0))==0
+                  assert int(root.attrib.get('errors',0))==0
+                  passed=True
+          assert passed, 'Lab186AudioEvidencePolicyTest was not executed'
+          assert 'PREFERRED_USER_CODE=6920196' in Path(
+              '.motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt').read_text()
+          print('[LAB186_ITALIAN_AUDIO_EVIDENCE=PASS]')
+          PY
+
       - name: Build Android mobile debug APK
         env:
           VISIONFLIX_SIGNING_V1_PASSWORD: ${{ secrets.VISIONFLIX_SIGNING_V1_PASSWORD }}
