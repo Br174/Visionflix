@@ -126,7 +126,7 @@ if(direct){
     const registry=JSON.parse(fs.readFileSync(file,'utf8'));
     const result=run(registry,{level,reportFile:dest});
     console.log(JSON.stringify({passed:result.passed,project:result.project,level:result.level,
-      suites:result.suites.map(x=>({id:x.id,status:x.status,tests:x.tests,elapsedMs:x.elapsedMs})),
+      suites:result.suites.map(x=>({id:x.id,status:x.status,exitCode:x.exitCode,tests:x.tests,failures:x.failures,errors:x.errors,skipped:x.skipped,elapsedMs:x.elapsedMs})),
       contracts:result.contracts,errors:result.errors},null,2));
     if(!result.passed)process.exitCode=1;
   }catch(error){console.error('SCUDO360_GATE_ERROR '+String(error?.message||error));process.exitCode=1;}
