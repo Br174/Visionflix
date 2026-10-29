@@ -1,12 +1,12 @@
 package com.streamflixreborn.streamflix.fragments.search
 
+import com.streamflixreborn.streamflix.fragments.search.Lab187RemoteFocusPolicy.Route as R
+import com.streamflixreborn.streamflix.fragments.search.Lab187RemoteFocusPolicy.Action as A
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class Lab187RemoteFocusPolicyTest {
     private val p = Lab187RemoteFocusPolicy
-    private val R = Lab187RemoteFocusPolicy.Route
-    private val A = Lab187RemoteFocusPolicy.Action
 
     @Test fun sideArrowOneOkOpensAndFocusesSearch() {
         assertEquals(A.OPEN_AND_FOCUS_SEARCH, p.action(R.SIDE_ARROW_OK, false, true))
