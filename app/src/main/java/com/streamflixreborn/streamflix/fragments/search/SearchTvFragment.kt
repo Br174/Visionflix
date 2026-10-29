@@ -1330,7 +1330,7 @@ class SearchTvFragment : Fragment() {
 
         return AdvancedSearchFilters(
             type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
-            italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
+            italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.YES,
             genre = genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
             genres = Lab173TvCombinedFilterPolicy.effectiveMultiGenres(
                 genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
@@ -1361,7 +1361,7 @@ class SearchTvFragment : Fragment() {
         val filters = currentFilters() ?: return true
         if ((filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
                 filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
-                filters.italian != AdvancedSearchFilters.ItalianFilter.ALL) &&
+                false) &&
             !com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting.hasKey(
                 UserPreferences.tmdbApiKey, com.streamflixreborn.streamflix.BuildConfig.TMDB_API_KEY)) {
             showSafeToast("Paese, piattaforma e lingua richiedono una chiave TMDb gratuita nelle Impostazioni")
@@ -1400,7 +1400,7 @@ class SearchTvFragment : Fragment() {
                     query = etSearch.text?.toString().orEmpty(),
                     globalSearch = isGlobalSearchChecked,
                     type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
-                    italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
+                    italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.YES,
                     year = yearSelector?.value,
                     fromYear = fromSelector?.value,
                     toYear = toSelector?.value,
