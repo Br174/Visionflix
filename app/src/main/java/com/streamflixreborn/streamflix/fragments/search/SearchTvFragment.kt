@@ -15,6 +15,7 @@ import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -2146,6 +2147,17 @@ class SearchTvFragment : Fragment() {
                     if (hasFocus) Color.rgb(22, 43, 64) else Color.WHITE
                 )
                 if (hasFocus && !filterPanelExpanded) revealSearchHeader()
+            }
+            spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?,
+                                            position: Int, id: Long) {
+                    // Spinner recreates its selected label when the chosen filter
+                    // changes, so reapply the same focused text contrast.
+                    (view as? TextView)?.setTextColor(
+                        if (focusView.hasFocus()) Color.rgb(22, 43, 64) else Color.WHITE
+                    )
+                }
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             }
             focusView.setOnKeyListener { _, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
