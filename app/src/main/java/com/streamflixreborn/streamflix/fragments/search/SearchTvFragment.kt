@@ -77,7 +77,7 @@ class SearchTvFragment : Fragment() {
     private var voiceHelper: VoiceRecognitionHelper? = null
     private var actorSearchJob: Job? = null
     private var directorSearchJob: Job? = null
-    private var isGlobalSearchChecked = false
+    private var isGlobalSearchChecked = true
     private var currentGridColumns = 1
     private var suppressActorTextChange = false
     private var suppressDirectorTextChange = false
@@ -303,6 +303,7 @@ class SearchTvFragment : Fragment() {
         llGlobalSearch.setOnClickListener {
             isGlobalSearchChecked = !isGlobalSearchChecked
             updateGlobalSwitch()
+            savePersistedFiltersSafely()
         }
 
         etSearch.setOnEditorActionListener { _, actionId, event ->
@@ -1275,10 +1276,10 @@ class SearchTvFragment : Fragment() {
         displayActorSuggestions(emptyList())
         displayDirectorSuggestions(emptyList())
         etSearch.setText("")
-        isGlobalSearchChecked = false
+        isGlobalSearchChecked = true
         updateGlobalSwitch()
         SearchFilterPersistence.clear(requireContext())
-        searchViewModel?.search("")
+        searchViewModel?.searchGlobal("", "it")
     }
 
     private fun showMultiGenrePicker() {
@@ -1371,7 +1372,7 @@ class SearchTvFragment : Fragment() {
 
         if (isGlobalSearchChecked) {
             hasShownPartialIndexNotice = false
-            vm.searchGlobal(query, UserPreferences.currentProvider?.language ?: "it", filters)
+            vm.searchGlobal(query, "it", filters)
             collapseFiltersAndFocusResults()
         } else {
             stabilizeStandardResultGrid(query, advanced = filters.isActive)
@@ -1398,7 +1399,7 @@ class SearchTvFragment : Fragment() {
                 requireContext(),
                 SavedSearchFilterState(
                     query = etSearch.text?.toString().orEmpty(),
-                    globalSearch = false,
+                    globalSearch = isGlobalSearchChecked,
                     type = typeSelector?.value ?: AdvancedSearchFilters.ContentType.ALL,
                     italian = italianSelector?.value ?: AdvancedSearchFilters.ItalianFilter.ALL,
                     year = yearSelector?.value,
@@ -1428,7 +1429,7 @@ class SearchTvFragment : Fragment() {
         try {
             val saved = SearchFilterPersistence.load(requireContext())
             etSearch.setText(saved.query)
-            isGlobalSearchChecked = false
+            isGlobalSearchChecked = saved.globalSearch
             updateGlobalSwitch()
             typeSelector?.selectValue(saved.type)
             updateQuickBar()

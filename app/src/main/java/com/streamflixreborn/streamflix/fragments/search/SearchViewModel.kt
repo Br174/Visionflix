@@ -1460,10 +1460,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         currentLanguage: String,
         filters: AdvancedSearchFilters = AdvancedSearchFilters(),
     ) = viewModelScope.launch(Dispatchers.IO) {
-        if (availabilityIndex != null && UserPreferences.currentProvider !is IptvProvider) {
-            searchIndexedGlobal(query, currentLanguage, filters)
-            return@launch
-        }
+        // Search every Italian-language source live; the partial index is not a complete search.
         ++activeIndexedSearchGeneration
         indexedGlobalEnabled = false
         advancedFilters = normalizeFilters(filters)
@@ -1479,30 +1476,21 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         val generation = ++activeGlobalGeneration
         globalEmptyPages = 0
 
-        val isCurrentProviderIptv = UserPreferences.currentProvider is IptvProvider
-        val originals = Provider.providers.keys
-            .filter { it.language == currentLanguage && (it is IptvProvider) == isCurrentProviderIptv }
+        val italianProviders = Provider.providers.keys.filter {
+            it.language.equals("it", ignoreCase = true) && it !is TmdbProvider
+        }
+        val originals = italianProviders
             .sortedBy { it.name != UserPreferences.currentProvider?.name }
             .map { GlobalSearchTarget(it, "Originale · ${it.name}", null) }
 
-        val remotes = if (!isCurrentProviderIptv) {
-            // Use cached known-good mirrors immediately; network registry refresh no longer
-            // holds the first screen hostage before the current provider can search.
-            ProviderEndpointRegistry.cachedRemoteEntries(currentLanguage)
-                .filter { it.healthy }
-                .mapNotNull { entry ->
-                    val engine = Provider.providers.keys.firstOrNull { it.name == entry.engineName }
-                        as? EndpointManagedProvider ?: return@mapNotNull null
-                    GlobalSearchTarget(
-                        provider = engine,
-                        displayName = "Pastebin · ${entry.displayName}",
-                        endpoint = entry.url,
-                    )
-                }
-        } else {
-            emptyList()
-        }
-
+        // Only configured mirrors of Italian engines belong to this scope.
+        val remotes = ProviderEndpointRegistry.cachedRemoteEntries("it")
+            .filter { it.healthy }
+            .mapNotNull { entry ->
+                val engine = italianProviders.firstOrNull { it.name == entry.engineName }
+                    as? EndpointManagedProvider ?: return@mapNotNull null
+                GlobalSearchTarget(engine, "Pastebin · ${entry.displayName}", entry.url)
+            }
         val targets = originals + remotes
         globalTargets = targets
         nativeGenreCacheMutex.withLock { nativeGenreCache.clear() }
@@ -1545,9 +1533,9 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             // child-coroutine failure. Keep the app-level Cerca screen alive.
             try {
                 if (Lab164SearchMatchPolicy.providerFirstYearQuery(query, advancedFilters))
-                    searchTmdbYearCandidates(query, advancedFilters, currentLanguage)
+                    searchTmdbYearCandidates(query, advancedFilters, "it")
                 else
-                    searchTmdbAdvanced(TmdbProvider(currentLanguage), query, advancedFilters, 1,
+                    searchTmdbAdvanced(TmdbProvider("it"), query, advancedFilters, 1,
                         candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(
                             advancedFilters, query))
             } catch (cancel: kotlinx.coroutines.CancellationException) {
@@ -1569,7 +1557,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         _state.emit(globalWallState(mutableResults.toList(), hasMore = false))
 
         val resultsMutex = Mutex()
-        val globalProviderGate = Semaphore(3)
+        val globalProviderGate = Semaphore(6)
         var completedTargets = 0
 
         coroutineScope {
@@ -1714,7 +1702,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 initial.providerResults.getOrNull(i)
                     ?: ProviderResult(target.provider, ProviderResult.State.Loading, target.displayName)
             }.toMutableList()
-            val gate = Semaphore(3)
+            val gate = Semaphore(6)
             val mutex = Mutex()
             var batch = 0
             var totalAdded = 0

@@ -229,9 +229,9 @@ class SearchMobileFragment : Fragment() {
             clearActorField()
             clearDirectorField()
             binding.etSearch.setText("")
-            binding.swGlobalSearch.isChecked = false
+            binding.swGlobalSearch.isChecked = true
             SearchFilterPersistence.clear(requireContext())
-            viewModel.search("")
+            viewModel.searchGlobal("", "it")
         }
     }
 
@@ -351,7 +351,7 @@ class SearchMobileFragment : Fragment() {
                 requireContext(),
                 SavedSearchFilterState(
                     query = binding.etSearch.text?.toString().orEmpty(),
-                    globalSearch = false,
+                    globalSearch = binding.swGlobalSearch.isChecked,
                     type = when (binding.spContentType.selectedItemPosition) {
                         1 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.MOVIE
                         2 -> com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.TV
@@ -389,7 +389,7 @@ class SearchMobileFragment : Fragment() {
         if (_binding == null || !isAdded) return
         val saved = SearchFilterPersistence.load(requireContext())
         binding.etSearch.setText(saved.query)
-        binding.swGlobalSearch.isChecked = false
+        binding.swGlobalSearch.isChecked = saved.globalSearch
         binding.spContentType.setSelection(
             when (saved.type) {
                 com.streamflixreborn.streamflix.providers.AdvancedSearchFilters.ContentType.MOVIE -> 1
@@ -554,8 +554,7 @@ class SearchMobileFragment : Fragment() {
                 ).show()
                 return true
             }
-            val currentLanguage = UserPreferences.currentProvider?.language ?: "it"
-            viewModel.searchGlobal(query, currentLanguage, filters)
+            viewModel.searchGlobal(query, "it", filters)
         } else {
             if (filters.isActive) viewModel.searchAdvanced(query, filters) else viewModel.search(query)
         }
@@ -563,7 +562,9 @@ class SearchMobileFragment : Fragment() {
     }
 
     private fun retryCurrentSearch() {
-        if (viewModel.advancedFilters.isActive) {
+        if (binding.swGlobalSearch.isChecked) {
+            viewModel.searchGlobal(viewModel.query, "it", viewModel.advancedFilters)
+        } else if (viewModel.advancedFilters.isActive) {
             viewModel.searchAdvanced(viewModel.query, viewModel.advancedFilters)
         } else {
             viewModel.search(viewModel.query)
