@@ -17,17 +17,22 @@ function issue(code,detail=''){return {code,detail};}
 function cleanFile(p){return typeof p==='string' && SAFE_FILE.test(p) && !p.includes('//');}
 function existingFile(root,p){return cleanFile(p)&&fs.existsSync(path.resolve(root,p))&&fs.statSync(path.resolve(root,p)).isFile();}
 function javaReports(dir){
-  if(!fs.existsSync(dir)) return {tests:0,failures:0,errors:0,skipped:0,files:0};
+  if(!fs.existsSync(dir)) return {tests:0,failures:0,errors:0,skipped:0,files:0,failedFiles:[],classes:[]};
   const files=fs.readdirSync(dir).filter(x=>/^TEST-.+\.xml$/.test(x));
-  const total={tests:0,failures:0,errors:0,skipped:0,files:files.length,failedFiles:[]};
+  const total={tests:0,failures:0,errors:0,skipped:0,files:files.length,failedFiles:[],classes:[]};
   for(const file of files){
     const xml=fs.readFileSync(path.join(dir,file),'utf8');
     const root=xml.match(/<testsuite\b[^>]*>/);
     if(!root) continue;
     if (/\b(?:failures|errors)="[1-9][0-9]*"/.test(root[0])) total.failedFiles.push(file);
+    const className=file.slice(5,-4);
+    const classEvidence={name:className,tests:0,failures:0,errors:0,skipped:0};
+    total.classes.push(classEvidence);
     for(const key of ['tests','failures','errors','skipped']){
       const m=root[0].match(new RegExp('\\b'+key+'="(\\d+)"'));
-      total[key]+=m?Number(m[1]):0;
+      const value=m?Number(m[1]):0;
+      total[key]+=value;
+      classEvidence[key]+=value;
     }
   }
   return total;
@@ -54,6 +59,7 @@ export function preflight(manifest,{root=process.cwd(),level='lab'}={}){
       errors.push(issue('INVALID_TIMEOUT',s.id));
   }
   const contractIds=new Set();
+  const CLASS_ID=/^[a-zA-Z_][\w$]*(?:\.[a-zA-Z_][\w$]*)+$/;
   for(const c of manifest?.contracts||[]){
     if(!c||typeof c.id!=='string'||!c.id.trim()){errors.push(issue('INVALID_CONTRACT'));continue;}
     if(contractIds.has(c.id))errors.push(issue('DUPLICATE_CONTRACT',c.id));
@@ -61,6 +67,15 @@ export function preflight(manifest,{root=process.cwd(),level='lab'}={}){
     if(!['P0','P1','P2'].includes(c.priority))errors.push(issue('INVALID_PRIORITY',c.id));
     if(!Array.isArray(c.suites)||!c.suites.length)errors.push(issue('UNCOVERED_CONTRACT',c.id));
     for(const id of c.suites||[])if(!suites.has(id))errors.push(issue('UNKNOWN_SUITE',c.id+':'+id));
+    if(!Array.isArray(c.junitClasses)||!c.junitClasses.length||
+      c.junitClasses.some(name=>typeof name!=='string'||!CLASS_ID.test(name)))
+      errors.push(issue('MISSING_CONTRACT_JUNIT_CLASSES',c.id));
+    for(const cls of c.junitClasses||[]){
+      const basename=cls.split('.').pop();
+      const hasDeclaredFile=(c.suites||[]).some(id=>
+        (suites.get(id)?.paths||[]).some(p=>p.endsWith('/'+basename+'.kt')||p.endsWith('/'+basename+'.java')||p.endsWith('/'+basename+'.mjs')));
+      if(!hasDeclaredFile)errors.push(issue('CONTRACT_CLASS_NOT_MAPPED_TO_SOURCE',c.id+':'+cls));
+    }
     if(!Array.isArray(c.requiredAt)||c.requiredAt.some(x=>!LEVELS.has(x))||
       (['P0','P1'].includes(c.priority)&&!c.requiredAt?.includes('promotion')))
       errors.push(issue('INVALID_REQUIRED_AT',c.id));
@@ -74,9 +89,15 @@ export function evaluate(manifest,results,level='lab'){
   for(const c of manifest.contracts){
     const required=c.requiredAt.includes(level);
     const suiteResults=c.suites.map(id=>performed.get(id));
-    const passed=suiteResults.every(r=>r&&r.status==='passed'&&r.tests>0&&r.failures===0&&r.errors===0&&r.skipped===0);
+    const suitePass=suiteResults.every(r=>r&&r.status==='passed'&&r.tests>0&&r.failures===0&&r.errors===0&&r.skipped===0);
+    const classes=(c.junitClasses||[]).map(name=>{
+      const candidates=suiteResults.flatMap(r=>r?.classes||[]).filter(x=>x.name===name);
+      return {name,passed:candidates.length===1&&candidates[0].tests>0&&
+        candidates[0].failures===0&&candidates[0].errors===0&&candidates[0].skipped===0};
+    });
+    const passed=suitePass&&classes.length>0&&classes.every(x=>x.passed);
     if(required&&!passed)errors.push(issue('REQUIRED_CONTRACT_FAILED',c.id));
-    contracts.push({id:c.id,priority:c.priority,required,status:passed?'passed':required?'failed':'unverified'});
+    contracts.push({id:c.id,priority:c.priority,required,status:passed?'passed':required?'failed':'unverified',classEvidence:classes});
   }
   const requiredCount=contracts.filter(c=>c.required).length;
   if(!requiredCount)errors.push(issue('NO_REQUIRED_CONTRACTS'));
@@ -127,7 +148,7 @@ if(direct){
     const registry=JSON.parse(fs.readFileSync(file,'utf8'));
     const result=run(registry,{level,reportFile:dest});
     console.log(JSON.stringify({passed:result.passed,project:result.project,level:result.level,
-      suites:result.suites.map(x=>({id:x.id,status:x.status,exitCode:x.exitCode,tests:x.tests,failures:x.failures,errors:x.errors,skipped:x.skipped,failedFiles:x.failedFiles,elapsedMs:x.elapsedMs})),
+      suites:result.suites.map(x=>({id:x.id,status:x.status,exitCode:x.exitCode,tests:x.tests,failures:x.failures,errors:x.errors,skipped:x.skipped,failedFiles:x.failedFiles,verifiedClasses:(x.classes||[]).filter(c=>c.tests>0).length,elapsedMs:x.elapsedMs})),
       contracts:result.contracts,errors:result.errors},null,2));
     if(!result.passed)process.exitCode=1;
   }catch(error){console.error('SCUDO360_GATE_ERROR '+String(error?.message||error));process.exitCode=1;}
