@@ -1282,7 +1282,7 @@ jobs:
           retention-days: 14
 
       - name: Publish authorized LAB prerelease automatically
-        if: steps.stage.outputs.stage == 'LAB' && github.event_name == 'push'
+        if: steps.stage.outputs.stage == 'LAB' && github.event_name == 'push' && startsWith(github.ref_name, 'lab/visionflix-')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
