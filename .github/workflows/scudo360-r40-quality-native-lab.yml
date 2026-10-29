@@ -5,6 +5,7 @@ on:
       - motorlab/active-verlezza-vision
 permissions:
   contents: read
+  actions: read
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -29,6 +30,21 @@ jobs:
           chmod +x ./gradlew
       - name: Existing native Scudo R39 full JVM, only once
         run: node scripts/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-r40-native.json
+      - name: Recover immutable R39 native baseline evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 40905832509 -n scudo360-vision-regression-report -D /tmp/r39-original-quality-proof
+          test -s /tmp/r39-original-quality-proof/.motorlab/scudo360-report.json
+          cp /tmp/r39-original-quality-proof/.motorlab/scudo360-report.json .motorlab/scudo360-r39-baseline.json
+          node - <<'NODE'
+          const old=require('./.motorlab/scudo360-r39-baseline.json');
+          if(old.commit!=='6c3c9b57b2ea4e2b8bdb0f09af6ad9290fb85247'||old.passed!==true)
+            throw Error('WRONG_QUALITY_BASELINE_SOURCE');
+          console.log('SCUDO_R39_EXACT_HISTORICAL_BASELINE',old.commit);
+          NODE
       - name: R40 request-to-executed-class audit
         run: node .motorlab/regression/scudo360-quality-r40.mjs .motorlab/scudo360-contracts.json .motorlab/scudo360-r40-native.json .motorlab/scudo360-r40-plan.json .motorlab/scudo360-r40-quality.json
       - name: Preserve evidence including failures
