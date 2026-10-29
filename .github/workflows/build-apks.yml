@@ -99,22 +99,45 @@ jobs:
           echo "APP_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
           echo "Versione di test/promozione: $APP_VERSION_NAME (build $APP_VERSION_CODE)."
 
+      # Preserve the original cache path. Recovery may ONLY use the SAME
+      # original signing identity through an explicitly configured GitHub Secret.
       - name: Restore stable debug signing key
         uses: actions/cache/restore@v4
         with:
           path: ~/.android/debug.keystore
           key: visionflix-debug-keystore-v1
-          fail-on-cache-miss: true
+          fail-on-cache-miss: false
 
       - name: Pin signing identity
         shell: bash
+        env:
+          VISIONFLIX_ORIGINAL_KEYSTORE_B64: ${{ secrets.VISIONFLIX_ORIGINAL_KEYSTORE_B64 }}
         run: |
           set -euo pipefail
-          test -f "$HOME/.android/debug.keystore"
-          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der
-          echo "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der" | sha256sum --check -
-          echo "VISIONFLIX_SIGNING_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
-          echo "[UAB_PROGRESS=45] Firma e controlli preliminari verificati"
+          umask 077
+          KEY_FILE="$HOME/.android/debug.keystore"
+          if [ ! -s "$KEY_FILE" ]; then
+            if [ -z "${VISIONFLIX_ORIGINAL_KEYSTORE_B64:-}" ]; then
+              echo "::error::Original Visionflix keystore missing in cache and authorized Secret. Build blocked: do not regenerate an Android signing identity."
+              exit 78
+            fi
+            mkdir -p "$HOME/.android"
+            if ! printf '%s' "$VISIONFLIX_ORIGINAL_KEYSTORE_B64" | base64 --decode > "$KEY_FILE"; then
+              rm -f "$KEY_FILE"
+              echo "::error::Original signing keystore Secret is not valid Base64. Build blocked."
+              exit 78
+            fi
+          fi
+          if ! keytool -exportcert -keystore "$KEY_FILE" -storepass android -alias androiddebugkey -file /tmp/signing-cert.der >/dev/null 2>&1; then
+            echo "::error::Original signing keystore cannot be read with the expected alias. Build blocked."
+            exit 78
+          fi
+          if ! echo "55d9c2dc94f32e6b7685994f2652eec3d8086432e9de94e0645a8bf30f41918e  /tmp/signing-cert.der" | sha256sum --check -; then
+            echo "::error::Signing certificate does not match the pinned original SHA256. Refusing to produce incompatible APK."
+            exit 78
+          fi
+          echo "VISIONFLIX_SIGNING_KEYSTORE=$KEY_FILE" >> "$GITHUB_ENV"
+          echo "[UAB_PROGRESS=45] Original signing certificate verified; cache or secure Secret recovery"
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
