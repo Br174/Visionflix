@@ -1092,8 +1092,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             (availableGenres.isEmpty() || availableGenres.any { it.tvId != null })
 
         val language = provider.language
-        val italianOnly = filters.italian == AdvancedSearchFilters.ItalianFilter.YES
-        val excludeItalian = filters.italian == AdvancedSearchFilters.ItalianFilter.NO
         val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
         val selectedGenres = filters.effectiveGenres
         val productionCountry = filters.country.isoCode
@@ -1253,8 +1251,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 when (multi) {
                     is TMDb3.Movie -> {
                         if (!includeMovies) return@mapNotNull null
-                        if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
-                        if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
                         if (!filters.acceptsGenreIds(multi.genresIds, movie = true)) return@mapNotNull null
                         if (restrictToActor && multi.id.toString() !in actorMovieIds) return@mapNotNull null
                         if (restrictToDirector && multi.id.toString() !in directorMovieIds) return@mapNotNull null
@@ -1274,8 +1270,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
 
                     is TMDb3.Tv -> {
                         if (!includeTv) return@mapNotNull null
-                        if (italianOnly && multi.originalLanguage != "it") return@mapNotNull null
-                        if (excludeItalian && multi.originalLanguage == "it") return@mapNotNull null
                         if (!filters.acceptsGenreIds(multi.genresIds, movie = false)) return@mapNotNull null
                         if (restrictToActor && multi.id.toString() !in actorTvIds) return@mapNotNull null
                         if (restrictToDirector && multi.id.toString() !in directorTvIds) return@mapNotNull null
@@ -1315,7 +1309,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 "sort_by" to movieSort,
                 "include_adult" to "false",
             )
-            if (italianOnly) params["with_original_language"] = "it"
             actorId?.let { params["with_cast"] = it }
             directorId?.let { params["with_crew"] = it }
             platformProviderIds?.let {
@@ -1347,7 +1340,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 "sort_by" to tvSort,
                 "include_adult" to "false",
             )
-            if (italianOnly) params["with_original_language"] = "it"
             actorId?.let { params["with_cast"] = it }
             directorId?.let { params["with_crew"] = it }
             platformProviderIds?.let {
@@ -1384,7 +1376,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
 
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
-            .filter { !excludeItalian || it.originalLanguage != "it" }
             .filter { filters.acceptsGenreIds(it.genresIds, movie = true) }
             .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
             .flatMap { movie ->
@@ -1405,7 +1396,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
 
         val tvItems = tvDeferred?.await().orEmpty()
             .asSequence()
-            .filter { !excludeItalian || it.originalLanguage != "it" }
             .filter { filters.acceptsGenreIds(it.genresIds, movie = false) }
             .filter { directorId == null || it.id.toString() in blankDirectorTvIds }
             .flatMap { tv ->
@@ -1582,8 +1572,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 if (filters.type == AdvancedSearchFilters.ContentType.CARTOON && 16 !in candidate.genresIds) continue
                 if (!filters.acceptsGenreIds(candidate.genresIds, movie = true)) continue
                 if (!matchesYearFilter(candidate.releaseDate, filters)) continue
-                if (filters.italian == AdvancedSearchFilters.ItalianFilter.YES && candidate.originalLanguage != "it") continue
-                if (filters.italian == AdvancedSearchFilters.ItalianFilter.NO && candidate.originalLanguage == "it") continue
                 val details = if (country != null || platformIds != null || needsCredits)
                     TMDb3.Movies.details(
                         movieId = candidate.id,
@@ -1614,8 +1602,6 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 if (filters.type == AdvancedSearchFilters.ContentType.CARTOON && 16 !in candidate.genresIds) continue
                 if (!filters.acceptsGenreIds(candidate.genresIds, movie = false)) continue
                 if (!matchesYearFilter(candidate.firstAirDate, filters)) continue
-                if (filters.italian == AdvancedSearchFilters.ItalianFilter.YES && candidate.originalLanguage != "it") continue
-                if (filters.italian == AdvancedSearchFilters.ItalianFilter.NO && candidate.originalLanguage == "it") continue
                 if (country != null && candidate.originCountry.none {
                         it.equals(country, ignoreCase = true)
                     }) continue
