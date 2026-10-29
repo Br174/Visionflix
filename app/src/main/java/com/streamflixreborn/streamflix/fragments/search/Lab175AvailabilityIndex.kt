@@ -204,6 +204,48 @@ internal class Lab175AvailabilityIndex(context: Context) :
         )
     }
 
+
+    /** Source-owned cached candidates; freshness limited to 30 days. */
+    @Synchronized fun recentProviderPosters(text: String, limit: Int = 160): List<AppAdapter.Item> {
+        val normalized = Lab175AvailabilityPolicy.normalizeTitle(text)
+        val cutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+        val where = if (normalized.isBlank()) "seen_at >= ?" else "seen_at >= ? AND normalized LIKE ?"
+        val args = if (normalized.isBlank()) arrayOf(cutoff.toString())
+            else arrayOf(cutoff.toString(), "%$normalized%")
+        val result = mutableListOf<AppAdapter.Item>()
+        readableDatabase.query("availability",
+            arrayOf("provider", "endpoint", "source_id", "kind", "title",
+                "year", "poster", "rating"),
+            where, args, null, null, "seen_at DESC",
+            limit.coerceIn(1, 300).toString(),
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val provider = cursor.getString(0)
+                val endpoint = cursor.getString(1)
+                val id = cursor.getString(2)
+                val kind = cursor.getString(3)
+                val title = cursor.getString(4)
+                val year = if (cursor.isNull(5)) null else cursor.getInt(5)
+                val poster = if (cursor.isNull(6)) null else cursor.getString(6)
+                val rating = if (cursor.isNull(7)) null else cursor.getDouble(7)
+                val date = year?.let { "$it-01-01" }
+                when (kind) {
+                    "movie" -> result.add(Movie(
+                        id = id, title = title, released = date, poster = poster,
+                        rating = rating, providerName = provider,
+                        providerEndpoint = endpoint.ifBlank { null },
+                    ))
+                    "tv" -> result.add(TvShow(
+                        id = id, title = title, released = date, poster = poster,
+                        rating = rating, providerName = provider,
+                        providerEndpoint = endpoint.ifBlank { null },
+                    ))
+                }
+            }
+        }
+        return result
+    }
+
     /** Indexed title lookup, bounded by TMDb's already-filtered result window. */
     @Synchronized fun findMatches(metadata: List<AppAdapter.Item>): List<AppAdapter.Item> {
         if (metadata.isEmpty()) return emptyList()

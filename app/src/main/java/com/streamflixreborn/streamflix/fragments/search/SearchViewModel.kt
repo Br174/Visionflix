@@ -1513,15 +1513,25 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
 
     private suspend fun verifyItalianSourcePage(
         sourceItems: List<AppAdapter.Item>, filters: AdvancedSearchFilters,
+        onVerified: suspend (AppAdapter.Item) -> Unit = {},
     ): List<AppAdapter.Item> = coroutineScope {
-        if (!filters.isActive) return@coroutineScope sourceItems
+        if (!filters.isActive) {
+            sourceItems.forEach { onVerified(it) }
+            return@coroutineScope sourceItems
+        }
         val local = applyProviderFilters(sourceItems, filters)
-        if (!Lab182SourceMatchPolicy.requiresMetadata(filters)) return@coroutineScope local
+        if (!Lab182SourceMatchPolicy.requiresMetadata(filters)) {
+            local.forEach { onVerified(it) }
+            return@coroutineScope local
+        }
         val localProof = if (Lab174FilteredSourcePolicy.requiresStrictMetadata(filters))
             emptySet() else local.toSet()
         sourceItems.filter { it is Movie || it is TvShow }.map { item ->
             async(Dispatchers.IO) {
-                if (item in localProof) return@async item
+                if (item in localProof) {
+                    onVerified(item)
+                    return@async item
+                }
                 if (!tmdbConfigured()) return@async null
                 val key = filterMatchKey(item).orEmpty() + "|" + filters.hashCode()
                 val known = sourceTmdbMutex.withLock { sourceTmdbCache[key] }
@@ -1539,7 +1549,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 if (verified != null) sourceTmdbMutex.withLock {
                     sourceTmdbCache[key] = verified
                 }
-                item.takeIf { verified == true }
+                item.takeIf { verified == true }?.also { onVerified(it) }
             }
         }.awaitAll().filterNotNull().distinctBy { it.searchIdentityKey() }
     }
@@ -1674,7 +1684,9 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         globalRepeatedRawByTarget.clear()
         globalLastRawByTarget.clear()
         globalFinishedTargets.clear()
-        sourceTmdbMutex.withLock { sourceTmdbCache.clear() }
+        sourceTmdbMutex.withLock {
+            if (sourceTmdbCache.size > 2500) sourceTmdbCache.clear()
+        }
         globalPage = 1
         globalLoadingMore = false
         if (targets.isEmpty()) {
@@ -1695,6 +1707,27 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 displayName = target.displayName,
             )
         }.toMutableList()
+        // Display source-backed, locally provable cards before any network calls.
+        val cached = availabilityIndex?.takeIf {
+            Lab183FastWallPolicy.canUseCachedPosters(advancedFilters)
+        }?.recentProviderPosters(query).orEmpty()
+        if (cached.isNotEmpty()) {
+            val groups = applyProviderFilters(cached, advancedFilters)
+                .groupBy { item -> when (item) {
+                    is Movie -> item.providerName
+                    is TvShow -> item.providerName
+                    else -> null
+                } }
+            targets.forEachIndexed { i, target ->
+                if (target.endpoint == null) {
+                    val found = groups[target.provider.name].orEmpty()
+                    if (found.isNotEmpty()) mutableResults[i] = ProviderResult(
+                        target.provider, ProviderResult.State.Success(found),
+                        target.displayName,
+                    )
+                }
+            }
+        }
         _state.emit(globalWallState(mutableResults.toList(), hasMore = false))
 
         val resultsMutex = Mutex()
@@ -1727,7 +1760,37 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                         genre = AdvancedSearchFilters.GenreFilter.ALL,
                                         genres = emptySet(),
                                     ) else advancedFilters
-                                    val matched = verifyItalianSourcePage(raw, effective)
+                                    val matched = verifyItalianSourcePage(raw, effective) { verified ->
+                                        when (verified) {
+                                            is Movie -> {
+                                                verified.providerName = provider.name
+                                                verified.providerEndpoint = target.endpoint
+                                            }
+                                            is TvShow -> {
+                                                verified.providerName = provider.name
+                                                verified.providerEndpoint = target.endpoint
+                                            }
+                                        }
+                                        val safe = ParentalControlUtils.filterItems(listOf(verified))
+                                        if (safe.isNotEmpty()) resultsMutex.withLock {
+                                            if (generation == activeGlobalGeneration) {
+                                                val old = (mutableResults[index].state
+                                                    as? ProviderResult.State.Success)?.results.orEmpty()
+                                                val seen = old.map { it.searchIdentityKey() }.toHashSet()
+                                                val combined = old + safe.filter { seen.add(it.searchIdentityKey()) }
+                                                if (combined.size != old.size) {
+                                                    mutableResults[index] = ProviderResult(
+                                                        provider, ProviderResult.State.Success(combined),
+                                                        target.displayName,
+                                                    )
+                                                    if (old.isEmpty() || combined.size % 5 == 0)
+                                                        _state.emit(globalWallState(
+                                                            mutableResults.toList(), hasMore = false
+                                                        ))
+                                                }
+                                            }
+                                        }
+                                    }
                                     val items = ParentalControlUtils.filterItems(matched.onEach { item ->
                                         when (item) {
                                             is Movie -> {
@@ -1757,7 +1820,17 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
 
                                 resultsMutex.withLock {
                                     if (generation != activeGlobalGeneration) return@withLock
-                                    mutableResults[index] = result
+                                    val old = (mutableResults[index].state
+                                        as? ProviderResult.State.Success)?.results.orEmpty()
+                                    val fresh = (result.state as? ProviderResult.State.Success)?.results
+                                    mutableResults[index] = if (fresh != null) {
+                                        val keys = old.map { it.searchIdentityKey() }.toHashSet()
+                                        result.copy(state = ProviderResult.State.Success(
+                                            old + fresh.filter { keys.add(it.searchIdentityKey()) }
+                                        ))
+                                    } else if (old.isNotEmpty())
+                                        ProviderResult(provider, ProviderResult.State.Success(old), target.displayName)
+                                    else result
                                     completedTargets++
                                     // Batch UI updates for a fluid poster wall instead of rebuilding
                                     // RecyclerView on every individual provider completion.
