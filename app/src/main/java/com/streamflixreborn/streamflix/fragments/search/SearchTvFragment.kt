@@ -680,7 +680,12 @@ class SearchTvFragment : Fragment() {
                 textSize = 15f
                 setPadding(dp(12), 0, dp(12), 0)
                 setBackgroundResource(R.drawable.bg_filter_control_tv)
-                setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
+                setOnFocusChangeListener { _, focused ->
+                    setTextColor(if (focused) Color.rgb(22, 43, 64) else Color.WHITE)
+                    setHintTextColor(if (focused) Color.rgb(64, 91, 110)
+                        else Color.rgb(150, 158, 172))
+                    if (focused) revealSearchHeader()
+                }
             }
             actorRow.addView(actorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(35)))
             setupActorTextSearch()
@@ -720,7 +725,12 @@ class SearchTvFragment : Fragment() {
                 textSize = 15f
                 setPadding(dp(12), 0, dp(12), 0)
                 setBackgroundResource(R.drawable.bg_filter_control_tv)
-                setOnFocusChangeListener { _, hasFocus -> if (hasFocus) revealSearchHeader() }
+                setOnFocusChangeListener { _, focused ->
+                    setTextColor(if (focused) Color.rgb(22, 43, 64) else Color.WHITE)
+                    setHintTextColor(if (focused) Color.rgb(64, 91, 110)
+                        else Color.rgb(150, 158, 172))
+                    if (focused) revealSearchHeader()
+                }
             }
             directorRow.addView(directorEdit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(35)))
             setupDirectorTextSearch()
@@ -2130,6 +2140,11 @@ class SearchTvFragment : Fragment() {
 
             focusView.setOnClickListener { openDropdown() }
             focusView.setOnFocusChangeListener { _, hasFocus ->
+                // The Spinner view itself isn't focusable. Update the visible
+                // selected label when its enclosing control receives focus.
+                (spinner.selectedView as? TextView)?.setTextColor(
+                    if (hasFocus) Color.rgb(22, 43, 64) else Color.WHITE
+                )
                 if (hasFocus && !filterPanelExpanded) revealSearchHeader()
             }
             focusView.setOnKeyListener { _, keyCode, event ->
