@@ -9,7 +9,6 @@ import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
  */
 internal object Lab174FilteredSourcePolicy {
     fun requiresStrictMetadata(filters: AdvancedSearchFilters): Boolean =
-        filters.italian != AdvancedSearchFilters.ItalianFilter.ALL ||
         filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
         filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
         !filters.actorId.isNullOrBlank() ||
