@@ -1171,6 +1171,17 @@ jobs:
           node scripts/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-report.json
           echo '[SCUDO360=PASS] cumulative JVM test evidence verified'
 
+      - name: Preserve Scudo360 failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scudo360-vision-regression-report
+          path: |
+            .motorlab/scudo360-report.json
+            app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Scudo360 LAB184 behavior compatibility proof
         shell: bash
         run: |
