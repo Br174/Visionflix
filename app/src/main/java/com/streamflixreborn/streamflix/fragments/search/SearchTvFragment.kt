@@ -316,12 +316,32 @@ class SearchTvFragment : Fragment() {
             if (submitAction || submitKey) submitSearch() else false
         }
 
+        // LAB187: the whole search field highlights, not only the cursor.
+        etSearch.setOnFocusChangeListener { _, focused ->
+            rootView.findViewById<View>(R.id.cl_search_safe)?.isActivated = focused
+            etSearch.setTextColor(if (focused) Color.rgb(22, 43, 64) else Color.WHITE)
+            etSearch.setHintTextColor(if (focused) Color.rgb(64, 91, 110)
+                else Color.rgb(170, 176, 187))
+            etSearch.isCursorVisible = focused
+        }
+
         etSearch.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             when (keyCode) {
                 KeyEvent.KEYCODE_ENTER,
                 KeyEvent.KEYCODE_NUMPAD_ENTER,
                 KeyEvent.KEYCODE_SEARCH -> submitSearch()
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (!filterPanelExpanded &&
+                        Lab187RemoteFocusPolicy.action(
+                            Lab187RemoteFocusPolicy.Route.SEARCH_UP,
+                            false, appAdapter.itemCount > 0
+                        ) == Lab187RemoteFocusPolicy.Action.EXPAND_KEEP_SEARCH) {
+                        setFilterPanelExpanded(true, true)
+                        true
+                    } else false
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> exitFiltersDownToPosterWall()
                 KeyEvent.KEYCODE_BACK -> focusSearchContent()
                 else -> false
             }
@@ -375,18 +395,21 @@ class SearchTvFragment : Fragment() {
                 ) {
                     if (position !in appAdapter.items.indices) return
                     if (position < currentGridColumns) {
-                        child?.itemView?.nextFocusUpId = dropdownArrow?.id ?: btnApplyFilters?.id ?: View.NO_ID
+                        child?.itemView?.nextFocusUpId = etSearch.id
                     }
                     // Left/right movement belongs to the current focused poster.
                     // Only a RIGHT press beyond its row end reveals the shortcut.
-                    child?.itemView?.setOnKeyListener { _, keyCode, event ->
+                    child?.itemView?.setOnKeyListener { card, keyCode, event ->
                         if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        val currentPosition = vgvSearch.getChildAdapterPosition(card)
                         when {
                             keyCode == KeyEvent.KEYCODE_DPAD_RIGHT &&
-                                SearchRowShortcut.isRowEnd(position, currentGridColumns, appAdapter.items.size) ->
-                                revealRowJumpArrow(position)
-                            keyCode == KeyEvent.KEYCODE_DPAD_UP && position < currentGridColumns ->
-                                dropdownArrow?.requestFocus() == true
+                                SearchRowShortcut.isRowEnd(
+                                    currentPosition, currentGridColumns, appAdapter.items.size) ->
+                                revealRowJumpArrow(currentPosition)
+                            keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+                                currentPosition in 0 until currentGridColumns ->
+                                focusSearchFromTopPosters()
                             else -> false
                         }
                     }
