@@ -1131,7 +1131,7 @@ jobs:
           cat > /tmp/release-notes.md <<EOF
           Verlezza Vision TV ${APP_VERSION_NAME} (build ${APP_VERSION_CODE}).
 
-          Codice Downloader: **3875230**.
+          Codice Downloader scelto dall'utente: **6920196** (destinazione AFTVnews non verificata; nessuna garanzia che punti a questa MADRE).
           Il file resta Visionflix_BV_TV.apk; il puntatore /releases/latest/ segue la nuova MADRE senza cancellare le MADRI precedenti.
           Firma stabile dalla build 168.
           UAB-CORE-V1 source commit: $GITHUB_SHA
@@ -1147,7 +1147,7 @@ jobs:
             --notes-file /tmp/release-notes.md \
             --latest
 
-      - name: Verify Downloader 3875230 serves promoted MADRE
+      - name: Verify published MADRE GitHub URL and checksum (not numeric Downloader code)
         if: steps.stage.outputs.stage == 'MADRE'
         shell: bash
         run: |
@@ -1168,10 +1168,10 @@ jobs:
             sleep 5
           done
           if [ "$VERIFIED" != "1" ]; then
-            echo "::error::Downloader 3875230 non serve ancora la MADRE appena promossa."
+            echo "::error::Il link GitHub MADRE non serve ancora l\x27APK appena promosso."
             exit 1
           fi
-          echo "Downloader 3875230 verificato sulla MADRE ${APP_VERSION_NAME}." >> "$GITHUB_STEP_SUMMARY"
+          echo "URL GitHub MADRE verificata sulla build ${APP_VERSION_NAME}. Codice AFTVnews 6920196: destinazione da verificare indipendentemente." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Progress 95% - handoff or promotion complete
         shell: bash
@@ -1215,6 +1215,9 @@ jobs:
           grep -Fxq 'AUTO_UPDATE_FIXED_LAB_URL=true' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
           grep -Fxq 'PROMOTE_MAIN_MADRE_PRODUCTION=false' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
           grep -Fxq 'PROTECTED_OLD_CODES=3875230,4768904,3938567' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
+          grep -Fxq 'PREFERRED_USER_CODE=6920196' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
+          grep -Fxq 'PREFERRED_USER_CODE_EXPECTED_URL=https://github.com/Br174/Visionflix/releases/download/visionflix-lab-current/Verlezza-Vision-TV.apk' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
+          grep -Fxq 'AFTVNEWS_CODE_MAPPING_STATUS=UNVERIFIED' .motorlab/LAB_FIXED_DOWNLOADER_POLICY_V1.txt
           grep -Fxq 'AUTO_PUBLISH_VERIFIED_LAB=true' .motorlab/LAB_AUTOPUBLISH_POLICY.txt
           bash -n .github/scripts/publish-fixed-lab-downloader.sh
           echo 'enabled=true' >> "$GITHUB_OUTPUT"
@@ -1232,5 +1235,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_DIR: ${{ runner.temp }}/lab-channel-input
-        run: bash .github/scripts/publish-fixed-lab-downloader.sh
+        run: |
+          bash .github/scripts/publish-fixed-lab-downloader.sh
+          echo 'LAB URL GitHub verificata dal publisher; codice AFTVnews 6920196 da verificare separatamente tramite destinazione effettiva.' >> "$GITHUB_STEP_SUMMARY"
 
