@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "surface": "ci",
+  "requestTrace": [
+    {
+      "id": "lab184-preserve-visionflix.search.filters",
+      "contractIds": [
+        "visionflix.search.filters"
+      ]
+    },
+    {
+      "id": "lab184-preserve-visionflix.tv.navigation",
+      "contractIds": [
+        "visionflix.tv.navigation"
+      ]
+    },
+    {
+      "id": "lab184-preserve-visionflix.year.metadata",
+      "contractIds": [
+        "visionflix.year.metadata"
+      ]
+    },
+    {
+      "id": "lab184-preserve-visionflix.playback.recovery",
+      "contractIds": [
+        "visionflix.playback.recovery"
+      ]
+    },
+    {
+      "id": "lab184-preserve-visionflix.providers.flow",
+      "contractIds": [
+        "visionflix.providers.flow"
+      ]
+    }
+  ],
+  "baselineCommit": null,
+  "baselineReportPath": null
+}
