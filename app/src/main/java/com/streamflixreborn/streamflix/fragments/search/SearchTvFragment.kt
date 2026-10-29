@@ -300,6 +300,22 @@ class SearchTvFragment : Fragment() {
             if (isIptv) R.string.search_input_hint_iptv else R.string.search_input_hint
         )
 
+        llGlobalSearch.setBackgroundResource(R.drawable.bg_filter_control_tv)
+        llGlobalSearch.setOnFocusChangeListener { _, focused ->
+            (llGlobalSearch.getChildAt(0) as? TextView)?.setTextColor(
+                if (focused) Color.rgb(22, 43, 64) else Color.WHITE
+            )
+        }
+        btnSearchClear.setOnFocusChangeListener { _, focused ->
+            btnSearchClear.setColorFilter(
+                if (focused) Color.rgb(22, 43, 64) else Color.WHITE
+            )
+        }
+        btnSearchVoice.setOnFocusChangeListener { _, focused ->
+            btnSearchVoice.setColorFilter(
+                if (focused) Color.rgb(22, 43, 64) else Color.WHITE
+            )
+        }
         llGlobalSearch.setOnClickListener {
             isGlobalSearchChecked = !isGlobalSearchChecked
             updateGlobalSwitch()
@@ -789,11 +805,12 @@ class SearchTvFragment : Fragment() {
                     if (event.action != KeyEvent.ACTION_DOWN) false
                     else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) true
                     else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                        restoreRowJumpPosition()
+                        exitFiltersDownToPosterWall()
                     } else false
                 }
+                setBackgroundResource(R.drawable.bg_filter_control_tv)
                 setOnFocusChangeListener { _, focused ->
-                    setTextColor(if (focused) Color.CYAN else Color.WHITE)
+                    setTextColor(if (focused) Color.rgb(22, 43, 64) else Color.WHITE)
                 }
                 lip.addView(this, LinearLayout.LayoutParams(dp(45), dp(44)))
             }
@@ -930,7 +947,17 @@ class SearchTvFragment : Fragment() {
                 else -> false
             }
         }
-        vgvSearch.nextFocusUpId = arrow.id
+        // All lower lip controls close the drawer upon DOWN toward posters.
+        val exitDown: (View, Int, KeyEvent) -> Boolean = { _, code, event ->
+            event.action == KeyEvent.ACTION_DOWN &&
+                code == KeyEvent.KEYCODE_DPAD_DOWN &&
+                exitFiltersDownToPosterWall()
+        }
+        all.setOnKeyListener(exitDown)
+        sort.setOnKeyListener(exitDown)
+        btnSearchClear.setOnKeyListener(exitDown)
+        btnSearchVoice.setOnKeyListener(exitDown)
+        vgvSearch.nextFocusUpId = etSearch.id
     }
 
     private fun setupActorTextSearch() {
@@ -1493,7 +1520,7 @@ class SearchTvFragment : Fragment() {
             if (event.action == KeyEvent.ACTION_DOWN &&
                 keyCode == KeyEvent.KEYCODE_DPAD_UP &&
                 vgvSearch.selectedPosition in 0 until currentGridColumns.coerceAtLeast(1)) {
-                dropdownArrow?.requestFocus() == true
+                focusSearchFromTopPosters()
             } else false
         }
     }
@@ -1690,15 +1717,15 @@ class SearchTvFragment : Fragment() {
                     isFocusable = true
                     isClickable = true
                     contentDescription = "Vai ai filtri della ricerca"
+                    setBackgroundResource(R.drawable.bg_filter_control_tv)
                     setOnFocusChangeListener { _, focused ->
-                        setTextColor(if (focused) Color.CYAN else Color.WHITE)
+                        setTextColor(if (focused) Color.rgb(22, 43, 64) else Color.WHITE)
                         if (!focused) visibility = View.INVISIBLE
                     }
                     setOnClickListener {
                         rememberRowJump(row)
-                        // First OK only transfers focus to the top arrow.
-                        // The dropdown opens exclusively on the user's next OK.
-                        dropdownArrow?.requestFocus()
+                        // LAB187 one OK opens the panel and focuses Cerca.
+                        openFiltersFromResults()
                     }
                     setOnKeyListener { _, keyCode, event ->
                         if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
