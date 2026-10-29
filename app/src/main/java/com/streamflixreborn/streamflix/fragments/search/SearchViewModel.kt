@@ -16,6 +16,7 @@ import com.streamflixreborn.streamflix.providers.Lab172NativeYearPolicy
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
 import com.streamflixreborn.streamflix.providers.EndpointManagedProvider
+import com.streamflixreborn.streamflix.providers.ProviderConfigUrl
 import com.streamflixreborn.streamflix.providers.ProviderEndpointRegistry
 import com.streamflixreborn.streamflix.providers.TmdbProvider
 import com.streamflixreborn.streamflix.utils.ParentalControlUtils
@@ -158,6 +159,38 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     private var globalLoadingMore = false
     private var globalEmptyPages = 0
     private var activeGlobalGeneration = 0
+    // LAB181: one recoverable background repair per provider/cooldown, never
+    // part of the wall's latency-critical search job.
+    private val globalRecoveryMutex = Mutex()
+    private val lastGlobalRecoveryAt = mutableMapOf<String, Long>()
+    private fun scheduleGlobalRecovery(provider: Provider) {
+        if (provider !is EndpointManagedProvider && provider !is ProviderConfigUrl) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            val mayRetry = globalRecoveryMutex.withLock {
+                val last = lastGlobalRecoveryAt[provider.name]
+                if (!Lab181ProviderFlowPolicy.allowRecovery(now, last)) false
+                else {
+                    lastGlobalRecoveryAt[provider.name] = now
+                    true
+                }
+            }
+            if (!mayRetry) return@launch
+            try {
+                val refreshed = withTimeoutOrNull(Lab181ProviderFlowPolicy.REPAIR_TIMEOUT_MS) {
+                    ProviderEndpointRegistry.refreshOne(provider)
+                }
+                if (refreshed?.success == true)
+                    Log.i("SearchViewModel", "LAB181 refreshed URL for ${provider.name}")
+                else
+                    Log.w("SearchViewModel", "LAB181 recovery pending for ${provider.name}")
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                Log.w("SearchViewModel", "LAB181 recovery failed for ${provider.name}", error)
+            }
+        }
+    }
     // LAB175: independent, persistent catalogue for Android TV. Mobile keeps
     // the historical search path until TV end-to-end acceptance is verified.
     private val availabilityIndex = availabilityContext?.let { Lab175AvailabilityIndex(it) }
@@ -595,7 +628,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         results.distinctBy { it.searchIdentityKey() }
     }
 
-    private suspend fun searchProviderWithRecovery(provider: Provider, text: String, page: Int): List<AppAdapter.Item> {
+    private suspend fun searchProviderWithRecovery(provider: Provider, text: String, page: Int, inlineRecovery: Boolean = true): List<AppAdapter.Item> {
         return try {
             provider.search(text, page)
         } catch (error: retrofit2.HttpException) {
@@ -605,7 +638,9 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                     Lab155SearchSafety.explainRestrictedProvider(provider.name), error
                 )
             }
-            if (!Lab155SearchSafety.canRefreshMissingEndpoint(
+            // Global wall lookups must never run the expensive URL discovery
+            // synchronously. Recovery is scheduled after the source group finishes.
+            if (!inlineRecovery || !Lab155SearchSafety.canRefreshMissingEndpoint(
                     error.code(), provider is EndpointManagedProvider)) throw error
             val recovery = ProviderEndpointRegistry.refreshOne(provider)
             if (!recovery.success) throw IllegalStateException(
@@ -721,6 +756,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         sharedMetadata: List<AppAdapter.Item>? = null,
         candidateLimit: Int = 24,
         providedPage: List<AppAdapter.Item>? = null,
+        inlineRecovery: Boolean = true,
     ): List<AppAdapter.Item> {
         // LAB170: exactly one native Streamflix source page, for EVERY page.
         // Do not search individually for dozens of TMDb candidate titles.
@@ -728,7 +764,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             nativeGenrePage(provider, filters, page) else null
         val raw = providedPage ?: nativeGenre
             ?: if (query.isBlank()) browseProvider(provider, page, filters.type)
-            else searchProviderWithRecovery(provider, query, page)
+            else searchProviderWithRecovery(provider, query, page, inlineRecovery)
         val effectiveFilters = if (nativeGenre != null) filters.copy(
             genre = AdvancedSearchFilters.GenreFilter.ALL,
             genres = emptySet(),
@@ -903,6 +939,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         provider: Provider, pageIndex: Int, filters: AdvancedSearchFilters,
         text: String,
         metadata: List<AppAdapter.Item>? = null,
+        inlineRecovery: Boolean = true,
     ): Pair<List<AppAdapter.Item>, List<AppAdapter.Item>> {
         if (provider is TmdbProvider && (filters.isActive || text.isNotBlank())) {
             val direct = searchTmdbAdvanced(provider, text, filters, pageIndex)
@@ -910,13 +947,13 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         }
         val nativeGenre = if (text.isBlank()) nativeGenrePage(provider, filters, pageIndex) else null
         val raw = nativeGenre ?: if (text.isBlank()) browseProvider(provider, pageIndex, filters.type)
-            else searchProviderWithRecovery(provider, text, pageIndex)
+            else searchProviderWithRecovery(provider, text, pageIndex, inlineRecovery)
         val safeFilters = if (nativeGenre != null) filters.copy(
             genre = AdvancedSearchFilters.GenreFilter.ALL, genres = emptySet()
         ) else filters
         val displayed = if (filters.isActive) searchProviderAdvanced(
             provider, text, safeFilters, pageIndex,
-            providedPage = raw, sharedMetadata = metadata
+            providedPage = raw, sharedMetadata = metadata, inlineRecovery = inlineRecovery
         ) else raw
         return raw to displayed
     }
@@ -1568,6 +1605,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                     launch {
                         val provider = group.first().value.provider
                         val previousSelection = ProviderEndpointRegistry.selectedOverride(provider.name)
+                        var needsRecovery = false
                         try {
                             for ((index, target) in group) {
                                 if (target.endpoint.isNullOrBlank()) {
@@ -1581,10 +1619,13 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                     // Await metadata before acquiring one of the limited provider permits.
                                     // Otherwise slow TMDb blocks unrelated fast provider results.
                                     val sharedFilteredMetadata =
-                                        if (advancedFilters.isActive && provider !is TmdbProvider)
-                                            metadataTask?.await()
+                                        if (advancedFilters.isActive && metadataTask != null)
+                                            withTimeoutOrNull(Lab181ProviderFlowPolicy.METADATA_TIMEOUT_MS) {
+                                                metadataTask.await()
+                                            } ?: emptyList()
                                         else null
                                     val found = globalProviderGate.withPermit {
+                                        withTimeoutOrNull(Lab181ProviderFlowPolicy.SOURCE_TIMEOUT_MS) {
                                         when {
                                             provider is TmdbProvider && advancedFilters.isActive ->
                                                 searchTmdbAdvanced(provider, query, advancedFilters, 1)
@@ -1595,10 +1636,14 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                                     candidateLimit = Lab154SearchPacing.candidateLimit(
                                                         firstPage = true,
                                                         originatingProvider = provider.name == UserPreferences.currentProvider?.name),
+                                                    inlineRecovery = false,
                                                 )
                                             query.isBlank() -> browseProvider(provider, 1)
-                                            else -> searchProviderWithRecovery(provider, query, 1)
+                                            else -> searchProviderWithRecovery(provider, query, 1, inlineRecovery = false)
                                         }
+                                        } ?: throw java.io.IOException(
+                                            "${provider.name}: ricerca scaduta senza bloccare gli altri provider"
+                                        )
                                     }
                                     val items = ParentalControlUtils.filterItems(
                                         found.onEach { item ->
@@ -1614,12 +1659,20 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                             }
                                         }
                                     )
+                                    if (query.isBlank() && items.isEmpty() && provider is EndpointManagedProvider) {
+                                        // A blank catalog MAY indicate a stale host. Check off the UI path,
+                                        // never treat it as a reason to delete the provider.
+                                        needsRecovery = true
+                                    }
                                     ProviderResult(
                                         provider = provider,
                                         state = ProviderResult.State.Success(items),
                                         displayName = target.displayName,
                                     )
+                                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                                    throw cancel
                                 } catch (e: Exception) {
+                                    needsRecovery = true
                                     Log.e("SearchViewModel", "searchGlobal for ${target.displayName}: ", e)
                                     ProviderResult(
                                         provider = provider,
@@ -1649,6 +1702,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                         } finally {
                             ProviderEndpointRegistry.restoreSelection(provider.name, previousSelection)
                             (provider as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+                            if (needsRecovery && generation == activeGlobalGeneration)
+                                scheduleGlobalRecovery(provider)
                         }
                     }
                 }
@@ -1718,12 +1773,13 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                     !advancedFilters.actorId.isNullOrBlank() ||
                     !advancedFilters.directorId.isNullOrBlank()
                 val metadata = if (strict && tmdbConfigured()) {
-                    searchTmdbAdvanced(
-                        TmdbProvider(active.first().value.provider.language),
-                        query, advancedFilters, nextPage,
-                        candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(
-                            advancedFilters, query)
-                    )
+                    withTimeoutOrNull(Lab181ProviderFlowPolicy.METADATA_TIMEOUT_MS) {
+                        searchTmdbAdvanced(
+                            TmdbProvider("it"), query, advancedFilters, nextPage,
+                            candidateSelection = !Lab173TvCombinedFilterPolicy.needsBroaderCountryWindow(
+                                advancedFilters, query)
+                        )
+                    } ?: emptyList()
                 } else null
 
                 var nextAdded = 0
@@ -1732,6 +1788,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                         launch {
                             val engine = group.first().value.provider
                             val selection = ProviderEndpointRegistry.selectedOverride(engine.name)
+                            var needsRecovery = false
                             try {
                                 for ((index, target) in group) {
                                     if (generation != activeGlobalGeneration) break
@@ -1739,16 +1796,27 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                         ProviderEndpointRegistry.selectOriginal(engine.name)
                                     else ProviderEndpointRegistry.selectRemote(engine.name, target.endpoint)
                                     (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+                                    var timedOutOrFailed = false
                                     val rawAndFiltered = try {
                                         gate.withPermit {
-                                            nativeProviderPage(engine, nextPage, advancedFilters, query, metadata)
+                                            withTimeoutOrNull(Lab181ProviderFlowPolicy.SOURCE_TIMEOUT_MS) {
+                                                nativeProviderPage(
+                                                    engine, nextPage, advancedFilters, query, metadata,
+                                                    inlineRecovery = false
+                                                )
+                                            } ?: run {
+                                                timedOutOrFailed = true
+                                                emptyList<AppAdapter.Item>() to emptyList<AppAdapter.Item>()
+                                            }
                                         }
                                     } catch (cancel: kotlinx.coroutines.CancellationException) {
                                         throw cancel
                                     } catch (error: Exception) {
-                                        Log.w("SearchViewModel", "LAB170 global native page for ${target.displayName}", error)
+                                        timedOutOrFailed = true
+                                        Log.w("SearchViewModel", "LAB181 global native page for ${target.displayName}", error)
                                         emptyList<AppAdapter.Item>() to emptyList<AppAdapter.Item>()
                                     }
+                                    if (timedOutOrFailed) needsRecovery = true
                                     val (raw, filtered) = rawAndFiltered
                                     filtered.forEach { item ->
                                         when (item) {
@@ -1780,8 +1848,10 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                         globalEmptyRawByTarget[index] = emptyCount
                                         globalRepeatedRawByTarget[index] = repeatedCount
                                         globalLastRawByTarget[index] = signature
-                                        if (!Lab170NativePagingPolicy.shouldContinue(
+                                        if (timedOutOrFailed || !Lab170NativePagingPolicy.shouldContinue(
                                                 nextPage, emptyCount, repeatedCount)) {
+                                            // Skip a broken source for this search only. It stays
+                                            // registered and will be retried on the next search.
                                             globalFinishedTargets.add(index)
                                         }
                                         nextAdded += fresh.size
@@ -1796,6 +1866,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                             } finally {
                                 ProviderEndpointRegistry.restoreSelection(engine.name, selection)
                                 (engine as? EndpointManagedProvider)?.onEndpointSelectionChanged()
+                                if (needsRecovery && generation == activeGlobalGeneration)
+                                    scheduleGlobalRecovery(engine)
                             }
                         }
                     }
