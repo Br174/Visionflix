@@ -1,0 +1,61 @@
+{
+  "commit": "6c3c9b57b2ea4e2b8bdb0f09af6ad9290fb85247",
+  "passed": true,
+  "contracts": [
+    {
+      "id": "visionflix.search.filters",
+      "status": "passed",
+      "classEvidence": [
+        {
+          "name": "com.streamflixreborn.streamflix.providers.Lab150AdvancedFiltersTest",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "visionflix.tv.navigation",
+      "status": "passed",
+      "classEvidence": [
+        {
+          "name": "com.streamflixreborn.streamflix.fragments.search.Lab153NavigationTest",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "visionflix.year.metadata",
+      "status": "passed",
+      "classEvidence": [
+        {
+          "name": "com.streamflixreborn.streamflix.providers.Lab172NativeYearPolicyTest",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "visionflix.playback.recovery",
+      "status": "passed",
+      "classEvidence": [
+        {
+          "name": "com.streamflixreborn.streamflix.fragments.player.Lab166TvPlaybackRecoveryPolicyTest",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "visionflix.providers.flow",
+      "status": "passed",
+      "classEvidence": [
+        {
+          "name": "com.streamflixreborn.streamflix.fragments.search.Lab181ProviderFlowPolicyTest",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "source": "archived-executed-r39-junit-snapshot",
+    "runId": 40905832509,
+    "artifactId": 12911052445
+  }
+}

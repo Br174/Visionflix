@@ -1,0 +1,65 @@
+name: Verlezza Vision LAB184 Scudo360 r40 quality native pilot
+on:
+  pull_request:
+    branches:
+      - motorlab/active-verlezza-vision
+permissions:
+  contents: read
+  actions: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare original LAB184 Android JVM settings without producing APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > local.properties <<'EOF'
+          APP_LAYOUT=mobile
+          TMDB_API_KEY=dummy
+          SUBDL_API_KEY=dummy
+          RABBITSTREAM_SOURCE_API=
+          EOF
+          chmod +x ./gradlew
+      - name: Existing native Scudo R39 full JVM, only once
+        run: node scripts/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-r40-native.json
+      - name: Verify permanent exact historical baseline and native workflow wiring
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const load=p=>JSON.parse(readFileSync(p,'utf8'));
+          const plan=load('.motorlab/scudo360-r40-plan.json');
+          const before=load(plan.baselineReportPath);
+          if(before.commit!==plan.baselineCommit||before.passed!==true||
+             !before.provenance?.runId||!before.provenance?.artifactId)
+            throw Error('SCUDO_R40_ARCHIVED_ORIGINAL_BASELINE_INVALID');
+          for(const file of [".github/workflows/build-apks.yml"]){
+            const content=readFileSync(file,'utf8');
+            const gate=content.indexOf('scudo360-gate.mjs');
+            const quality=content.indexOf('scudo360-quality-r40.mjs',gate+1);
+            if(gate<0||quality<gate||!content.slice(gate,quality).includes('scudo360-report.json'))
+              throw Error('SCUDO_R40_NATIVE_WORKFLOW_BYPASS:'+file);
+          }
+          console.log('SCUDO_R40_PERMANENT_NATIVE_WIRING_VERIFIED');
+          NODE
+      - name: R40 request-to-executed-class audit
+        env:
+          SCUDO360_R40_PROMOTION: '1'
+        run: node .motorlab/regression/scudo360-quality-r40.mjs .motorlab/scudo360-contracts.json .motorlab/scudo360-r40-native.json .motorlab/scudo360-r40-plan.json .motorlab/scudo360-r40-quality.json
+      - name: Preserve evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision184-r40-native-jvm-proof
+          path: |
+            .motorlab/scudo360-r40-native.json
+            .motorlab/scudo360-r40-quality.json
+            app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: warn
