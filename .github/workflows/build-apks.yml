@@ -35,6 +35,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: MotorLab automatic active Vision family and Scudo selection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node scripts/motorlab-active-guard.mjs --self-test
+          if [[ "$GITHUB_REF" == refs/heads/lab/* ]]; then
+            node scripts/motorlab-active-guard.mjs
+          fi
+
       - name: Detect UAB lifecycle stage
         id: stage
         shell: bash
@@ -1280,6 +1290,22 @@ jobs:
             /tmp/Verlezza-Vision-LAB.zip
           if-no-files-found: error
           retention-days: 14
+
+      - name: Advance verified Vision source reference after signed TV Mobile APK ZIP success
+        if: success() && steps.stage.outputs.stage == 'LAB' && github.event_name == 'push' && startsWith(github.ref_name, 'lab/visionflix-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/motorlab-active-guard.mjs
+          test -s /tmp/Verlezza-Vision-TV.apk
+          test -s /tmp/Verlezza-Vision-Mobile.apk
+          test -s /tmp/Verlezza-Vision-LAB.zip
+          grep -Fq 'ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6' /tmp/signature-info.txt
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/motorlab/active-verlezza-vision" -f "sha=$GITHUB_SHA" -F "force=false" --jq '.object.sha'
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/motorlab/active-verlezza-vision" --jq '.object.sha')" = "$GITHUB_SHA"
+          echo "[MOTORLAB_ACTIVE_VISION_ADVANCED] $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish authorized LAB prerelease automatically
         if: steps.stage.outputs.stage == 'LAB' && github.event_name == 'push' && startsWith(github.ref_name, 'lab/visionflix-')
