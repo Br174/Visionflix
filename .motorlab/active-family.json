@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "repo": "Br174/Visionflix",
+  "active_ref": "motorlab/active-verlezza-vision",
+  "original_verified_sha": "6c3c9b57b2ea4e2b8bdb0f09af6ad9290fb85247",
+  "verified_run": 40905832509,
+  "mode": "android-signed",
+  "application_id": "com.br174.visionflix.tv.debug",
+  "cert_sha256": "ae10b6198ccb567386af37ad8b92d9ad40aa5bada469b8528811d447fc9612f6",
+  "scudo_manifest": ".motorlab/scudo360-contracts.json",
+  "scudo_runner": "scripts/scudo360-gate.mjs",
+  "native_workflow": ".github/workflows/build-apks.yml",
+  "scudo_command": "node scripts/scudo360-gate.mjs"
+}
