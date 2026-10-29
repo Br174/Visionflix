@@ -30,22 +30,28 @@ jobs:
           chmod +x ./gradlew
       - name: Existing native Scudo R39 full JVM, only once
         run: node scripts/scudo360-gate.mjs .motorlab/scudo360-contracts.json lab .motorlab/scudo360-r40-native.json
-      - name: Recover immutable R39 native baseline evidence
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
+      - name: Verify permanent exact historical baseline and native workflow wiring
         run: |
-          set -euo pipefail
-          gh run download 40905832509 -n scudo360-vision-regression-report -D /tmp/r39-original-quality-proof
-          test -s /tmp/r39-original-quality-proof/.motorlab/scudo360-report.json
-          cp /tmp/r39-original-quality-proof/.motorlab/scudo360-report.json .motorlab/scudo360-r39-baseline.json
-          node - <<'NODE'
-          const old=require('./.motorlab/scudo360-r39-baseline.json');
-          if(old.commit!=='6c3c9b57b2ea4e2b8bdb0f09af6ad9290fb85247'||old.passed!==true)
-            throw Error('WRONG_QUALITY_BASELINE_SOURCE');
-          console.log('SCUDO_R39_EXACT_HISTORICAL_BASELINE',old.commit);
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const load=p=>JSON.parse(readFileSync(p,'utf8'));
+          const plan=load('.motorlab/scudo360-r40-plan.json');
+          const before=load(plan.baselineReportPath);
+          if(before.commit!==plan.baselineCommit||before.passed!==true||
+             !before.provenance?.runId||!before.provenance?.artifactId)
+            throw Error('SCUDO_R40_ARCHIVED_ORIGINAL_BASELINE_INVALID');
+          for(const file of [".github/workflows/build-apks.yml"]){
+            const content=readFileSync(file,'utf8');
+            const gate=content.indexOf('scudo360-gate.mjs');
+            const quality=content.indexOf('scudo360-quality-r40.mjs',gate+1);
+            if(gate<0||quality<gate||!content.slice(gate,quality).includes('scudo360-report.json'))
+              throw Error('SCUDO_R40_NATIVE_WORKFLOW_BYPASS:'+file);
+          }
+          console.log('SCUDO_R40_PERMANENT_NATIVE_WIRING_VERIFIED');
           NODE
       - name: R40 request-to-executed-class audit
+        env:
+          SCUDO360_R40_PROMOTION: '1'
         run: node .motorlab/regression/scudo360-quality-r40.mjs .motorlab/scudo360-contracts.json .motorlab/scudo360-r40-native.json .motorlab/scudo360-r40-plan.json .motorlab/scudo360-r40-quality.json
       - name: Preserve evidence including failures
         if: always()
