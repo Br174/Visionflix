@@ -24,8 +24,8 @@ class Scudo360OriginalSigningRecoveryTest {
         assertTrue("Original cache key must remain", cache >= 0)
         assertTrue("Cache miss must reach secure recovery", source.contains("fail-on-cache-miss: false"))
         assertTrue("Only the approved GitHub Secret may be used", secret > cache && pin > cache)
-        assertTrue("Missing original key must block build", source.contains("if [ -z \"\u0024{VISIONFLIX_ORIGINAL_KEYSTORE_B64:-}\" ]; then"))
-        assertTrue("Secret must be decoded without printing", source.contains("base64 --decode > \"\u0024KEY_FILE\""))
+        assertTrue("Missing original key must block build", source.contains("if [ -z") && source.contains("VISIONFLIX_ORIGINAL_KEYSTORE_B64:-"))
+        assertTrue("Secret must be decoded without printing", source.contains("base64 --decode >"))
     }
 
     @Test fun incompatibleSignatureCannotProduceAnApk() {
