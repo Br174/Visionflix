@@ -21,16 +21,20 @@ object AudioLanguageGuard {
         if (lang.isBlank()) return
 
         val manifest = readManifest(video) ?: return
-        val audioLines = manifest.lineSequence()
-            .filter {
-                it.startsWith("#EXT-X-MEDIA", ignoreCase = true) &&
-                    it.contains("TYPE=AUDIO", ignoreCase = true)
+        // LAB186: declared HLS AUDIO tracks only, never the subtitle language,
+        // poster locale or an arbitrary substring such as "BITRATE".
+        val audioLanguages = Lab186AudioEvidencePolicy.audioLanguagesFromHlsMaster(manifest)
+        if (audioLanguages.isEmpty()) return
+        if (lang == "it") {
+            when (Lab186AudioEvidencePolicy.classifyAudioLanguages(audioLanguages)) {
+                Lab186AudioEvidencePolicy.Evidence.ITALIAN,
+                Lab186AudioEvidencePolicy.Evidence.UNKNOWN -> return
+                Lab186AudioEvidencePolicy.Evidence.FOREIGN ->
+                    throw Exception("Audio italiano assente: disponibile solo audio straniero")
             }
-            .toList()
-
-        if (audioLines.isEmpty()) return
-
-        if (audioLines.none { matchesLanguage(it, lang) }) {
+        }
+        if (audioLanguages.none { matchesLanguage(it, lang) } &&
+            audioLanguages.none { it.isNullOrBlank() || it.equals("und", ignoreCase = true) }) {
             val label = when (lang) {
                 "it" -> "italiano"
                 "fr" -> "francese"
@@ -43,20 +47,16 @@ object AudioLanguageGuard {
         }
     }
 
-    private fun matchesLanguage(line: String, lang: String): Boolean {
+    private fun matchesLanguage(language: String?, lang: String): Boolean {
+        val name = language?.trim()?.lowercase()?.substringBefore('-') ?: return false
         val aliases = when (lang) {
-            "it" -> listOf("it", "ita", "italian", "italiano")
-            "fr" -> listOf("fr", "fra", "fre", "french", "français", "francais")
-            "de" -> listOf("de", "deu", "ger", "german", "deutsch")
-            "es" -> listOf("es", "spa", "spanish", "español", "espanol", "castellano")
-            "en" -> listOf("en", "eng", "english")
-            else -> listOf(lang)
+            "fr" -> setOf("fr", "fra", "fre", "french", "français", "francais")
+            "de" -> setOf("de", "deu", "ger", "german", "deutsch")
+            "es" -> setOf("es", "spa", "spanish", "español", "espanol")
+            "en" -> setOf("en", "eng", "english")
+            else -> setOf(lang)
         }
-        return aliases.any { alias ->
-            line.contains("LANGUAGE=\"$alias", ignoreCase = true) ||
-                line.contains("NAME=\"$alias", ignoreCase = true) ||
-                line.contains(alias, ignoreCase = true)
-        }
+        return name in aliases
     }
 
     private suspend fun readManifest(video: Video): String? = withContext(Dispatchers.IO) {
