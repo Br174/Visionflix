@@ -1,5 +1,6 @@
 package com.streamflixreborn.streamflix.providers
 
+import com.streamflixreborn.streamflix.utils.Lab186AudioEvidencePolicy
 import com.tanasi.retrofit_jsoup.converter.JsoupConverterFactory
 import com.streamflixreborn.streamflix.adapters.AppAdapter
 import com.streamflixreborn.streamflix.models.Category
@@ -193,7 +194,12 @@ object CB01Provider : EndpointManagedProvider {
         val title = cleanTitle(rawTitle)
         val img = el.selectFirst(".card-image img[src]")?.attr("src").orEmpty()
         val poster = img
-        val quality = if (rawTitle.contains("[HD]", ignoreCase = true) || rawTitle.contains("[HD/3D]", ignoreCase = true)) "HD" else null
+        val quality = when {
+            Lab186AudioEvidencePolicy.explicitlySubtitleOnly(rawTitle) -> "SUB ITA"
+            rawTitle.contains("[HD]", ignoreCase = true) ||
+                rawTitle.contains("[HD/3D]", ignoreCase = true) -> "HD"
+            else -> null
+        }
         if (href.isBlank() || title.isBlank()) return null
         return Movie(
             id = href,
@@ -211,7 +217,12 @@ object CB01Provider : EndpointManagedProvider {
         val title = cleanTitle(rawTitle)
         val img = el.selectFirst(".card-image img[src]")?.attr("src").orEmpty()
         val poster = img
-        val quality = if (rawTitle.contains("[HD]", ignoreCase = true) || rawTitle.contains("[HD/3D]", ignoreCase = true)) "HD" else null
+        val quality = when {
+            Lab186AudioEvidencePolicy.explicitlySubtitleOnly(rawTitle) -> "SUB ITA"
+            rawTitle.contains("[HD]", ignoreCase = true) ||
+                rawTitle.contains("[HD/3D]", ignoreCase = true) -> "HD"
+            else -> null
+        }
         if (href.isBlank() || title.isBlank()) return null
         return TvShow(
             id = href,
@@ -228,7 +239,12 @@ object CB01Provider : EndpointManagedProvider {
         val rawTitle = titleAnchor.text().trim()
         val title = cleanTitle(rawTitle)
         val poster = el.selectFirst("img.rpwe-thumb")?.attr("src").orEmpty().replace("-60x90", "")
-        val quality = if (rawTitle.contains("[HD]", ignoreCase = true) || rawTitle.contains("[HD/3D]", ignoreCase = true)) "HD" else null
+        val quality = when {
+            Lab186AudioEvidencePolicy.explicitlySubtitleOnly(rawTitle) -> "SUB ITA"
+            rawTitle.contains("[HD]", ignoreCase = true) ||
+                rawTitle.contains("[HD/3D]", ignoreCase = true) -> "HD"
+            else -> null
+        }
 
         if (href.isBlank() || title.isBlank()) return null
         return Movie(
