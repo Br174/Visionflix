@@ -9,6 +9,8 @@ class Lab186AudioEvidencePolicyTest {
         assertTrue(Lab186AudioEvidencePolicy.explicitlySubtitleOnly("Film", "SUB ITA"))
         assertTrue(Lab186AudioEvidencePolicy.explicitlySubtitleOnly("Film VOSTFR"))
         assertFalse(Lab186AudioEvidencePolicy.explicitlySubtitleOnly("Italian Job", "HD"))
+        assertFalse(Lab186AudioEvidencePolicy.explicitlySubtitleOnly("Film ITA", "HD"))
+        assertFalse(Lab186AudioEvidencePolicy.explicitlySubtitleOnly("Film originale italiano", "HD"))
     }
     @Test fun onlyDeclaredAudioTagsCountAndLanguagesMatchExactly() {
         val en = """
