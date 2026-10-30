@@ -18,7 +18,7 @@ data class AdvancedSearchFilters(
     val platform: PlatformFilter = PlatformFilter.ALL,
     val country: CountryFilter = CountryFilter.ALL,
 ) {
-    enum class ContentType { ALL, MOVIE, TV, CARTOON }
+    enum class ContentType { ALL, MOVIE, TV, CARTOON, ANIME }
     // LAB184: preserve persisted enum values while the two-entry UI now offers
     // YES = Italian-dubbed preference (default), NO = original-language option.
     // This selection never changes the independent production-country filter.
@@ -102,7 +102,7 @@ data class AdvancedSearchFilters(
 
     /** Consistent genre matching for TMDb text search and multi-page discovery. */
     fun acceptsGenreIds(genreIds: Collection<Int>, movie: Boolean): Boolean {
-        if (type == ContentType.CARTOON && 16 !in genreIds) return false
+        if ((type == ContentType.CARTOON || type == ContentType.ANIME) && 16 !in genreIds) return false
         val requested = effectiveGenres
         if (requested.isEmpty()) return true
         return requested.any { genre ->
