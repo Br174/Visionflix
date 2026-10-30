@@ -903,13 +903,13 @@ class SearchTvFragment : Fragment() {
         to.setNextFocus(left = from.viewId, right = actor.id,
             up = italian.viewId, down = director.id)
         actor.nextFocusLeftId = to.viewId
-        actor.nextFocusRightId = actor.id
+        actor.nextFocusRightId = director.id
         actor.nextFocusUpId = year.viewId
         actor.nextFocusDownId = platform.viewId
 
         platform.setNextFocus(left = sidebar, right = director.id,
             up = from.viewId, down = country.viewId)
-        director.nextFocusLeftId = platform.viewId
+        director.nextFocusLeftId = actor.id
         director.nextFocusRightId = director.id
         director.nextFocusUpId = actor.id
         director.nextFocusDownId = apply.id
@@ -968,7 +968,7 @@ class SearchTvFragment : Fragment() {
         actor.setOnKeyListener { _, code, event ->
             if (event.action != KeyEvent.ACTION_DOWN || !filterPanelExpanded) false
             else when (code) {
-                KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                KeyEvent.KEYCODE_DPAD_RIGHT -> director.requestFocus()
                 KeyEvent.KEYCODE_DPAD_LEFT -> to.requestFocus()
                 KeyEvent.KEYCODE_DPAD_DOWN -> focusPersonCircle(actorSuggestionsGrid)
                 else -> false
@@ -978,7 +978,7 @@ class SearchTvFragment : Fragment() {
             if (event.action != KeyEvent.ACTION_DOWN || !filterPanelExpanded) false
             else when (code) {
                 KeyEvent.KEYCODE_DPAD_RIGHT -> true
-                KeyEvent.KEYCODE_DPAD_LEFT -> platform.requestFocus()
+                KeyEvent.KEYCODE_DPAD_LEFT -> actor.requestFocus()
                 KeyEvent.KEYCODE_DPAD_DOWN -> focusPersonCircle(directorSuggestionsGrid)
                 else -> false
             }
