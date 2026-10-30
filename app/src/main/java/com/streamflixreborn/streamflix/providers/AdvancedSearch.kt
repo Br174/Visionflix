@@ -17,6 +17,7 @@ data class AdvancedSearchFilters(
     val sort: SortFilter = SortFilter.POPULARITY,
     val platform: PlatformFilter = PlatformFilter.ALL,
     val country: CountryFilter = CountryFilter.ALL,
+    val collection: CollectionFilter = CollectionFilter.ALL,
 ) {
     // TV persists as episodic series; LIVE_TV is separate live-channel category.
     enum class ContentType { ALL, MOVIE, TV, CARTOON, ANIME, LIVE_TV }
@@ -24,6 +25,18 @@ data class AdvancedSearchFilters(
     // YES = Italian-dubbed preference (default), NO = original-language option.
     // This selection never changes the independent production-country filter.
     enum class ItalianFilter { ALL, YES, NO }
+
+    enum class CollectionFilter(val label: String) {
+        ALL("Tutte le collezioni"),
+        IN_CINEMA("Al cinema"),
+        OSCAR_2026("Nomination Oscar 2026"),
+        OSCAR_WINNERS("Oscar"),
+        CHRISTMAS("Natale"),
+        PIXAR("Pixar"),
+        DISNEY("Disney"),
+        DC("DC"),
+        MARVEL("Marvel"),
+    }
 
     enum class SortFilter(val label: String) {
         POPULARITY("Popolarità"),
@@ -124,7 +137,8 @@ data class AdvancedSearchFilters(
             !directorId.isNullOrBlank() ||
             sort != SortFilter.POPULARITY ||
             platform != PlatformFilter.ALL ||
-            country != CountryFilter.ALL
+            country != CountryFilter.ALL ||
+            collection != CollectionFilter.ALL
 }
 
 interface AdvancedSearchProvider {
