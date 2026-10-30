@@ -938,6 +938,17 @@ class SearchTvFragment : Fragment() {
             view.nextFocusRightId = if (index == bottom.lastIndex) view.id else bottom[index + 1].id
             view.nextFocusDownId = vgvSearch.id
             view.nextFocusUpId = if (index <= 1) reset.id else apply.id
+            // Every quick control, including the far-right chevron, opens the
+            // advanced drawer on UP without moving focus to a hidden widget.
+            view.setOnKeyListener { _, code, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) false
+                else if (code == KeyEvent.KEYCODE_DPAD_UP && !filterPanelExpanded) {
+                    setFilterPanelExpanded(true, true)
+                    true
+                } else if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    exitFiltersDownToPosterWall()
+                } else code == KeyEvent.KEYCODE_DPAD_RIGHT && index == bottom.lastIndex
+            }
         }
         // Only pressing OK on the arrow may collapse the drawer, never RIGHT.
         apply.setOnKeyListener { _, code, event ->
