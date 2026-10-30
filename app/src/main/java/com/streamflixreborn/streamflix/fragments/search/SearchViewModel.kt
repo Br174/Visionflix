@@ -869,7 +869,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 AdvancedSearchFilters.ContentType.ALL -> true
                 AdvancedSearchFilters.ContentType.MOVIE -> item is Movie
                 AdvancedSearchFilters.ContentType.TV -> item is TvShow
-                AdvancedSearchFilters.ContentType.CARTOON -> {
+                AdvancedSearchFilters.ContentType.CARTOON, AdvancedSearchFilters.ContentType.ANIME -> {
                     val genres = when (item) {
                         is Movie -> item.genres
                         is TvShow -> item.genres
@@ -1124,15 +1124,15 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         val availableGenres = filters.effectiveGenres
         val includeMovies = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
             filters.type == AdvancedSearchFilters.ContentType.MOVIE ||
-            filters.type == AdvancedSearchFilters.ContentType.CARTOON) &&
+            (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)) &&
             (availableGenres.isEmpty() || availableGenres.any { it.movieId != null })
         val includeTv = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
             filters.type == AdvancedSearchFilters.ContentType.TV ||
-            filters.type == AdvancedSearchFilters.ContentType.CARTOON) &&
+            (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)) &&
             (availableGenres.isEmpty() || availableGenres.any { it.tvId != null })
 
         val language = provider.language
-        val cartoonOnly = filters.type == AdvancedSearchFilters.ContentType.CARTOON
+        val cartoonOnly = (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)
         val selectedGenres = filters.effectiveGenres
         val productionCountry = filters.country.isoCode
         val actorId = filters.actorId?.takeIf { it.isNotBlank() }
@@ -1609,7 +1609,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 val original = "movie|" + normalizeFilterTitle(candidate.originalTitle) + "|" + year
                 if (!Lab182SourceMatchPolicy.matchesTypedTitle(sourceKey, localized, original)) continue
                 if (filters.type == AdvancedSearchFilters.ContentType.TV) continue
-                if (filters.type == AdvancedSearchFilters.ContentType.CARTOON && 16 !in candidate.genresIds) continue
+                if ((filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME) && 16 !in candidate.genresIds) continue
                 if (!filters.acceptsGenreIds(candidate.genresIds, movie = true)) continue
                 if (!matchesYearFilter(candidate.releaseDate, filters)) continue
                 val details = if (country != null || platformIds != null || needsCredits)
@@ -1639,7 +1639,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 val original = "tv|" + normalizeFilterTitle(candidate.originalName) + "|" + year
                 if (!Lab182SourceMatchPolicy.matchesTypedTitle(sourceKey, localized, original)) continue
                 if (filters.type == AdvancedSearchFilters.ContentType.MOVIE) continue
-                if (filters.type == AdvancedSearchFilters.ContentType.CARTOON && 16 !in candidate.genresIds) continue
+                if ((filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME) && 16 !in candidate.genresIds) continue
                 if (!filters.acceptsGenreIds(candidate.genresIds, movie = false)) continue
                 if (!matchesYearFilter(candidate.firstAirDate, filters)) continue
                 if (country != null && candidate.originCountry.none {
