@@ -1921,7 +1921,7 @@ class SearchTvFragment : Fragment() {
     private fun openQuickAudioMenu() {
         if (!isAdded) return
         val choices = listOf(AdvancedSearchFilters.ItalianFilter.YES, AdvancedSearchFilters.ItalianFilter.NO)
-        val labels = arrayOf("Doppiato in italiano", "Lingua originale")
+        val labels = arrayOf("Doppiato in italiano", "Non doppiato in italiano")
         android.app.AlertDialog.Builder(requireContext())
             .setTitle("Versione audio")
             .setSingleChoiceItems(labels, choices.indexOf(italianSelector?.value).coerceAtLeast(0)) { dialog, index ->
