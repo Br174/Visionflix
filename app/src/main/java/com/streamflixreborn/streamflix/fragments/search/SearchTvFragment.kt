@@ -989,12 +989,6 @@ class SearchTvFragment : Fragment() {
                 else -> false
             }
         }
-        // All lower lip controls close the drawer upon DOWN toward posters.
-        val exitDown = View.OnKeyListener { _, code, event ->
-            event.action == KeyEvent.ACTION_DOWN &&
-                code == KeyEvent.KEYCODE_DPAD_DOWN &&
-                exitFiltersDownToPosterWall()
-        }
         // Preserve the UP/RIGHT listeners installed above: replacing them with
         // exitDown would silently disable opening the drawer on most controls.
         val searchActionKeys = View.OnKeyListener { _, code, event ->
