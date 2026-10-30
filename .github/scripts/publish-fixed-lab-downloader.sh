@@ -51,7 +51,14 @@ else
   if (( code <= old_code )); then echo "[LAST_GOOD] Stable code $old_code is newer or equal, preserving"; exit 0; fi
   release_id="$(gh api "repos/$repo/releases/tags/$channel" --jq .id)"
   old_id="$(gh api "repos/$repo/releases/$release_id/assets" --jq '.[] | select(.name == "Verlezza-Vision-TV.apk") | .id')"
-  [[ "$old_id" =~ ^[0-9]+$ ]] || { echo "::error::Old stable asset unavailable"; exit 77; }
+  if [[ ! "$old_id" =~ ^[0-9]+$ ]]; then
+    # Restore the missing canonical asset from this checksum-verified immutable build.
+    # Do not delete or replace any existing downloadable APK.
+    echo "[RECOVERY] Missing canonical APK; restoring verified LAB asset"
+    gh release upload "$channel" "$dir/$asset" -R "$repo"
+    restored_id="$(gh api "repos/$repo/releases/$release_id/assets" --jq '.[] | select(.name == "Verlezza-Vision-TV.apk") | .id')"
+    [[ "$restored_id" =~ ^[0-9]+$ ]] || { echo "::error::Recovery upload unavailable"; exit 77; }
+  else
   incoming="Verlezza-Vision-TV-INCOMING-$run_id.apk"
   cp "$dir/$asset" "$RUNNER_TEMP/$incoming"
   gh release upload "$channel" "$RUNNER_TEMP/$incoming" -R "$repo"
@@ -65,6 +72,7 @@ else
   if ! gh api -X PATCH "repos/$repo/releases/assets/$incoming_id" -f name="$asset" --jq .name; then
     gh api -X PATCH "repos/$repo/releases/assets/$old_id" -f name="$asset" --jq .name
     echo "::error::Stable cutover failed; LAST_GOOD restored"; exit 80
+  fi
   fi
 fi
 verified=0
