@@ -55,8 +55,12 @@ else
     # Restore the missing canonical asset from this checksum-verified immutable build.
     # Do not delete or replace any existing downloadable APK.
     echo "[RECOVERY] Missing canonical APK; restoring verified LAB asset"
-    gh release upload "$channel" "$dir/$asset" -R "$repo"
-    restored_id="$(gh api "repos/$repo/releases/$release_id/assets" --jq '.[] | select(.name == "Verlezza-Vision-TV.apk") | .id')"
+    # GitHub can report an existing name before its asset appears in the
+    # paginated release listing. Never delete or overwrite an unverified asset.
+    if ! gh release upload "$channel" "$dir/$asset" -R "$repo"; then
+      echo "[RECOVERY] Upload conflicted; checking the canonical asset again"
+    fi
+    restored_id="$(gh api --paginate "repos/$repo/releases/$release_id/assets?per_page=100" --jq '.[] | select(.name == "Verlezza-Vision-TV.apk") | .id' | head -1)"
     [[ "$restored_id" =~ ^[0-9]+$ ]] || { echo "::error::Recovery upload unavailable"; exit 77; }
   else
   incoming="Verlezza-Vision-TV-INCOMING-$run_id.apk"
