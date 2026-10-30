@@ -1127,7 +1127,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             filters.type == AdvancedSearchFilters.ContentType.MOVIE ||
             (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)) &&
             (availableGenres.isEmpty() || availableGenres.any { it.movieId != null })
-        val includeTv = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
+        val includeTv = filters.collection == AdvancedSearchFilters.CollectionFilter.ALL &&
+            (filters.type == AdvancedSearchFilters.ContentType.ALL ||
             filters.type == AdvancedSearchFilters.ContentType.TV ||
             (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)) &&
             (availableGenres.isEmpty() || availableGenres.any { it.tvId != null })
@@ -1356,6 +1357,17 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             )
             actorId?.let { params["with_cast"] = it }
             directorId?.let { params["with_crew"] = it }
+            com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy.companyIds(filters.collection)
+                ?.let { params["with_companies"] = it }
+            com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy.keywordIds(filters.collection)
+                ?.let { params["with_keywords"] = it }
+            if (filters.collection == AdvancedSearchFilters.CollectionFilter.IN_CINEMA) {
+                val (earliest, latest) = com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy.recentCinemaWindow()
+                params["region"] = "IT"
+                params["with_release_type"] = "2|3"
+                params["primary_release_date.gte"] = earliest
+                params["primary_release_date.lte"] = latest
+            }
             platformProviderIds?.let {
                 params["watch_region"] = "IT"
                 params["with_watch_providers"] = it
@@ -1422,6 +1434,13 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
             .filter { filters.acceptsGenreIds(it.genresIds, movie = true) }
+            .filter { movie ->
+                filters.collection !in setOf(
+                    AdvancedSearchFilters.CollectionFilter.OSCAR_WINNERS,
+                    AdvancedSearchFilters.CollectionFilter.OSCAR_2026
+                ) || com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy.matchesMovie(
+                    filters.collection, movie.id, movie.title, movie.originalTitle, movie.releaseDate)
+            }
             .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
             .flatMap { movie ->
                 sourceTitleVariants(
@@ -1606,6 +1625,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         val platformIds = filters.platform.providerIds
             ?.split('|', ',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
         val needsCredits = actorId != null || directorId != null
+        val needsCollection = filters.collection != AdvancedSearchFilters.CollectionFilter.ALL
         val candidates = TMDb3.Search.multi(query = clean, page = 1, language = "it").results
         for (candidate in candidates) {
             if (source is Movie && candidate is TMDb3.Movie) {
@@ -1617,15 +1637,22 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 if ((filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME) && 16 !in candidate.genresIds) continue
                 if (!filters.acceptsGenreIds(candidate.genresIds, movie = true)) continue
                 if (!matchesYearFilter(candidate.releaseDate, filters)) continue
-                val details = if (country != null || platformIds != null || needsCredits)
+                val details = if (country != null || platformIds != null || needsCredits || needsCollection)
                     TMDb3.Movies.details(
                         movieId = candidate.id,
                         appendToResponse = buildList {
                             if (needsCredits) add(TMDb3.Params.AppendToResponse.Movie.CREDITS)
                             if (platformIds != null) add(TMDb3.Params.AppendToResponse.Movie.WATCH_PROVIDERS)
+                            if (filters.collection == AdvancedSearchFilters.CollectionFilter.CHRISTMAS)
+                                add(TMDb3.Params.AppendToResponse.Movie.KEYWORDS)
+                            if (filters.collection == AdvancedSearchFilters.CollectionFilter.IN_CINEMA)
+                                add(TMDb3.Params.AppendToResponse.Movie.RELEASES_DATES)
                         },
                         language = "it",
                     ) else null
+                if (needsCollection && (details == null ||
+                    !com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy.matchesDetails(
+                        filters.collection, details))) continue
                 if (country != null && details?.productionCountries?.any {
                         it.iso3166.equals(country, ignoreCase = true)
                     } != true) continue
@@ -1643,7 +1670,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 val localized = "tv|" + normalizeFilterTitle(candidate.name) + "|" + year
                 val original = "tv|" + normalizeFilterTitle(candidate.originalName) + "|" + year
                 if (!Lab182SourceMatchPolicy.matchesTypedTitle(sourceKey, localized, original)) continue
-                if (filters.type == AdvancedSearchFilters.ContentType.MOVIE) continue
+                if (filters.type == AdvancedSearchFilters.ContentType.MOVIE || needsCollection) continue
                 if ((filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME) && 16 !in candidate.genresIds) continue
                 if (!filters.acceptsGenreIds(candidate.genresIds, movie = false)) continue
                 if (!matchesYearFilter(candidate.firstAirDate, filters)) continue

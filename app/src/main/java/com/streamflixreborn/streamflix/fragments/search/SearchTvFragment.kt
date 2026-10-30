@@ -1453,6 +1453,10 @@ class SearchTvFragment : Fragment() {
         // provenance is not asserted when provider metadata is incomplete.
         val filters = requestedFilters
         if (filters.type == AdvancedSearchFilters.ContentType.LIVE_TV) {
+            if (filters.collection != AdvancedSearchFilters.CollectionFilter.ALL) {
+                showSafeToast("Le Collezioni cinematografiche non si applicano ai canali TV")
+                return true
+            }
             // TV channels use their real IPTV source, never episodic TMDb titles.
             // A film-specific criterion must not be silently ignored.
             if (filters.country != AdvancedSearchFilters.CountryFilter.ALL ||

@@ -7,6 +7,7 @@ internal object Lab182SourceMatchPolicy {
     fun requiresMetadata(filters: AdvancedSearchFilters): Boolean =
         filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
         filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+        filters.collection != AdvancedSearchFilters.CollectionFilter.ALL ||
         !filters.actorId.isNullOrBlank() || !filters.directorId.isNullOrBlank() ||
         filters.effectiveGenres.isNotEmpty() ||
         filters.type == AdvancedSearchFilters.ContentType.CARTOON ||

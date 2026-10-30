@@ -11,6 +11,7 @@ internal object Lab174FilteredSourcePolicy {
     fun requiresStrictMetadata(filters: AdvancedSearchFilters): Boolean =
         filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
         filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+        filters.collection != AdvancedSearchFilters.CollectionFilter.ALL ||
         !filters.actorId.isNullOrBlank() ||
         !filters.directorId.isNullOrBlank()
 

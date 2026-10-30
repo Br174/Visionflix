@@ -1260,6 +1260,7 @@ object TMDb3 {
             val revenue: Long,
             @SerializedName("release_dates") val releaseDates: Result<ReleaseDates>? = null,
             @SerializedName("production_companies") val productionCompanies: List<Company>? = null,
+            @SerializedName("keywords") val keywords: KeywordBundle? = null,
             @SerializedName("production_countries") val productionCountries: List<Country>? = null,
             @SerializedName("watch/providers") val watchProviders: WatchProviderResult? = null,
             @SerializedName("credits") val credits: Credits? = null,
@@ -1267,6 +1268,8 @@ object TMDb3 {
             @SerializedName("images") val images: Images? = null,
             @SerializedName("recommendations") val recommendations: PageResult<MultiItem>? = null,
         )
+
+        data class KeywordBundle(val keywords: List<Keyword> = emptyList())
 
         data class Country(
             @SerializedName("iso_3166_1") val iso3166: String,
