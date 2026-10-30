@@ -1461,7 +1461,13 @@ class SearchTvFragment : Fragment() {
 
         val query = etSearch.text?.toString().orEmpty().trim()
         hideKeyboard()
-        val filters = currentFilters() ?: return true
+        val requestedFilters = currentFilters() ?: return true
+        // Anime is a Japanese-origin animation discovery, not a synonym for all cartoons.
+        // Preserve the explicit country selection if supplied, otherwise scope to Japan.
+        val filters = if (requestedFilters.type == AdvancedSearchFilters.ContentType.ANIME &&
+            requestedFilters.country == AdvancedSearchFilters.CountryFilter.ALL) {
+            requestedFilters.copy(country = AdvancedSearchFilters.CountryFilter.JAPAN)
+        } else requestedFilters
         if ((filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
                 filters.platform != AdvancedSearchFilters.PlatformFilter.ALL) &&
             !com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting.hasKey(
