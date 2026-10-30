@@ -1367,6 +1367,8 @@ class SearchTvFragment : Fragment() {
                 selectedGenres.clear()
                 selectedGenres.addAll(picks)
                 if (selectedGenres.isNotEmpty()) genreSelector?.selectValue(AdvancedSearchFilters.GenreFilter.ALL)
+                updateQuickBar()
+                submitSearch()
                 showSafeToast("Generi selezionati: ${selectedGenres.size}")
             }
             .setNegativeButton("Annulla", null)
@@ -1942,7 +1944,7 @@ class SearchTvFragment : Fragment() {
         }
         quickAll?.isActivated = true
         quickDate?.text = Lab156UnifiedSort.label(selectedSort)
-        quickCountry?.text = countrySelector?.value?.let { if (it.toString().contains("ALL")) "Paese" else "Paese ✓" } ?: "Paese"
+        quickCountry?.text = countrySelector?.value?.let { if (it == AdvancedSearchFilters.CountryFilter.ALL) "Paese" else "Paese ✓" } ?: "Paese"
         quickGenre?.text = if (selectedGenres.isNotEmpty()) "Genere ✓" else "Genere"
         quickAudio?.text = if (italianSelector?.value == AdvancedSearchFilters.ItalianFilter.NO) "Audio orig. ✓" else "Audio orig."
     }
