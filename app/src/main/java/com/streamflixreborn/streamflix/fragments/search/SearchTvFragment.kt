@@ -664,10 +664,17 @@ class SearchTvFragment : Fragment() {
             addSelectorToRow(secondRow, fromSelector)
             addSelectorToRow(secondRow, toSelector)
 
+            // Keep the year interval on one dedicated row; both people fields
+            // share the following row, rather than crowding unrelated selectors.
+            val peopleRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(2), 0, 0)
+            }
+            panel.addView(peopleRow)
             val actorColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-            secondRow.addView(
+            peopleRow.addView(
                 actorColumn,
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f).apply { marginStart = dp(10) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(5) },
             )
             actorColumn.addView(makeLabel("Attore", 12f, false, Color.rgb(169, 178, 194)))
             val actorRow = LinearLayout(requireContext()).apply {
@@ -710,9 +717,9 @@ class SearchTvFragment : Fragment() {
             addSelectorToRow(thirdRow, platformSelector)
 
             val directorColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-            thirdRow.addView(
+            peopleRow.addView(
                 directorColumn,
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f).apply { marginStart = dp(10) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(5) },
             )
             directorColumn.addView(makeLabel("Regista", 12f, false, Color.rgb(169, 178, 194)))
             val directorRow = LinearLayout(requireContext()).apply {
