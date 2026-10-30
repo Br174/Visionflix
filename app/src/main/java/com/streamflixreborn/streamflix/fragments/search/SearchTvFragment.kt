@@ -833,6 +833,9 @@ class SearchTvFragment : Fragment() {
                     else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) true
                     else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                         exitFiltersDownToPosterWall()
+                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && !filterPanelExpanded) {
+                        setFilterPanelExpanded(true, true)
+                        true
                     } else false
                 }
                 background = null
