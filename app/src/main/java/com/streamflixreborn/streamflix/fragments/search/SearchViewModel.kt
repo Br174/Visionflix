@@ -1127,6 +1127,44 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         candidateSelection: Boolean = false,
         sourceTitleAliases: Boolean = false,
     ): List<AppAdapter.Item> = coroutineScope {
+        if (Lab190CollectionPolicy.isCuratedCollection(filters.collection) && query.isBlank()) {
+            // Oscar candidates/winners come from an actual award-title catalogue,
+            // then resolve to real TMDb movies. Never display generic discover
+            // results merely because the user selected Oscars.
+            val titles = Lab190CollectionPolicy.curatedTitles(filters.collection)
+                .filter { (ceremony, _) ->
+                    filters.year == null || filters.year in (ceremony - 3)..ceremony
+                }
+                .drop((page - 1) * 12).take(12)
+            val gate = Semaphore(4)
+            val results = titles.map { (ceremony, name) -> async {
+                gate.withPermit {
+                    runCatching {
+                        TMDb3.Search.multi(query = name, page = 1, language = "it").results
+                            .filterIsInstance<TMDb3.Movie>()
+                            .firstOrNull { movie ->
+                                Lab190CollectionPolicy.isCuratedOscar(
+                                    filters.collection, movie.originalTitle, movie.title,
+                                    movie.releaseDate?.take(4)?.toIntOrNull()
+                                ) && (movie.releaseDate?.take(4)?.toIntOrNull() in (ceremony - 3)..ceremony)
+                                    && matchesYearFilter(movie.releaseDate, filters)
+                                    && filters.acceptsGenreIds(movie.genresIds, movie = true)
+                            }
+                    }.getOrNull()
+                }
+            } }.awaitAll().filterNotNull().distinctBy { it.id }
+            return@coroutineScope results.map { movie ->
+                Movie(
+                    id = movie.id.toString(),
+                    title = movie.title,
+                    overview = movie.overview,
+                    released = movie.releaseDate,
+                    rating = movie.voteAverage.toDouble(),
+                    poster = movie.posterPath?.w500,
+                    banner = movie.backdropPath?.original,
+                ) as AppAdapter.Item
+            }
+        }
         val availableGenres = filters.effectiveGenres
         val includeMovies = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
             filters.type == AdvancedSearchFilters.ContentType.MOVIE ||
@@ -1860,7 +1898,9 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             return@launch
         }
 
-        if (Lab174FilteredSourcePolicy.requiresStrictMetadata(advancedFilters) && !tmdbConfigured()) {
+        if ((Lab174FilteredSourcePolicy.requiresStrictMetadata(advancedFilters) ||
+                advancedFilters.collection != AdvancedSearchFilters.CollectionFilter.ALL) &&
+            !tmdbConfigured()) {
             _state.emit(State.FailedSearching(IllegalStateException(
                 "I filtri richiedono una chiave TMDb valida"
             )))
