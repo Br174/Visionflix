@@ -616,6 +616,7 @@ class SearchTvFragment : Fragment() {
                 AdvancedSearchFilters.ContentType.MOVIE,
                 AdvancedSearchFilters.ContentType.TV,
                 AdvancedSearchFilters.ContentType.CARTOON,
+                AdvancedSearchFilters.ContentType.ANIME,
             )
             typeSelector = makeSelector("Tipo", typeValues) {
                 when (it) {
@@ -623,6 +624,7 @@ class SearchTvFragment : Fragment() {
                     AdvancedSearchFilters.ContentType.MOVIE -> "Film"
                     AdvancedSearchFilters.ContentType.TV -> "Serie"
                     AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
+                    AdvancedSearchFilters.ContentType.ANIME -> "Anime"
                 }
             }
             italianSelector = makeSelector(
@@ -1896,8 +1898,9 @@ class SearchTvFragment : Fragment() {
             AdvancedSearchFilters.ContentType.MOVIE,
             AdvancedSearchFilters.ContentType.TV,
             AdvancedSearchFilters.ContentType.CARTOON,
+                AdvancedSearchFilters.ContentType.ANIME,
         )
-        val labels = arrayOf("Tutti", "Film", "Serie", "Cartoni")
+        val labels = arrayOf("Tutti", "Film", "Serie", "Cartoni", "Anime")
         val current = choices.indexOf(typeSelector?.value).coerceAtLeast(0)
         val dialog = android.app.AlertDialog.Builder(requireContext())
             .setTitle("Tipo di contenuto")
