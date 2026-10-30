@@ -17,7 +17,8 @@
         "app/src/test/java/com/streamflixreborn/streamflix/providers/Lab172NativeYearPolicyTest.kt",
         "app/src/test/java/com/streamflixreborn/streamflix/fragments/player/Lab166TvPlaybackRecoveryPolicyTest.kt",
         "app/src/test/java/com/streamflixreborn/streamflix/fragments/search/Lab181ProviderFlowPolicyTest.kt",
-        "app/src/test/java/com/streamflixreborn/streamflix/providers/Lab189QuickBarContractTest.kt"
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Lab189QuickBarContractTest.kt",
+        "app/src/test/java/com/streamflixreborn/streamflix/providers/Lab190CollectionPolicyTest.kt"
       ],
       "junitDir": "app/build/test-results/testDebugUnitTest",
       "timeoutMs": 1200000
@@ -106,6 +107,20 @@
       ],
       "junitClasses": [
         "com.streamflixreborn.streamflix.providers.Lab189QuickBarContractTest"
+      ]
+    },
+    {
+      "id": "visionflix.tv.lab190.collections",
+      "priority": "P1",
+      "suites": [
+        "android-jvm-complete"
+      ],
+      "requiredAt": [
+        "lab",
+        "promotion"
+      ],
+      "junitClasses": [
+        "com.streamflixreborn.streamflix.providers.Lab190CollectionPolicyTest"
       ]
     }
   ]
