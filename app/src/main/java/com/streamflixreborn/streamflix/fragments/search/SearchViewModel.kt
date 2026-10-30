@@ -1706,7 +1706,9 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 }
             } }.awaitAll()
         }
-        if (generation == activeGlobalGeneration) _state.emit(globalWallState(results, hasMore = false))
+        // Begin a fresh catalogue; never mix posters from the previous film search.
+        if (generation == activeGlobalGeneration)
+            _state.emit(State.SuccessGlobalSearching(results, hasMore = false))
     }
 
     fun searchGlobal(
