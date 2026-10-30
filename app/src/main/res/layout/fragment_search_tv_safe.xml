@@ -55,10 +55,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="6dp"
-                android:drawableStart="@drawable/ic_search"
-                android:drawablePadding="10dp"
-                android:drawableTint="#FFFFFF"
-                android:focusable="true"
+                                android:focusable="true"
                 android:focusableInTouchMode="true"
                 android:gravity="center_vertical"
                 android:hint="@string/search_input_hint"
@@ -67,8 +64,8 @@
                 android:maxLines="1"
                 android:padding="9dp"
                 android:textSize="15sp"
-                app:layout_constraintEnd_toStartOf="@+id/btn_search_clear_safe"
-                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/btn_search_voice_safe"
+                app:layout_constraintStart_toEndOf="@+id/btn_search_clear_safe"
                 app:layout_constraintTop_toTopOf="parent" />
 
             <ImageView
@@ -85,7 +82,7 @@
                 android:src="@drawable/ic_search_clear"
                 android:tint="#FFFFFF"
                 app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toStartOf="@+id/btn_search_voice_safe"
+                app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
                 tools:ignore="ContentDescription,PrivateResource,UseAppTint" />
 
