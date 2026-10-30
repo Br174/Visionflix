@@ -12,6 +12,7 @@ import com.streamflixreborn.streamflix.models.Genre
 import com.streamflixreborn.streamflix.models.People
 import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.providers.AdvancedSearchFilters
+import com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy
 import com.streamflixreborn.streamflix.providers.Lab172NativeYearPolicy
 import com.streamflixreborn.streamflix.providers.IptvProvider
 import com.streamflixreborn.streamflix.providers.Provider
@@ -161,6 +162,9 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
     private var globalLoadingMore = false
     private var globalEmptyPages = 0
     private var activeGlobalGeneration = 0
+    private var collectionEvidenceIds: Set<Int> = emptySet()
+    private val collectionEvidenceCache =
+        mutableMapOf<AdvancedSearchFilters.CollectionFilter, Set<Int>>()
     // LAB181: one recoverable background repair per provider/cooldown, never
     // part of the wall's latency-critical search job.
     private val globalRecoveryMutex = Mutex()
@@ -800,7 +804,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             }
             released == null && Lab172NativeYearPolicy.fromTitle(title) == null
         }
-        val strictMetadata = Lab174FilteredSourcePolicy.requiresStrictMetadata(filters)
+        val strictMetadata = Lab174FilteredSourcePolicy.requiresStrictMetadata(filters) ||
+            filters.collection != AdvancedSearchFilters.CollectionFilter.ALL
         if (!strictMetadata && !missingGenre && !missingYear) return local
         if (!tmdbConfigured()) {
             if (!strictMetadata && local.isNotEmpty()) return local
@@ -1127,7 +1132,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             filters.type == AdvancedSearchFilters.ContentType.MOVIE ||
             (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)) &&
             (availableGenres.isEmpty() || availableGenres.any { it.movieId != null })
-        val includeTv = (filters.type == AdvancedSearchFilters.ContentType.ALL ||
+        val includeTv = (filters.collection == AdvancedSearchFilters.CollectionFilter.ALL) &&
+            (filters.type == AdvancedSearchFilters.ContentType.ALL ||
             filters.type == AdvancedSearchFilters.ContentType.TV ||
             (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)) &&
             (availableGenres.isEmpty() || availableGenres.any { it.tvId != null })
@@ -1362,6 +1368,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             }
             productionCountry?.let { params["with_origin_country"] = it }
 
+            params.putAll(Lab190CollectionPolicy.discoverParams(filters.collection))
             val genreIds = selectedGenres.mapNotNull { it.movieId }.distinct()
             if (cartoonOnly) params["with_genres"] = "16"
             else if (genreIds.isNotEmpty()) params["with_genres"] = genreIds.joinToString("|")
@@ -1422,6 +1429,13 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         val movieItems = movieDeferred?.await().orEmpty()
             .asSequence()
             .filter { filters.acceptsGenreIds(it.genresIds, movie = true) }
+            .filter {
+                !Lab190CollectionPolicy.isCuratedCollection(filters.collection) ||
+                    Lab190CollectionPolicy.isCuratedOscar(
+                        filters.collection, it.originalTitle, it.title,
+                        it.releaseDate?.take(4)?.toIntOrNull()
+                    )
+            }
             .filter { directorId == null || it.id.toString() in blankDirectorMovieIds }
             .flatMap { movie ->
                 sourceTitleVariants(
@@ -1555,11 +1569,13 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             return@coroutineScope sourceItems
         }
         val local = applyProviderFilters(sourceItems, filters)
-        if (!Lab182SourceMatchPolicy.requiresMetadata(filters)) {
+        if (filters.collection == AdvancedSearchFilters.CollectionFilter.ALL &&
+            !Lab182SourceMatchPolicy.requiresMetadata(filters)) {
             local.forEach { onVerified(it) }
             return@coroutineScope local
         }
-        val localProof = if (Lab174FilteredSourcePolicy.requiresStrictMetadata(filters))
+        val localProof = if (Lab174FilteredSourcePolicy.requiresStrictMetadata(filters) ||
+            filters.collection != AdvancedSearchFilters.CollectionFilter.ALL)
             emptySet() else local.toSet()
         sourceItems.filter { it is Movie || it is TvShow }.map { item ->
             async(Dispatchers.IO) {
@@ -1589,6 +1605,44 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         }.awaitAll().filterNotNull().distinctBy { it.searchIdentityKey() }
     }
 
+
+    /**
+     * Shared, bounded discover evidence. Only selected collections run this,
+     * with no scan in the UI thread. Company collections use per-film company
+     * evidence, while Christmas and cinema use exact TMDb discover membership.
+     */
+    private suspend fun resolveCollectionEvidence(
+        collection: AdvancedSearchFilters.CollectionFilter,
+    ): Set<Int> {
+        if (collection == AdvancedSearchFilters.CollectionFilter.ALL ||
+            Lab190CollectionPolicy.isCuratedCollection(collection) ||
+            collection in setOf(
+                AdvancedSearchFilters.CollectionFilter.PIXAR,
+                AdvancedSearchFilters.CollectionFilter.DISNEY,
+                AdvancedSearchFilters.CollectionFilter.DC,
+                AdvancedSearchFilters.CollectionFilter.MARVEL,
+            )) return emptySet()
+        collectionEvidenceCache[collection]?.let { return it }
+        if (!tmdbConfigured()) throw IllegalStateException("Chiave TMDb richiesta")
+        val params = Lab190CollectionPolicy.discoverParams(collection)
+        val gate = Semaphore(4)
+        val ids = coroutineScope {
+            (1..12).map { currentPage ->
+                async {
+                    gate.withPermit {
+                        TMDb3.Discover.movie(params + mapOf(
+                            "page" to currentPage.toString(),
+                            "language" to "it", "sort_by" to "popularity.desc",
+                            "include_adult" to "false",
+                        )).results.map { it.id }
+                    }
+                }
+            }.awaitAll().flatten().toSet()
+        }
+        collectionEvidenceCache[collection] = ids
+        return ids
+    }
+
     private suspend fun verifyItalianSourceTitle(
         source: AppAdapter.Item, filters: AdvancedSearchFilters,
     ): Boolean {
@@ -1614,10 +1668,30 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 val original = "movie|" + normalizeFilterTitle(candidate.originalTitle) + "|" + year
                 if (!Lab182SourceMatchPolicy.matchesTypedTitle(sourceKey, localized, original)) continue
                 if (filters.type == AdvancedSearchFilters.ContentType.TV) continue
+                if (filters.collection != AdvancedSearchFilters.CollectionFilter.ALL &&
+                    !Lab190CollectionPolicy.isCuratedCollection(filters.collection) &&
+                    filters.collection !in setOf(
+                        AdvancedSearchFilters.CollectionFilter.PIXAR,
+                        AdvancedSearchFilters.CollectionFilter.DISNEY,
+                        AdvancedSearchFilters.CollectionFilter.DC,
+                        AdvancedSearchFilters.CollectionFilter.MARVEL,
+                    ) && candidate.id !in collectionEvidenceIds) continue
+                if (Lab190CollectionPolicy.isCuratedCollection(filters.collection) &&
+                    !Lab190CollectionPolicy.isCuratedOscar(
+                        filters.collection, candidate.originalTitle, candidate.title,
+                        candidate.releaseDate?.take(4)?.toIntOrNull()
+                    )) continue
                 if ((filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME) && 16 !in candidate.genresIds) continue
                 if (!filters.acceptsGenreIds(candidate.genresIds, movie = true)) continue
                 if (!matchesYearFilter(candidate.releaseDate, filters)) continue
-                val details = if (country != null || platformIds != null || needsCredits)
+                val companyCollection = filters.collection in setOf(
+                    AdvancedSearchFilters.CollectionFilter.PIXAR,
+                    AdvancedSearchFilters.CollectionFilter.DISNEY,
+                    AdvancedSearchFilters.CollectionFilter.DC,
+                    AdvancedSearchFilters.CollectionFilter.MARVEL,
+                )
+                val details = if (country != null || platformIds != null ||
+                    needsCredits || companyCollection)
                     TMDb3.Movies.details(
                         movieId = candidate.id,
                         appendToResponse = buildList {
@@ -1626,6 +1700,15 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                         },
                         language = "it",
                     ) else null
+                if (companyCollection && details?.productionCompanies?.any {
+                    it.id in when (filters.collection) {
+                        AdvancedSearchFilters.CollectionFilter.PIXAR -> setOf(3)
+                        AdvancedSearchFilters.CollectionFilter.DISNEY -> setOf(2)
+                        AdvancedSearchFilters.CollectionFilter.DC -> setOf(9993, 429, 128064)
+                        AdvancedSearchFilters.CollectionFilter.MARVEL -> setOf(420)
+                        else -> emptySet()
+                    }
+                } != true) continue
                 if (country != null && details?.productionCountries?.any {
                         it.iso3166.equals(country, ignoreCase = true)
                     } != true) continue
@@ -1639,6 +1722,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 return true
             }
             if (source is TvShow && candidate is TMDb3.Tv) {
+                if (filters.collection != AdvancedSearchFilters.CollectionFilter.ALL) continue
                 val year = candidate.firstAirDate?.take(4).orEmpty()
                 val localized = "tv|" + normalizeFilterTitle(candidate.name) + "|" + year
                 val original = "tv|" + normalizeFilterTitle(candidate.originalName) + "|" + year
@@ -1732,6 +1816,17 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         val generation = ++activeGlobalGeneration
         globalEmptyPages = 0
 
+        // One bounded TMDb collection lookup for the entire source-backed search.
+        collectionEvidenceIds = try {
+            resolveCollectionEvidence(advancedFilters.collection)
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            Log.w("SearchViewModel", "LAB190 collection lookup failed", error)
+            _state.emit(State.FailedSearching(
+                IllegalStateException("Impossibile verificare i dati Collezioni", error)))
+            return@launch
+        }
         val italianProviders = Provider.providers.keys.filter {
             it.language.equals("it", ignoreCase = true) &&
                 it !is TmdbProvider && it !is IptvProvider
