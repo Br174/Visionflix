@@ -625,6 +625,7 @@ class SearchTvFragment : Fragment() {
                     AdvancedSearchFilters.ContentType.TV -> "Serie"
                     AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
                     AdvancedSearchFilters.ContentType.ANIME -> "Anime"
+                    AdvancedSearchFilters.ContentType.LIVE_TV -> "TV"
                 }
             }
             italianSelector = makeSelector(
@@ -1463,6 +1464,23 @@ class SearchTvFragment : Fragment() {
         // to browse animated titles. Anime discovery shares the animation genre;
         // provenance is not asserted when provider metadata is incomplete.
         val filters = requestedFilters
+        if (filters.type == AdvancedSearchFilters.ContentType.LIVE_TV) {
+            // TV channels use their real IPTV source, never episodic TMDb titles.
+            // A film-specific criterion must not be silently ignored.
+            if (filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+                filters.genre != AdvancedSearchFilters.GenreFilter.ALL ||
+                filters.genres.isNotEmpty() || filters.year != null ||
+                filters.dateFrom != null || filters.dateTo != null ||
+                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+                !filters.actorId.isNullOrBlank() || !filters.directorId.isNullOrBlank()) {
+                showSafeToast("Deseleziona i filtri di film e serie per cercare canali TV")
+                return true
+            }
+            savePersistedFiltersSafely()
+            vm.searchLiveTv(query)
+            collapseFiltersAndFocusResults()
+            return true
+        }
         if ((filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
                 filters.platform != AdvancedSearchFilters.PlatformFilter.ALL) &&
             !com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting.hasKey(
@@ -1900,9 +1918,10 @@ class SearchTvFragment : Fragment() {
             AdvancedSearchFilters.ContentType.MOVIE,
             AdvancedSearchFilters.ContentType.TV,
             AdvancedSearchFilters.ContentType.CARTOON,
-                AdvancedSearchFilters.ContentType.ANIME,
+            AdvancedSearchFilters.ContentType.ANIME,
+            AdvancedSearchFilters.ContentType.LIVE_TV,
         )
-        val labels = arrayOf("Tutti", "Film", "Serie", "Cartoni", "Anime")
+        val labels = arrayOf("Tutti", "Film", "Serie", "Cartoni", "Anime", "TV")
         val current = choices.indexOf(typeSelector?.value).coerceAtLeast(0)
         val dialog = android.app.AlertDialog.Builder(requireContext())
             .setTitle("Tipo di contenuto")
@@ -1980,6 +1999,7 @@ class SearchTvFragment : Fragment() {
             AdvancedSearchFilters.ContentType.TV -> "Serie"
             AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
             AdvancedSearchFilters.ContentType.ANIME -> "Anime"
+            AdvancedSearchFilters.ContentType.LIVE_TV -> "TV"
             else -> "Tutti"
         }
         quickCountry?.text = countrySelector?.value

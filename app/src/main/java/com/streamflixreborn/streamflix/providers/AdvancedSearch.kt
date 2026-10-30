@@ -18,7 +18,8 @@ data class AdvancedSearchFilters(
     val platform: PlatformFilter = PlatformFilter.ALL,
     val country: CountryFilter = CountryFilter.ALL,
 ) {
-    enum class ContentType { ALL, MOVIE, TV, CARTOON, ANIME }
+    // TV persists as episodic series; LIVE_TV is separate live-channel category.
+    enum class ContentType { ALL, MOVIE, TV, CARTOON, ANIME, LIVE_TV }
     // LAB184: preserve persisted enum values while the two-entry UI now offers
     // YES = Italian-dubbed preference (default), NO = original-language option.
     // This selection never changes the independent production-country filter.

@@ -869,6 +869,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                 AdvancedSearchFilters.ContentType.ALL -> true
                 AdvancedSearchFilters.ContentType.MOVIE -> item is Movie
                 AdvancedSearchFilters.ContentType.TV -> item is TvShow
+                AdvancedSearchFilters.ContentType.LIVE_TV -> item is TvShow
                 AdvancedSearchFilters.ContentType.CARTOON, AdvancedSearchFilters.ContentType.ANIME -> {
                     val genres = when (item) {
                         is Movie -> item.genres
@@ -1671,6 +1672,43 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         return false
     }
 
+    /**
+     * TV channels are not ordinary series: read actual IPTV provider sources.
+     * Keep source identity for playback and never require TMDb film credentials.
+     * This separate path avoids injecting live channels into the general wall.
+     */
+    fun searchLiveTv(query: String) = viewModelScope.launch(Dispatchers.IO) {
+        ++activeIndexedSearchGeneration
+        val generation = ++activeGlobalGeneration
+        advancedFilters = AdvancedSearchFilters(type = AdvancedSearchFilters.ContentType.LIVE_TV)
+        this@SearchViewModel.query = query
+        _state.emit(State.GlobalSearching)
+        val sources = Provider.providers.keys.filterIsInstance<IptvProvider>()
+            .filter { it.language.equals("it", ignoreCase = true) }
+        val limiter = Semaphore(4)
+        val results = coroutineScope {
+            sources.map { provider -> async {
+                try {
+                    val channels = limiter.withPermit {
+                        provider.search(query, 1).filterIsInstance<TvShow>()
+                    }.onEach {
+                        it.providerName = provider.name
+                    }
+                    ProviderResult(provider,
+                        ProviderResult.State.Success(ParentalControlUtils.filterItems(channels)),
+                        "TV · ${provider.name}")
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (error: Exception) {
+                    Log.w("SearchViewModel", "TV channels: ${provider.name}", error)
+                    ProviderResult(provider, ProviderResult.State.Error(error),
+                        "TV · ${provider.name}")
+                }
+            } }.awaitAll()
+        }
+        if (generation == activeGlobalGeneration) _state.emit(globalWallState(results, hasMore = false))
+    }
+
     fun searchGlobal(
         query: String,
         currentLanguage: String,
@@ -1693,7 +1731,8 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         globalEmptyPages = 0
 
         val italianProviders = Provider.providers.keys.filter {
-            it.language.equals("it", ignoreCase = true) && it !is TmdbProvider
+            it.language.equals("it", ignoreCase = true) &&
+                it !is TmdbProvider && it !is IptvProvider
         }
         val originals = italianProviders
             .sortedBy { it.name != UserPreferences.currentProvider?.name }
