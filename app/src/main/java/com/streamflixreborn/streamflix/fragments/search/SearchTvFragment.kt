@@ -1098,7 +1098,7 @@ class SearchTvFragment : Fragment() {
                 setItemSpacing(dp(12))
                 actorEdit?.let { edit ->
                     configurePersonCircleNavigation(this, edit) {
-                        platformSelector?.viewId ?: directorEdit?.id ?: View.NO_ID
+                        btnResetFilters?.id ?: directorEdit?.id ?: View.NO_ID
                     }
                 }
             }
@@ -1233,7 +1233,7 @@ class SearchTvFragment : Fragment() {
                         grid.findViewHolderForAdapterPosition(0)?.itemView?.nextFocusUpId =
                             actorEdit?.id ?: View.NO_ID
                     } }
-                    grid.nextFocusDownId = platformSelector?.viewId ?: View.NO_ID
+                    grid.nextFocusDownId = btnResetFilters?.id ?: View.NO_ID
                 } else {
                     actorEdit?.nextFocusDownId = directorEdit?.id ?: View.NO_ID
                 }
@@ -1469,10 +1469,11 @@ class SearchTvFragment : Fragment() {
             return true
         }
         if ((filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
-                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL) &&
+                filters.platform != AdvancedSearchFilters.PlatformFilter.ALL ||
+                filters.collection != AdvancedSearchFilters.CollectionFilter.ALL) &&
             !com.streamflixreborn.streamflix.utils.Lab164TmdbCredentialRouting.hasKey(
                 UserPreferences.tmdbApiKey, com.streamflixreborn.streamflix.BuildConfig.TMDB_API_KEY)) {
-            showSafeToast("Paese, piattaforma e lingua richiedono una chiave TMDb gratuita nelle Impostazioni")
+            showSafeToast("Paese, piattaforma, collezioni e lingua richiedono una chiave TMDb gratuita nelle Impostazioni")
             return true
         }
         savePersistedFiltersSafely()
