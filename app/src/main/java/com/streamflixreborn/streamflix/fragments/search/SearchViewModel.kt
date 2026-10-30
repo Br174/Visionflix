@@ -1134,7 +1134,11 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
         val language = provider.language
         val cartoonOnly = (filters.type == AdvancedSearchFilters.ContentType.CARTOON || filters.type == AdvancedSearchFilters.ContentType.ANIME)
         val selectedGenres = filters.effectiveGenres
+        // Anime discovery uses Japanese production provenance where TMDb metadata is
+        // available. This is a discovery constraint, not a claim that every
+        // Japanese animation is anime or that all anime originate in Japan.
         val productionCountry = filters.country.isoCode
+            ?: if (filters.type == AdvancedSearchFilters.ContentType.ANIME) "JP" else null
         val actorId = filters.actorId?.takeIf { it.isNotBlank() }
         val directorId = filters.directorId?.takeIf { it.isNotBlank() }
         val platformProviderIds = filters.platform.providerIds
