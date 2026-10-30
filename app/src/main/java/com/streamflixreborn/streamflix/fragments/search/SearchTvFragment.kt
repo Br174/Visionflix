@@ -898,22 +898,22 @@ class SearchTvFragment : Fragment() {
         year.setNextFocus(left = italian.viewId, right = genre.viewId,
             up = llGlobalSearch.id, down = actor.id)
         genre.setNextFocus(left = year.viewId, right = genre.viewId,
-            up = llGlobalSearch.id, down = actor.id)
+            up = llGlobalSearch.id, down = director.id)
 
         from.setNextFocus(left = sidebar, right = to.viewId,
             up = italian.viewId, down = platform.viewId)
         to.setNextFocus(left = from.viewId, right = actor.id,
-            up = italian.viewId, down = director.id)
-        actor.nextFocusLeftId = to.viewId
+            up = italian.viewId, down = actor.id)
+        actor.nextFocusLeftId = from.viewId
         actor.nextFocusRightId = director.id
         actor.nextFocusUpId = year.viewId
         actor.nextFocusDownId = platform.viewId
 
         platform.setNextFocus(left = sidebar, right = director.id,
-            up = from.viewId, down = country.viewId)
+            up = actor.id, down = country.viewId)
         director.nextFocusLeftId = actor.id
         director.nextFocusRightId = director.id
-        director.nextFocusUpId = actor.id
+        director.nextFocusUpId = genre.viewId
         director.nextFocusDownId = apply.id
 
         country.setNextFocus(left = sidebar, right = reset.id,
