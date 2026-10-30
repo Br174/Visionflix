@@ -1146,7 +1146,9 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                                 Lab190CollectionPolicy.isCuratedOscar(
                                     filters.collection, movie.originalTitle, movie.title,
                                     movie.releaseDate?.take(4)?.toIntOrNull()
-                                ) && (movie.releaseDate?.take(4)?.toIntOrNull() in (ceremony - 3)..ceremony)
+                                ) && (movie.releaseDate?.take(4)?.toIntOrNull()?.let {
+                                    it in (ceremony - 3)..ceremony
+                                } == true)
                                     && matchesYearFilter(movie.releaseDate, filters)
                                     && filters.acceptsGenreIds(movie.genresIds, movie = true)
                             }
