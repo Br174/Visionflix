@@ -1902,7 +1902,18 @@ class SearchTvFragment : Fragment() {
     private fun openQuickCountryMenu() {
         if (!isAdded) return
         // Reuse the existing country selector instead of creating a second filter model.
-        countrySelector?.view?.performClick()
+        val choices = AdvancedSearchFilters.CountryFilter.entries.toList()
+        val labels = choices.map { it.label }.toTypedArray()
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Paese di produzione")
+            .setSingleChoiceItems(labels, choices.indexOf(countrySelector?.value).coerceAtLeast(0)) { dialog, index ->
+                countrySelector?.selectValue(choices[index])
+                updateQuickBar()
+                dialog.dismiss()
+                submitSearch()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
     }
 
     private fun openQuickAudioMenu() {
