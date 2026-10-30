@@ -982,9 +982,23 @@ class SearchTvFragment : Fragment() {
                 code == KeyEvent.KEYCODE_DPAD_DOWN &&
                 exitFiltersDownToPosterWall()
         }
-        bottom.dropLast(1).forEach { it.setOnKeyListener(exitDown) }
-        btnSearchClear.setOnKeyListener(exitDown)
-        btnSearchVoice.setOnKeyListener(exitDown)
+        // Preserve the UP/RIGHT listeners installed above: replacing them with
+        // exitDown would silently disable opening the drawer on most controls.
+        val searchActionKeys = View.OnKeyListener { _, code, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) false
+            else when (code) {
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (!filterPanelExpanded) {
+                        setFilterPanelExpanded(true, true)
+                        true
+                    } else false
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> exitFiltersDownToPosterWall()
+                else -> false
+            }
+        }
+        btnSearchClear.setOnKeyListener(searchActionKeys)
+        btnSearchVoice.setOnKeyListener(searchActionKeys)
         vgvSearch.nextFocusUpId = etSearch.id
     }
 
