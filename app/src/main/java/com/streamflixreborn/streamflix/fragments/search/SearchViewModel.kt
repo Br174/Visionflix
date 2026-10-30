@@ -1293,7 +1293,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
                     }
                 }.toMap()
             else emptyMap()
-            return@coroutineScope sortedSearchResults.mapNotNull { multi ->
+            return@coroutineScope verifyCollectionResults(sortedSearchResults.mapNotNull { multi ->
                 when (multi) {
                     is TMDb3.Movie -> {
                         if (!includeMovies) return@mapNotNull null
@@ -1345,7 +1345,7 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             }.distinctBy { item ->
                 if (sourceTitleAliases) metadataAliasKey(item)
                 else item.searchIdentityKey()
-            }
+            }, filters.collection)
         }
 
         val movieDeferred = if (includeMovies) async {
@@ -1478,11 +1478,11 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             }
             .toList()
 
-        val combined = (movieItems + tvItems)
+        val combined = verifyCollectionResults((movieItems + tvItems)
             .distinctBy { item ->
                 if (sourceTitleAliases) metadataAliasKey(item)
                 else item.searchIdentityKey()
-            }
+            }, filters.collection)
         // Candidate lookups need popularity-first order; UI sorts accepted
         // provider titles separately. TMDb-only views still use requested sort.
         when (discoverySort) {
@@ -1509,6 +1509,50 @@ class SearchViewModel(database: AppDatabase, availabilityContext: Context? = nul
             }
             AdvancedSearchFilters.SortFilter.POPULARITY -> combined
         }
+    }
+
+    /**
+     * TV-specific LAB190 guard: a TMDb text result must be checked against the
+     * selected collection too, not just an unfiltered text match. Metadata
+     * calls occur only when the user explicitly selects a collection.
+     */
+    private suspend fun verifyCollectionResults(
+        items: List<AppAdapter.Item>,
+        selected: AdvancedSearchFilters.CollectionFilter,
+    ): List<AppAdapter.Item> = coroutineScope {
+        if (selected == AdvancedSearchFilters.CollectionFilter.ALL) return@coroutineScope items
+        val gate = Semaphore(4)
+        items.filterIsInstance<Movie>().map { movie ->
+            async(Dispatchers.IO) {
+                val id = movie.id.toIntOrNull() ?: return@async null
+                val quickAcademy = selected == AdvancedSearchFilters.CollectionFilter.OSCAR_WINNERS ||
+                    selected == AdvancedSearchFilters.CollectionFilter.OSCAR_2026
+                val movieYear = movie.released?.get(java.util.Calendar.YEAR)
+                if (quickAcademy && com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy.matchesMovie(
+                        selected, id, movie.title, movie.title, movieYear?.let { "${it}-01-01" } )
+                ) return@async movie
+                val verified = try {
+                    gate.withPermit {
+                        withTimeoutOrNull(6_000L) {
+                            TMDb3.Movies.details(
+                                movieId = id, language = "it",
+                                appendToResponse = buildList {
+                                    if (selected == AdvancedSearchFilters.CollectionFilter.CHRISTMAS)
+                                        add(TMDb3.Params.AppendToResponse.Movie.KEYWORDS)
+                                    if (selected == AdvancedSearchFilters.CollectionFilter.IN_CINEMA)
+                                        add(TMDb3.Params.AppendToResponse.Movie.RELEASES_DATES)
+                                },
+                            )
+                        }
+                    }
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (error: Exception) { null }
+                movie.takeIf { verified != null &&
+                    com.streamflixreborn.streamflix.providers.Lab190CollectionPolicy.matchesDetails(
+                        selected, verified) }
+            }
+        }.awaitAll().filterNotNull()
     }
 
     private fun matchesYearFilter(

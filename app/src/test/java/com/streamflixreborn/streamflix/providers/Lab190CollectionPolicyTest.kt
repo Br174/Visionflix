@@ -31,6 +31,7 @@ class Lab190CollectionPolicyTest {
         assertTrue(p.matchesMovie(C.DISNEY, 1, "Test", "Test", "2020", setOf(2)))
         assertTrue(p.matchesMovie(C.DISNEY, 1, "Test", "Test", "2020", setOf(3)))
         assertTrue(p.matchesMovie(C.DC, 1, "Test", "Test", "2020", setOf(429)))
+        assertTrue(p.matchesMovie(C.DC, 1, "Test", "Test", "2020", setOf(128064)))
         assertTrue(p.matchesMovie(C.MARVEL, 1, "Test", "Test", "2020", setOf(420)))
         assertFalse(p.matchesMovie(C.MARVEL, 1, "Test", "Test", "2020", setOf(429)))
     }

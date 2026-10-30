@@ -15,7 +15,7 @@ internal object Lab190CollectionPolicy {
     fun companyIds(collection: AdvancedSearchFilters.CollectionFilter): String? = when (collection) {
         AdvancedSearchFilters.CollectionFilter.PIXAR -> "3"
         AdvancedSearchFilters.CollectionFilter.DISNEY -> "2|3"
-        AdvancedSearchFilters.CollectionFilter.DC -> "429"
+        AdvancedSearchFilters.CollectionFilter.DC -> "429|128064"
         AdvancedSearchFilters.CollectionFilter.MARVEL -> "420"
         else -> null
     }
@@ -68,7 +68,7 @@ internal object Lab190CollectionPolicy {
                     normalize(originalTitle) in christmasSetting
             AdvancedSearchFilters.CollectionFilter.PIXAR -> 3 in companies
             AdvancedSearchFilters.CollectionFilter.DISNEY -> 2 in companies || 3 in companies
-            AdvancedSearchFilters.CollectionFilter.DC -> 429 in companies
+            AdvancedSearchFilters.CollectionFilter.DC -> 429 in companies || 128064 in companies
             AdvancedSearchFilters.CollectionFilter.MARVEL -> 420 in companies
             AdvancedSearchFilters.CollectionFilter.IN_CINEMA -> {
                 val (from, to) = recentCinemaWindow()
