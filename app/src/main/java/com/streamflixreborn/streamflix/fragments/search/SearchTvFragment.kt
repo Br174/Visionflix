@@ -1979,6 +1979,7 @@ class SearchTvFragment : Fragment() {
             AdvancedSearchFilters.ContentType.MOVIE -> "Film"
             AdvancedSearchFilters.ContentType.TV -> "Serie"
             AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
+            AdvancedSearchFilters.ContentType.ANIME -> "Anime"
             else -> "Tutti"
         }
         quickAll?.isActivated = true
