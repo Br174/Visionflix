@@ -117,6 +117,10 @@ class SearchTvFragment : Fragment() {
     private var quickAudio: TextView? = null
     private var hasShownPartialIndexNotice = false
     private var quickDate: TextView? = null
+    private var quickPlatform: TextView? = null
+    private var quickYear: TextView? = null
+    private var quickCollections: TextView? = null
+    private var selectedCollection = AdvancedSearchFilters.CollectionFilter.ALL
     private var returnPosterId: String? = null
     private var returnPosterPosition = RecyclerView.NO_POSITION
     private var returnPosterLayout: android.os.Parcelable? = null
@@ -647,16 +651,8 @@ class SearchTvFragment : Fragment() {
             genreSelector = makeSelector("Genere", AdvancedSearchFilters.GenreFilter.entries.toList()) { it.label }
             genreSelector?.setLongPressAction { showMultiGenrePicker() }
 
-            val firstRow = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(3), 0, 0)
-            }
-            panel.addView(firstRow)
-            // LAB175: type selection is available only in the single pinned
-            // TV bottom menu. Keep its model for persistence, not a second UI.
-            // LAB189: Italian audio and genre live on the permanently visible
-            // quickbar. Keep their original selectors as one shared filter model.
-            addSelectorToRow(firstRow, yearSelector)
+            // LAB190: only the range, people and Italian provider control are in the drawer.
+            // Year / platform / all single-value selectors are owned by the compact quickbar.
 
             fromSelector = makeSelector("Dal", yearValues) { it?.toString() ?: "Tutti" }
             toSelector = makeSelector("Al", yearValues) { it?.toString() ?: "Tutti" }
@@ -713,12 +709,7 @@ class SearchTvFragment : Fragment() {
                 AdvancedSearchFilters.PlatformFilter.entries.toList(),
             ) { it.label }
 
-            val thirdRow = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(2), 0, 0)
-            }
-            panel.addView(thirdRow)
-            addSelectorToRow(thirdRow, platformSelector)
+            // Piattaforma is exclusively on the quickbar; the existing selector remains the state holder.
 
             val directorColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
             peopleRow.addView(
@@ -791,31 +782,27 @@ class SearchTvFragment : Fragment() {
             searchBar?.let {
                 lip.addView(it, LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(3) })
             }
-            fun quickButton(label: String, width: Int, callback: () -> Unit): TextView =
-                makeActionButton(label, primary = false).apply {
-                    textSize = 11f
+            fun quickButton(glyph: String, label: String, callback: () -> Unit): TextView =
+                makeActionButton(glyph, primary = false).apply {
+                    textSize = 19f
                     setSingleLine(true)
-                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, 0, 0, 0)
+                    gravity = android.view.Gravity.CENTER
+                    contentDescription = label
                     setOnClickListener { callback() }
-                    lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(2) })
+                    lip.addView(this, LinearLayout.LayoutParams(dp(42), dp(39)).apply {
+                        marginEnd = dp(2)
+                    })
                 }
-            // LAB189: five quick controls on ONE line, with exactly one
-            // authoritative state per filter. No duplicate drawer controls.
-            quickAll = quickButton("Tutti", 76) { openUnifiedTypeMenu() }.apply {
-                contentDescription = "Seleziona tipo di contenuto"
-            }
-            quickCountry = quickButton("Paese", 81) { openQuickCountryMenu() }.apply {
-                contentDescription = "Seleziona Paese di produzione"
-            }
-            quickGenre = quickButton("Genere", 80) { showMultiGenrePicker() }.apply {
-                contentDescription = "Seleziona uno o più generi"
-            }
-            quickAudio = quickButton("Audio", 79) { openQuickAudioMenu() }.apply {
-                contentDescription = "Seleziona versione audio"
-            }
-            quickDate = quickButton("Popolarità", 101) { openUnifiedSortMenu() }.apply {
-                contentDescription = "Ordina i risultati"
-            }
+            // Eight full-size remote targets, icon only, no second row or horizontal scroll.
+            quickAll = quickButton("🎞", "Tipo") { openUnifiedTypeMenu() }
+            quickCountry = quickButton("🌍", "Paese") { openQuickCountryMenu() }
+            quickGenre = quickButton("🎭", "Genere") { showMultiGenrePicker() }
+            quickAudio = quickButton("🔊", "Audio") { openQuickAudioMenu() }
+            quickDate = quickButton("↕", "Ordina") { openUnifiedSortMenu() }
+            quickPlatform = quickButton("▣", "Piattaforma") { openQuickPlatformMenu() }
+            quickYear = quickButton("📅", "Anno") { openQuickYearMenu() }
+            quickCollections = quickButton("★", "Collezioni") { openQuickCollectionMenu() }
             dropdownArrow = TextView(requireContext()).apply {
                 id = View.generateViewId()
                 textSize = 30f
@@ -889,7 +876,7 @@ class SearchTvFragment : Fragment() {
         // bottom lip are part of the SAME drawer, not separate focus islands.
         // Left exits into the native sidebar; up and right are sealed borders.
         val sidebar = R.id.nav_main
-        llGlobalSearch.nextFocusDownId = year.viewId
+        llGlobalSearch.nextFocusDownId = from.viewId
         llGlobalSearch.nextFocusUpId = llGlobalSearch.id
         llGlobalSearch.nextFocusRightId = llGlobalSearch.id
         llGlobalSearch.nextFocusLeftId = sidebar
@@ -901,27 +888,23 @@ class SearchTvFragment : Fragment() {
                     !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)))
         }
 
-        year.setNextFocus(left = sidebar, right = year.viewId,
-            up = llGlobalSearch.id, down = from.viewId)
         from.setNextFocus(left = sidebar, right = to.viewId,
-            up = year.viewId, down = actor.id)
+            up = llGlobalSearch.id, down = actor.id)
         to.setNextFocus(left = from.viewId, right = to.viewId,
-            up = year.viewId, down = director.id)
+            up = llGlobalSearch.id, down = director.id)
         actor.nextFocusLeftId = sidebar
         actor.nextFocusRightId = director.id
         actor.nextFocusUpId = from.viewId
-        actor.nextFocusDownId = platform.viewId
+        actor.nextFocusDownId = reset.id
         director.nextFocusLeftId = actor.id
         director.nextFocusRightId = director.id
         director.nextFocusUpId = to.viewId
-        director.nextFocusDownId = platform.viewId
-        platform.setNextFocus(left = sidebar, right = platform.viewId,
-            up = actor.id, down = reset.id)
-        reset.nextFocusUpId = platform.viewId
+        director.nextFocusDownId = apply.id
+        reset.nextFocusUpId = actor.id
         reset.nextFocusLeftId = sidebar
         reset.nextFocusRightId = apply.id
         reset.nextFocusDownId = all.id
-        apply.nextFocusUpId = platform.viewId
+        apply.nextFocusUpId = director.id
         apply.nextFocusLeftId = reset.id
         apply.nextFocusRightId = apply.id
         apply.nextFocusDownId = sort.id
@@ -940,7 +923,8 @@ class SearchTvFragment : Fragment() {
         btnSearchVoice.nextFocusUpId = reset.id
         btnSearchVoice.nextFocusDownId = vgvSearch.id
 
-        val bottom = listOfNotNull(all, quickCountry, quickGenre, quickAudio, sort, arrow)
+        val bottom = listOfNotNull(all, quickCountry, quickGenre, quickAudio, sort,
+            quickPlatform, quickYear, quickCollections, arrow)
         bottom.forEachIndexed { index, view ->
             view.nextFocusLeftId = if (index == 0) btnSearchVoice.id else bottom[index - 1].id
             view.nextFocusRightId = if (index == bottom.lastIndex) view.id else bottom[index + 1].id
@@ -1357,6 +1341,7 @@ class SearchTvFragment : Fragment() {
         fromSelector?.reset()
         toSelector?.reset()
         selectedSort = AdvancedSearchFilters.SortFilter.POPULARITY
+        selectedCollection = AdvancedSearchFilters.CollectionFilter.ALL
         updateQuickBar()
         platformSelector?.reset()
         countrySelector?.reset()
@@ -1447,6 +1432,7 @@ class SearchTvFragment : Fragment() {
             sort = selectedSort,
             platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
             country = countrySelector?.value ?: AdvancedSearchFilters.CountryFilter.ALL,
+            collection = selectedCollection,
         )
     }
 
@@ -1468,6 +1454,7 @@ class SearchTvFragment : Fragment() {
             // TV channels use their real IPTV source, never episodic TMDb titles.
             // A film-specific criterion must not be silently ignored.
             if (filters.country != AdvancedSearchFilters.CountryFilter.ALL ||
+                filters.collection != AdvancedSearchFilters.CollectionFilter.ALL ||
                 filters.genre != AdvancedSearchFilters.GenreFilter.ALL ||
                 filters.genres.isNotEmpty() || filters.year != null ||
                 filters.dateFrom != null || filters.dateTo != null ||
@@ -1529,6 +1516,7 @@ class SearchTvFragment : Fragment() {
                     sort = selectedSort,
                     platform = platformSelector?.value ?: AdvancedSearchFilters.PlatformFilter.ALL,
                     country = countrySelector?.value ?: AdvancedSearchFilters.CountryFilter.ALL,
+                    collection = selectedCollection,
                     genres = Lab173TvCombinedFilterPolicy.effectiveMultiGenres(
                         genreSelector?.value ?: AdvancedSearchFilters.GenreFilter.ALL,
                         selectedGenres,
@@ -1562,6 +1550,7 @@ class SearchTvFragment : Fragment() {
             updateQuickBar()
             platformSelector?.selectValue(saved.platform)
             countrySelector?.selectValue(saved.country)
+            selectedCollection = saved.collection
             selectedGenres.clear()
             selectedGenres.addAll(saved.genres)
             updateQuickBar()
@@ -1992,6 +1981,51 @@ class SearchTvFragment : Fragment() {
             .show()
     }
 
+
+    private fun openQuickPlatformMenu() {
+        if (!isAdded) return
+        val options = AdvancedSearchFilters.PlatformFilter.entries.toList()
+        android.app.AlertDialog.Builder(requireContext()).setTitle("Piattaforma")
+            .setSingleChoiceItems(options.map { it.label }.toTypedArray(),
+                options.indexOf(platformSelector?.value).coerceAtLeast(0)) { dialog, index ->
+                platformSelector?.selectValue(options[index])
+                dialog.dismiss()
+                updateQuickBar()
+                submitSearch()
+            }.setNegativeButton("Annulla", null).show()
+    }
+
+    private fun openQuickYearMenu() {
+        if (!isAdded) return
+        val current = Calendar.getInstance().get(Calendar.YEAR)
+        val years: List<Int?> = listOf(null) + (current downTo 1900).map { it }
+        android.app.AlertDialog.Builder(requireContext()).setTitle("Anno singolo")
+            .setSingleChoiceItems(years.map { it?.toString() ?: "Tutti gli anni" }.toTypedArray(),
+                years.indexOf(yearSelector?.value).coerceAtLeast(0)) { dialog, index ->
+                yearSelector?.selectValue(years[index])
+                if (years[index] != null) {
+                    fromSelector?.selectValue(null)
+                    toSelector?.selectValue(null)
+                }
+                dialog.dismiss()
+                updateQuickBar()
+                submitSearch()
+            }.setNegativeButton("Annulla", null).show()
+    }
+
+    private fun openQuickCollectionMenu() {
+        if (!isAdded) return
+        val options = AdvancedSearchFilters.CollectionFilter.entries.toList()
+        android.app.AlertDialog.Builder(requireContext()).setTitle("Collezioni")
+            .setSingleChoiceItems(options.map { it.label }.toTypedArray(),
+                options.indexOf(selectedCollection).coerceAtLeast(0)) { dialog, index ->
+                selectedCollection = options[index]
+                dialog.dismiss()
+                updateQuickBar()
+                submitSearch()
+            }.setNegativeButton("Annulla", null).show()
+    }
+
     private fun updateQuickBar() {
         val type = typeSelector?.value
         quickAll?.text = when (type) {
@@ -2017,8 +2051,45 @@ class SearchTvFragment : Fragment() {
             AdvancedSearchFilters.ItalianFilter.NO -> "Originale"
             else -> "Audio"
         }
-        quickDate?.text = Lab156UnifiedSort.label(selectedSort)
-        // Shared selectors stay authoritative even though hidden in the drawer.
+        // Eight tiny icons; full selection is always announced by contentDescription.
+        quickAll?.text = "🎞"
+        quickCountry?.text = when (countrySelector?.value) {
+            AdvancedSearchFilters.CountryFilter.ITALY -> "🇮🇹"
+            AdvancedSearchFilters.CountryFilter.USA -> "🇺🇸"
+            AdvancedSearchFilters.CountryFilter.UK -> "🇬🇧"
+            AdvancedSearchFilters.CountryFilter.FRANCE -> "🇫🇷"
+            AdvancedSearchFilters.CountryFilter.GERMANY -> "🇩🇪"
+            AdvancedSearchFilters.CountryFilter.SPAIN -> "🇪🇸"
+            AdvancedSearchFilters.CountryFilter.JAPAN -> "🇯🇵"
+            else -> "🌍"
+        }
+        quickGenre?.text = "🎭"
+        quickAudio?.text = "🔊"
+        quickDate?.text = "↕"
+        quickPlatform?.text = "▣"
+        quickYear?.text = "📅"
+        quickCollections?.text = "★"
+        quickAll?.contentDescription = "Tipo " + when (type) {
+            AdvancedSearchFilters.ContentType.MOVIE -> "Film"
+            AdvancedSearchFilters.ContentType.TV -> "Serie"
+            AdvancedSearchFilters.ContentType.CARTOON -> "Cartoni"
+            AdvancedSearchFilters.ContentType.ANIME -> "Anime"
+            AdvancedSearchFilters.ContentType.LIVE_TV -> "TV"
+            else -> "Tutti"
+        }
+        quickCountry?.contentDescription = "Paese: " + (countrySelector?.value?.label ?: "Tutti")
+        quickGenre?.contentDescription = "Genere: " + when {
+            selectedGenres.size > 1 -> "${selectedGenres.size} generi"
+            selectedGenres.size == 1 -> selectedGenres.first().label
+            else -> genreSelector?.value?.label ?: "Tutti"
+        }
+        quickAudio?.contentDescription = "Audio: " + if (
+            italianSelector?.value == AdvancedSearchFilters.ItalianFilter.NO
+        ) "Lingua originale" else "Doppiato in italiano"
+        quickDate?.contentDescription = "Ordinamento: " + Lab156UnifiedSort.label(selectedSort)
+        quickPlatform?.contentDescription = "Piattaforma: " + (platformSelector?.value?.label ?: "Tutte")
+        quickYear?.contentDescription = "Anno: " + (yearSelector?.value?.toString() ?: "Tutti")
+        quickCollections?.contentDescription = "Collezioni: " + selectedCollection.label
     }
 
     private fun rememberPoster(id: String, kind: String) {
