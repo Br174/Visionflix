@@ -799,13 +799,15 @@ class SearchTvFragment : Fragment() {
                     setOnClickListener { callback() }
                     lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(2) })
                 }
-            quickAll = quickButton("Tutti", 65) { openUnifiedTypeMenu() }.apply {
-                contentDescription = "Seleziona tipo: Tutti, Film, Serie o Cartoni"
+            // The compact lip keeps only type and sort. Country, genre and
+            // audio retain their original widgets in the expanded drawer.
+            quickAll = quickButton("Tutti", 84) { openUnifiedTypeMenu() }.apply {
+                contentDescription = "Seleziona tipo di contenuto"
             }
-            quickCountry = quickButton("Paese", 68) { openQuickCountryMenu() }
-            quickGenre = quickButton("Genere", 68) { showMultiGenrePicker() }
-            quickAudio = quickButton("Audio orig.", 82) { openQuickAudioMenu() }
-            quickDate = quickButton("Popolarità", 90) { openUnifiedSortMenu() }.apply {
+            quickCountry = null
+            quickGenre = null
+            quickAudio = null
+            quickDate = quickButton("Popolarità", 112) { openUnifiedSortMenu() }.apply {
                 textSize = 11f
                 contentDescription = "Ordina i risultati: tocca per scegliere"
             }
@@ -1976,9 +1978,7 @@ class SearchTvFragment : Fragment() {
         }
         quickAll?.isActivated = true
         quickDate?.text = Lab156UnifiedSort.label(selectedSort)
-        quickCountry?.text = countrySelector?.value?.let { if (it == AdvancedSearchFilters.CountryFilter.ALL) "Paese" else "Paese ✓" } ?: "Paese"
-        quickGenre?.text = if (selectedGenres.isNotEmpty()) "Genere ✓" else "Genere"
-        quickAudio?.text = if (italianSelector?.value == AdvancedSearchFilters.ItalianFilter.NO) "Audio orig. ✓" else "Audio orig."
+        // Country, genre and audio are controlled exclusively by the drawer.
     }
 
     private fun rememberPoster(id: String, kind: String) {
