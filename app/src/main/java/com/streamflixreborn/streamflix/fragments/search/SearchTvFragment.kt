@@ -111,6 +111,9 @@ class SearchTvFragment : Fragment() {
     private var filterFocusSentinel: View? = null
     private var dropdownArrow: TextView? = null
     private var quickAll: TextView? = null
+    private var quickCountry: TextView? = null
+    private var quickGenre: TextView? = null
+    private var quickAudio: TextView? = null
     private var hasShownPartialIndexNotice = false
     private var quickDate: TextView? = null
     private var returnPosterId: String? = null
@@ -208,7 +211,7 @@ class SearchTvFragment : Fragment() {
             initStep("initial-focus") {
                 // Opening the app's Search menu must not open Android TV's
                 // keyboard automatically. Start at the user-approved X control.
-                if (returnPosterId == null && this.view === view) btnSearchClear.requestFocus()
+                if (returnPosterId == null && this.view === view) etSearch.requestFocus()
             }
         }
     }
@@ -285,7 +288,7 @@ class SearchTvFragment : Fragment() {
             var current: View? = from
             while (current != null) {
                 if (current === nav) {
-                    btnSearchClear.post { if (isAdded && etSearch.hasFocus()) btnSearchClear.requestFocus() }
+                    etSearch.post { if (isAdded && etSearch.hasFocus()) etSearch.selectAll() }
                     break
                 }
                 current = current.parent as? View
@@ -781,18 +784,21 @@ class SearchTvFragment : Fragment() {
             dropdown.addView(lip, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             searchBar?.let {
-                lip.addView(it, LinearLayout.LayoutParams(0, dp(42), 7f).apply { marginEnd = dp(6) })
+                lip.addView(it, LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(3) })
             }
             fun quickButton(label: String, width: Int, callback: () -> Unit): TextView =
                 makeActionButton(label, primary = false).apply {
                     textSize = 12f
                     setOnClickListener { callback() }
-                    lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(4) })
+                    lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(2) })
                 }
-            quickAll = quickButton("Tutti", 98) { openUnifiedTypeMenu() }.apply {
+            quickAll = quickButton("Tutti", 65) { openUnifiedTypeMenu() }.apply {
                 contentDescription = "Seleziona tipo: Tutti, Film, Serie o Cartoni"
             }
-            quickDate = quickButton("Popolarità", 104) { openUnifiedSortMenu() }.apply {
+            quickCountry = quickButton("Paese", 68) { openQuickCountryMenu() }
+            quickGenre = quickButton("Genere", 68) { showMultiGenrePicker() }
+            quickAudio = quickButton("Audio orig.", 82) { openQuickAudioMenu() }
+            quickDate = quickButton("Popolarità", 90) { openUnifiedSortMenu() }.apply {
                 textSize = 11f
                 contentDescription = "Ordina i risultati: tocca per scegliere"
             }
@@ -819,11 +825,12 @@ class SearchTvFragment : Fragment() {
                         exitFiltersDownToPosterWall()
                     } else false
                 }
-                setBackgroundResource(R.drawable.bg_filter_control_tv)
+                background = null
                 setOnFocusChangeListener { _, focused ->
-                    setTextColor(if (focused) Color.rgb(22, 43, 64) else Color.WHITE)
+                    setTextColor(if (focused) Color.WHITE else Color.LTGRAY)
+                    alpha = if (focused) 1f else 0.72f
                 }
-                lip.addView(this, LinearLayout.LayoutParams(dp(45), dp(44)))
+                lip.addView(this, LinearLayout.LayoutParams(dp(30), dp(44)))
             }
             updateQuickBar()
             configureFilterFocus()
@@ -913,19 +920,19 @@ class SearchTvFragment : Fragment() {
 
         // The pinned lower row must be fully traversable before the poster wall.
         etSearch.nextFocusLeftId = sidebar
-        etSearch.nextFocusRightId = btnSearchClear.id
+        etSearch.nextFocusRightId = btnSearchVoice.id
         etSearch.nextFocusUpId = country.viewId
         etSearch.nextFocusDownId = vgvSearch.id
-        btnSearchClear.nextFocusLeftId = etSearch.id
-        btnSearchClear.nextFocusRightId = btnSearchVoice.id
+        btnSearchClear.nextFocusLeftId = sidebar
+        btnSearchClear.nextFocusRightId = etSearch.id
         btnSearchClear.nextFocusUpId = reset.id
         btnSearchClear.nextFocusDownId = vgvSearch.id
-        btnSearchVoice.nextFocusLeftId = btnSearchClear.id
+        btnSearchVoice.nextFocusLeftId = etSearch.id
         btnSearchVoice.nextFocusRightId = all.id
         btnSearchVoice.nextFocusUpId = reset.id
         btnSearchVoice.nextFocusDownId = vgvSearch.id
 
-        val bottom = listOf(all, sort, arrow)
+        val bottom = listOfNotNull(all, quickCountry, quickGenre, quickAudio, sort, arrow)
         bottom.forEachIndexed { index, view ->
             view.nextFocusLeftId = if (index == 0) btnSearchVoice.id else bottom[index - 1].id
             view.nextFocusRightId = if (index == bottom.lastIndex) view.id else bottom[index + 1].id
@@ -964,8 +971,7 @@ class SearchTvFragment : Fragment() {
                 code == KeyEvent.KEYCODE_DPAD_DOWN &&
                 exitFiltersDownToPosterWall()
         }
-        all.setOnKeyListener(exitDown)
-        sort.setOnKeyListener(exitDown)
+        bottom.dropLast(1).forEach { it.setOnKeyListener(exitDown) }
         btnSearchClear.setOnKeyListener(exitDown)
         btnSearchVoice.setOnKeyListener(exitDown)
         vgvSearch.nextFocusUpId = etSearch.id
@@ -1539,7 +1545,7 @@ class SearchTvFragment : Fragment() {
     private fun updateGridTopPadding() {
         if (!isAdded || !this::searchHeader.isInitialized) return
         searchHeader.post {
-            val top = searchHeader.height + dp(10)
+            val top = searchHeader.height + dp(20)
             if (top > 0 && vgvSearch.paddingTop != top) vgvSearch.setPadding(
                 vgvSearch.paddingLeft, top, vgvSearch.paddingRight, vgvSearch.paddingBottom)
         }
@@ -1568,7 +1574,7 @@ class SearchTvFragment : Fragment() {
         val moved = etSearch.requestFocus()
         if (moved) {
             etSearch.isCursorVisible = true
-            etSearch.setSelection(etSearch.text?.length ?: 0)
+            etSearch.selectAll()
             // Do not open the on-screen keyboard just by changing D-pad focus.
             etSearch.post { if (isAdded && etSearch.hasFocus()) hideKeyboard() }
         }
@@ -1893,6 +1899,28 @@ class SearchTvFragment : Fragment() {
         dialog.show()
     }
 
+    private fun openQuickCountryMenu() {
+        if (!isAdded) return
+        // Reuse the existing country selector instead of creating a second filter model.
+        countrySelector?.view?.performClick()
+    }
+
+    private fun openQuickAudioMenu() {
+        if (!isAdded) return
+        val choices = listOf(AdvancedSearchFilters.ItalianFilter.YES, AdvancedSearchFilters.ItalianFilter.NO)
+        val labels = arrayOf("Doppiato in italiano", "Lingua originale")
+        android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Versione audio")
+            .setSingleChoiceItems(labels, choices.indexOf(italianSelector?.value).coerceAtLeast(0)) { dialog, index ->
+                italianSelector?.selectValue(choices[index])
+                updateQuickBar()
+                dialog.dismiss()
+                submitSearch()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
     private fun updateQuickBar() {
         val type = typeSelector?.value
         quickAll?.text = when (type) {
@@ -1903,6 +1931,9 @@ class SearchTvFragment : Fragment() {
         }
         quickAll?.isActivated = true
         quickDate?.text = Lab156UnifiedSort.label(selectedSort)
+        quickCountry?.text = countrySelector?.value?.let { if (it.toString().contains("ALL")) "Paese" else "Paese ✓" } ?: "Paese"
+        quickGenre?.text = if (selectedGenres.isNotEmpty()) "Genere ✓" else "Genere"
+        quickAudio?.text = if (italianSelector?.value == AdvancedSearchFilters.ItalianFilter.NO) "Audio orig. ✓" else "Audio orig."
     }
 
     private fun rememberPoster(id: String, kind: String) {
