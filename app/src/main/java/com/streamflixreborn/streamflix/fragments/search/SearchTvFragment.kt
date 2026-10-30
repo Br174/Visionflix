@@ -621,6 +621,7 @@ class SearchTvFragment : Fragment() {
                 AdvancedSearchFilters.ContentType.TV,
                 AdvancedSearchFilters.ContentType.CARTOON,
                 AdvancedSearchFilters.ContentType.ANIME,
+                AdvancedSearchFilters.ContentType.LIVE_TV,
             )
             typeSelector = makeSelector("Tipo", typeValues) {
                 when (it) {
@@ -2027,6 +2028,14 @@ class SearchTvFragment : Fragment() {
             }.setNegativeButton("Annulla", null).show()
     }
 
+    private fun countryFlag(code: String?): String {
+        if (code == null || code.length != 2) return "🌍"
+        val iso = code.uppercase(java.util.Locale.ROOT)
+        if (iso.any { it !in 'A'..'Z' }) return "🌍"
+        return String(Character.toChars(0x1F1E6 + iso[0].code - 'A'.code)) +
+            String(Character.toChars(0x1F1E6 + iso[1].code - 'A'.code))
+    }
+
     private fun updateQuickBar() {
         val type = typeSelector?.value
         quickAll?.text = when (type) {
@@ -2054,16 +2063,7 @@ class SearchTvFragment : Fragment() {
         }
         // Eight tiny icons; full selection is always announced by contentDescription.
         quickAll?.text = "🎞"
-        quickCountry?.text = when (countrySelector?.value) {
-            AdvancedSearchFilters.CountryFilter.ITALY -> "🇮🇹"
-            AdvancedSearchFilters.CountryFilter.USA -> "🇺🇸"
-            AdvancedSearchFilters.CountryFilter.UK -> "🇬🇧"
-            AdvancedSearchFilters.CountryFilter.FRANCE -> "🇫🇷"
-            AdvancedSearchFilters.CountryFilter.GERMANY -> "🇩🇪"
-            AdvancedSearchFilters.CountryFilter.SPAIN -> "🇪🇸"
-            AdvancedSearchFilters.CountryFilter.JAPAN -> "🇯🇵"
-            else -> "🌍"
-        }
+        quickCountry?.text = countryFlag(countrySelector?.value?.isoCode)
         quickGenre?.text = "🎭"
         quickAudio?.text = "🔊"
         quickDate?.text = "↕"
