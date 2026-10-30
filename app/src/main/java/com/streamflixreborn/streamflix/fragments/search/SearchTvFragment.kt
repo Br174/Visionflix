@@ -793,7 +793,7 @@ class SearchTvFragment : Fragment() {
             fun quickButton(label: String, width: Int, callback: () -> Unit): TextView =
                 makeActionButton(label, primary = false).apply {
                     textSize = 11f
-                    isSingleLine = true
+                    setSingleLine(true)
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setOnClickListener { callback() }
                     lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(2) })
@@ -959,10 +959,10 @@ class SearchTvFragment : Fragment() {
         }
         // LAB189: DOWN from either footer action closes the advanced
         // panel and returns focus to the existing poster-wall position.
-        val footerActionKeys = View.OnKeyListener { _, code, event ->
+        val footerActionKeys = View.OnKeyListener { view, code, event ->
             if (event.action != KeyEvent.ACTION_DOWN || !filterPanelExpanded) false
             else if (code == KeyEvent.KEYCODE_DPAD_DOWN) exitFiltersDownToPosterWall()
-            else code == KeyEvent.KEYCODE_DPAD_RIGHT &&
+            else code == KeyEvent.KEYCODE_DPAD_RIGHT && view === apply &&
                 !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)
         }
         apply.setOnKeyListener(footerActionKeys)
@@ -1948,6 +1948,7 @@ class SearchTvFragment : Fragment() {
             .setSingleChoiceItems(labels, choices.indexOf(countrySelector?.value).coerceAtLeast(0)) { dialog, index ->
                 countrySelector?.selectValue(choices[index])
                 updateQuickBar()
+                quickCountry?.post { if (isAdded) updateQuickBar() }
                 dialog.dismiss()
                 submitSearch()
             }
@@ -1964,6 +1965,7 @@ class SearchTvFragment : Fragment() {
             .setSingleChoiceItems(labels, choices.indexOf(italianSelector?.value).coerceAtLeast(0)) { dialog, index ->
                 italianSelector?.selectValue(choices[index])
                 updateQuickBar()
+                quickAudio?.post { if (isAdded) updateQuickBar() }
                 dialog.dismiss()
                 submitSearch()
             }
