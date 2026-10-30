@@ -653,9 +653,9 @@ class SearchTvFragment : Fragment() {
             panel.addView(firstRow)
             // LAB175: type selection is available only in the single pinned
             // TV bottom menu. Keep its model for persistence, not a second UI.
-            addSelectorToRow(firstRow, italianSelector)
+            // LAB189: Italian audio and genre live on the permanently visible
+            // quickbar. Keep their original selectors as one shared filter model.
             addSelectorToRow(firstRow, yearSelector)
-            addSelectorToRow(firstRow, genreSelector)
 
             fromSelector = makeSelector("Dal", yearValues) { it?.toString() ?: "Tutti" }
             toSelector = makeSelector("Al", yearValues) { it?.toString() ?: "Tutti" }
@@ -756,14 +756,8 @@ class SearchTvFragment : Fragment() {
                 gravity = android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
                 setPadding(dp(10), dp(1), dp(10), dp(1))
             }
-            // Country shares this pinned footer with Reset and Apply; it no
-            // longer takes a full-width, separate row in the scrolling drawer.
-            countrySelector?.let { selector ->
-                actions.addView(selector.root,
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                        marginEnd = dp(12)
-                    })
-            }
+            // LAB189: Country belongs exclusively to the quickbar.
+            // The original selector is retained as a shared, nonduplicated state holder.
             btnResetFilters = makeActionButton("Azzera", primary = false).also { button ->
                 actions.addView(
                     button,
@@ -798,21 +792,28 @@ class SearchTvFragment : Fragment() {
             }
             fun quickButton(label: String, width: Int, callback: () -> Unit): TextView =
                 makeActionButton(label, primary = false).apply {
-                    textSize = 12f
+                    textSize = 11f
+                    isSingleLine = true
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                     setOnClickListener { callback() }
                     lip.addView(this, LinearLayout.LayoutParams(dp(width), dp(39)).apply { marginEnd = dp(2) })
                 }
-            // The compact lip keeps only type and sort. Country, genre and
-            // audio retain their original widgets in the expanded drawer.
-            quickAll = quickButton("Tutti", 84) { openUnifiedTypeMenu() }.apply {
+            // LAB189: five quick controls on ONE line, with exactly one
+            // authoritative state per filter. No duplicate drawer controls.
+            quickAll = quickButton("Tutti", 76) { openUnifiedTypeMenu() }.apply {
                 contentDescription = "Seleziona tipo di contenuto"
             }
-            quickCountry = null
-            quickGenre = null
-            quickAudio = null
-            quickDate = quickButton("Popolarità", 112) { openUnifiedSortMenu() }.apply {
-                textSize = 11f
-                contentDescription = "Ordina i risultati: tocca per scegliere"
+            quickCountry = quickButton("Paese", 81) { openQuickCountryMenu() }.apply {
+                contentDescription = "Seleziona Paese di produzione"
+            }
+            quickGenre = quickButton("Genere", 80) { showMultiGenrePicker() }.apply {
+                contentDescription = "Seleziona uno o più generi"
+            }
+            quickAudio = quickButton("Audio", 79) { openQuickAudioMenu() }.apply {
+                contentDescription = "Seleziona versione audio"
+            }
+            quickDate = quickButton("Popolarità", 101) { openUnifiedSortMenu() }.apply {
+                contentDescription = "Ordina i risultati"
             }
             dropdownArrow = TextView(requireContext()).apply {
                 id = View.generateViewId()
@@ -887,7 +888,7 @@ class SearchTvFragment : Fragment() {
         // bottom lip are part of the SAME drawer, not separate focus islands.
         // Left exits into the native sidebar; up and right are sealed borders.
         val sidebar = R.id.nav_main
-        llGlobalSearch.nextFocusDownId = italian.viewId
+        llGlobalSearch.nextFocusDownId = year.viewId
         llGlobalSearch.nextFocusUpId = llGlobalSearch.id
         llGlobalSearch.nextFocusRightId = llGlobalSearch.id
         llGlobalSearch.nextFocusLeftId = sidebar
@@ -899,36 +900,27 @@ class SearchTvFragment : Fragment() {
                     !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)))
         }
 
-        italian.setNextFocus(left = sidebar, right = year.viewId,
+        year.setNextFocus(left = sidebar, right = year.viewId,
             up = llGlobalSearch.id, down = from.viewId)
-        year.setNextFocus(left = italian.viewId, right = genre.viewId,
-            up = llGlobalSearch.id, down = actor.id)
-        genre.setNextFocus(left = year.viewId, right = genre.viewId,
-            up = llGlobalSearch.id, down = director.id)
-
         from.setNextFocus(left = sidebar, right = to.viewId,
-            up = italian.viewId, down = platform.viewId)
-        to.setNextFocus(left = from.viewId, right = actor.id,
-            up = italian.viewId, down = actor.id)
-        actor.nextFocusLeftId = from.viewId
+            up = year.viewId, down = actor.id)
+        to.setNextFocus(left = from.viewId, right = to.viewId,
+            up = year.viewId, down = director.id)
+        actor.nextFocusLeftId = sidebar
         actor.nextFocusRightId = director.id
-        actor.nextFocusUpId = year.viewId
+        actor.nextFocusUpId = from.viewId
         actor.nextFocusDownId = platform.viewId
-
-        platform.setNextFocus(left = sidebar, right = director.id,
-            up = actor.id, down = country.viewId)
         director.nextFocusLeftId = actor.id
         director.nextFocusRightId = director.id
-        director.nextFocusUpId = genre.viewId
-        director.nextFocusDownId = apply.id
-
-        country.setNextFocus(left = sidebar, right = reset.id,
-            up = platform.viewId, down = etSearch.id)
-        reset.nextFocusUpId = director.id
-        reset.nextFocusLeftId = country.viewId
+        director.nextFocusUpId = to.viewId
+        director.nextFocusDownId = platform.viewId
+        platform.setNextFocus(left = sidebar, right = platform.viewId,
+            up = actor.id, down = reset.id)
+        reset.nextFocusUpId = platform.viewId
+        reset.nextFocusLeftId = sidebar
         reset.nextFocusRightId = apply.id
         reset.nextFocusDownId = all.id
-        apply.nextFocusUpId = director.id
+        apply.nextFocusUpId = platform.viewId
         apply.nextFocusLeftId = reset.id
         apply.nextFocusRightId = apply.id
         apply.nextFocusDownId = sort.id
@@ -936,7 +928,7 @@ class SearchTvFragment : Fragment() {
         // The pinned lower row must be fully traversable before the poster wall.
         etSearch.nextFocusLeftId = sidebar
         etSearch.nextFocusRightId = btnSearchVoice.id
-        etSearch.nextFocusUpId = country.viewId
+        etSearch.nextFocusUpId = reset.id
         etSearch.nextFocusDownId = vgvSearch.id
         btnSearchClear.nextFocusLeftId = sidebar
         btnSearchClear.nextFocusRightId = etSearch.id
@@ -965,12 +957,16 @@ class SearchTvFragment : Fragment() {
                 } else code == KeyEvent.KEYCODE_DPAD_RIGHT && index == bottom.lastIndex
             }
         }
-        // Only pressing OK on the arrow may collapse the drawer, never RIGHT.
-        apply.setOnKeyListener { _, code, event ->
-            event.action == KeyEvent.ACTION_DOWN && filterPanelExpanded &&
-                code == KeyEvent.KEYCODE_DPAD_RIGHT &&
+        // LAB189: DOWN from either footer action closes the advanced
+        // panel and returns focus to the existing poster-wall position.
+        val footerActionKeys = View.OnKeyListener { _, code, event ->
+            if (event.action != KeyEvent.ACTION_DOWN || !filterPanelExpanded) false
+            else if (code == KeyEvent.KEYCODE_DPAD_DOWN) exitFiltersDownToPosterWall()
+            else code == KeyEvent.KEYCODE_DPAD_RIGHT &&
                 !Lab159DrawerFocusPolicy.mayExit(Lab159DrawerFocusPolicy.Border.RIGHT)
         }
+        apply.setOnKeyListener(footerActionKeys)
+        reset.setOnKeyListener(footerActionKeys)
         // Editable person fields keep their suggestions on DOWN, but never
         // leak to the poster wall on RIGHT and remain reachable in reverse.
         actor.setOnKeyListener { _, code, event ->
@@ -1363,6 +1359,7 @@ class SearchTvFragment : Fragment() {
         updateQuickBar()
         platformSelector?.reset()
         countrySelector?.reset()
+        updateQuickBar()
         suppressActorTextChange = true
         actorEdit?.setText("")
         suppressActorTextChange = false
@@ -1549,6 +1546,7 @@ class SearchTvFragment : Fragment() {
             countrySelector?.selectValue(saved.country)
             selectedGenres.clear()
             selectedGenres.addAll(saved.genres)
+            updateQuickBar()
 
             suppressActorTextChange = true
             actorEdit?.setText(saved.actorName)
@@ -1960,7 +1958,7 @@ class SearchTvFragment : Fragment() {
     private fun openQuickAudioMenu() {
         if (!isAdded) return
         val choices = listOf(AdvancedSearchFilters.ItalianFilter.YES, AdvancedSearchFilters.ItalianFilter.NO)
-        val labels = arrayOf("Doppiato in italiano", "Non doppiato in italiano")
+        val labels = arrayOf("Doppiato in italiano", "Lingua originale")
         android.app.AlertDialog.Builder(requireContext())
             .setTitle("Versione audio")
             .setSingleChoiceItems(labels, choices.indexOf(italianSelector?.value).coerceAtLeast(0)) { dialog, index ->
@@ -1982,9 +1980,23 @@ class SearchTvFragment : Fragment() {
             AdvancedSearchFilters.ContentType.ANIME -> "Anime"
             else -> "Tutti"
         }
-        quickAll?.isActivated = true
+        quickCountry?.text = countrySelector?.value
+            ?.takeUnless { it == AdvancedSearchFilters.CountryFilter.ALL }?.label ?: "Paese"
+        quickGenre?.text = when {
+            selectedGenres.size > 1 -> "Generi ${selectedGenres.size}"
+            selectedGenres.size == 1 -> selectedGenres.first().label
+            genreSelector?.value != null &&
+                genreSelector?.value != AdvancedSearchFilters.GenreFilter.ALL ->
+                genreSelector?.value?.label ?: "Genere"
+            else -> "Genere"
+        }
+        quickAudio?.text = when (italianSelector?.value) {
+            AdvancedSearchFilters.ItalianFilter.YES -> "Dopp. IT"
+            AdvancedSearchFilters.ItalianFilter.NO -> "Originale"
+            else -> "Audio"
+        }
         quickDate?.text = Lab156UnifiedSort.label(selectedSort)
-        // Country, genre and audio are controlled exclusively by the drawer.
+        // Shared selectors stay authoritative even though hidden in the drawer.
     }
 
     private fun rememberPoster(id: String, kind: String) {
