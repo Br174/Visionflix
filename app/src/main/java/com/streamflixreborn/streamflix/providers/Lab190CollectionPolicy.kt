@@ -9,13 +9,23 @@ import java.util.Locale
  * against TMDb Discover, and provider availability is verified separately.
  */
 internal object Lab190CollectionPolicy {
-    private val nominated2026 = setOf(
+    private val nomineeTitles2026 = listOf(
         "Bugonia", "F1", "Frankenstein", "Hamnet", "Marty Supreme",
         "The Secret Agent", "Sentimental Value", "Sinners", "Train Dreams",
         "One Battle after Another", "Blue Moon", "If I Had Legs I'd Kick You",
         "Song Sung Blue", "It Was Just an Accident", "Sirat",
         "The Voice of Hind Rajab"
-    ).map(::normalize).toSet()
+    )
+    private val nominated2026 = nomineeTitles2026.map(::normalize).toSet()
+
+    fun curatedTitles(collection: AdvancedSearchFilters.CollectionFilter): List<Pair<Int, String>> =
+        when (collection) {
+            AdvancedSearchFilters.CollectionFilter.OSCARS_2026 ->
+                nomineeTitles2026.map { 2026 to it }
+            AdvancedSearchFilters.CollectionFilter.OSCAR_WINNERS ->
+                Lab190OscarPrimaryWinners.entries.sortedByDescending { it.first }
+            else -> emptyList()
+        }
 
     fun normalize(title: String): String =
         Normalizer.normalize(title, Normalizer.Form.NFD)
