@@ -50,7 +50,7 @@ else
   [[ "$old_code" =~ ^[0-9]+$ ]] || { echo "::error::Existing channel not recognized, refusing overwrite"; exit 76; }
   if (( code <= old_code )); then echo "[LAST_GOOD] Stable code $old_code is newer or equal, preserving"; exit 0; fi
   release_id="$(gh api "repos/$repo/releases/tags/$channel" --jq .id)"
-  old_id="$(gh api "repos/$repo/releases/$release_id/assets" --jq '.[] | select(.name == "Verlezza-Vision-TV.apk") | .id')"
+  old_id="$(gh api --paginate "repos/$repo/releases/$release_id/assets?per_page=100" --jq '.[] | select(.name == "Verlezza-Vision-TV.apk") | .id' | head -1)"
   if [[ ! "$old_id" =~ ^[0-9]+$ ]]; then
     # Restore the missing canonical asset from this checksum-verified immutable build.
     # Do not delete or replace any existing downloadable APK.
@@ -66,7 +66,7 @@ else
   incoming="Verlezza-Vision-TV-INCOMING-$run_id.apk"
   cp "$dir/$asset" "$RUNNER_TEMP/$incoming"
   gh release upload "$channel" "$RUNNER_TEMP/$incoming" -R "$repo"
-  incoming_id="$(gh api "repos/$repo/releases/$release_id/assets" --jq '.[] | .name + "=" + (.id|tostring)' | awk -F= -v n="$incoming" '$1 == n {print $2}')"
+  incoming_id="$(gh api --paginate "repos/$repo/releases/$release_id/assets?per_page=100" --jq '.[] | .name + "=" + (.id|tostring)' | awk -F= -v n="$incoming" '$1 == n {print $2; exit}')"
   [[ "$incoming_id" =~ ^[0-9]+$ ]] || { echo "::error::Staged asset unavailable"; exit 78; }
   mkdir -p "$RUNNER_TEMP/staged"
   gh release download "$channel" -R "$repo" -p "$incoming" -D "$RUNNER_TEMP/staged"
