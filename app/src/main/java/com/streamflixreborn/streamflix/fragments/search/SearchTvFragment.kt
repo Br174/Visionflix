@@ -82,7 +82,8 @@ class SearchTvFragment : Fragment() {
     private var currentGridColumns = 1
     private var suppressActorTextChange = false
     private var suppressDirectorTextChange = false
-    private var filterPanelExpanded = true
+    // The advanced drawer opens only after an explicit remote-control action.
+    private var filterPanelExpanded = false
     private var pendingFocusFirstResult = false
 
     private var typeSelector: DropdownSelector<AdvancedSearchFilters.ContentType>? = null
