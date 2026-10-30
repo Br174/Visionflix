@@ -15,6 +15,7 @@ internal data class SavedSearchFilterState(
     val sort: AdvancedSearchFilters.SortFilter = AdvancedSearchFilters.SortFilter.POPULARITY,
     val platform: AdvancedSearchFilters.PlatformFilter = AdvancedSearchFilters.PlatformFilter.ALL,
     val country: AdvancedSearchFilters.CountryFilter = AdvancedSearchFilters.CountryFilter.ALL,
+    val collection: AdvancedSearchFilters.CollectionFilter = AdvancedSearchFilters.CollectionFilter.ALL,
     val genres: Set<AdvancedSearchFilters.GenreFilter> = emptySet(),
     val actorId: String? = null,
     val actorName: String = "",
@@ -49,6 +50,7 @@ internal object SearchFilterPersistence {
             sort = enumValue("sort", AdvancedSearchFilters.SortFilter.values(), AdvancedSearchFilters.SortFilter.POPULARITY),
             platform = enumValue("platform", AdvancedSearchFilters.PlatformFilter.values(), AdvancedSearchFilters.PlatformFilter.ALL),
             country = enumValue("country", AdvancedSearchFilters.CountryFilter.values(), AdvancedSearchFilters.CountryFilter.ALL),
+            collection = enumValue("collection", AdvancedSearchFilters.CollectionFilter.values(), AdvancedSearchFilters.CollectionFilter.ALL),
             genres = p.getStringSet("genres", emptySet()).orEmpty().mapNotNull { name ->
                 AdvancedSearchFilters.GenreFilter.entries.firstOrNull { it.name == name && it != AdvancedSearchFilters.GenreFilter.ALL }
             }.toSet(),
@@ -69,6 +71,7 @@ internal object SearchFilterPersistence {
         e.putString("sort", state.sort.name)
         e.putString("platform", state.platform.name)
         e.putString("country", state.country.name)
+        e.putString("collection", state.collection.name)
         e.putStringSet("genres", state.genres.map { it.name }.toSet())
         if (state.year == null) e.remove("year") else e.putInt("year", state.year)
         if (state.fromYear == null) e.remove("from_year") else e.putInt("from_year", state.fromYear)
